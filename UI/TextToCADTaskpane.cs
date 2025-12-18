@@ -1,0 +1,1317 @@
+using System;
+using System.Drawing;
+using System.Runtime.Serialization;
+using System.Runtime.Serialization.Json;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
+using SolidWorks.TaskpaneCalculator.Services;
+using Newtonsoft.Json.Linq;
+
+namespace SolidWorks.TaskpaneCalculator.UI
+{
+    public class TextToCADTaskpane : UserControl
+    {
+        private readonly ISldWorks _swApp;
+    private Label _lblModified;
+    private Label _lblVersion;
+    private bool _isModified = false;
+        private readonly RichTextBox _log;
+        private readonly TextBox _prompt;
+        private readonly Button _build;
+        private readonly ComboBox _shapePreset;
+    private GeminiClient _client;
+    private FileDbLogger _fileLogger;
+    private MongoLogger _mongoLogger;
+        private IGoodFeedbackStore _goodStore;
+    private Label _lblLlmStatus;
+    private Label _lblDbStatus;
+    private Label _lblSwStatus;
+    private Label _lblTimes;
+        private TextBox _txtLastError;
+        private Button _btnCopyError;
+        private Button _btnCopyRun;
+    private RichTextBox _statusConsole;
+    private Button _btnStatusCopyAll;
+    private Button _btnStatusClear;
+    private Button _btnStatusExpand;
+    // _btnStatusDbInfo removed: DB info will be logged automatically at startup
+    private bool _statusExpanded = false;
+        private TimeSpan _lastLlm = TimeSpan.Zero;
+        private TimeSpan _lastTotal = TimeSpan.Zero;
+        private string _lastError;
+        private string _lastPrompt;
+        private string _lastReply;
+        private string _lastModel;
+        private string _lastDbStatus;
+        private bool? _lastDbLogged;
+        private Button _btnThumbUp;
+        private Button _btnThumbDown;
+        private TextBox _txtFeedback;
+        private string _lastRunId;
+    private IStepStore _stepStore; // NEW
+    private Button _btnHistory; // NEW
+
+        public TextToCADTaskpane(ISldWorks swApp)
+        {
+            _swApp = swApp;
+            Dock = DockStyle.Fill;
+
+            var root = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 5,
+                Padding = new Padding(6)
+            };
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));  // presets
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));   // prompt
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // button
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));    // log
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));    // status console (expandable)
+
+            // Presets
+            var presetRow = new Panel { Dock = DockStyle.Fill, Height = 28 };
+            var label = new Label { Text = "Preset:", AutoSize = true, Dock = DockStyle.Left, Padding = new Padding(0, 6, 6, 0) };
+            _shapePreset = new ComboBox { Dock = DockStyle.Left, Width = 220, DropDownStyle = ComboBoxStyle.DropDownList };
+            _shapePreset.Items.AddRange(new object[]
+            {
+                "— none —",
+                "Box 100x50x25 mm",
+                "Cylinder Ø40 x 80 mm",
+                "Box 10x10x10 mm"
+            });
+            _shapePreset.SelectedIndex = 0;
+            _shapePreset.SelectedIndexChanged += (s, e) =>
+            {
+                switch (_shapePreset.SelectedIndex)
+                {
+                    case 1: _prompt.Text = "Create a rectangular box 100 mm length, 50 mm width, 25 mm height"; break;
+                    case 2: _prompt.Text = "Create a cylinder 40 mm diameter and 80 mm height"; break;
+                    case 3: _prompt.Text = "Create a cube 10 mm"; break;
+                    default: _prompt.Clear(); break;
+                }
+            };
+            presetRow.Controls.Add(_shapePreset);
+            presetRow.Controls.Add(label);
+
+            // Modified indicator (right aligned)
+            _lblModified = new Label
+            {
+                Text = "Unsaved changes",
+                AutoSize = true,
+                Dock = DockStyle.Right,
+                ForeColor = Color.OrangeRed,
+                Visible = false,
+                Padding = new Padding(0, 6, 6, 0)
+            };
+            // Version label (right aligned, left of modified)
+            _lblVersion = new Label
+            {
+                Text = GetAddinVersion(),
+                AutoSize = true,
+                Dock = DockStyle.Right,
+                ForeColor = Color.DimGray,
+                Padding = new Padding(0, 6, 6, 0)
+            };
+            presetRow.Controls.Add(_lblVersion);
+            presetRow.Controls.Add(_lblModified);
+
+            // Prompt
+            _prompt = new TextBox { Dock = DockStyle.Fill, Multiline = true, Height = 60 };
+            // Any edit in the prompt sets the modified indicator
+            _prompt.TextChanged += (s, e) =>
+            {
+                try { SetModified(true); } catch { }
+            };
+
+            // Build button
+            _build = new Button { Text = "Build Model", Dock = DockStyle.Fill, Height = 30 };
+            _build.Click += async (s, e) => await BuildFromPromptAsync();
+
+            // Log
+            _log = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = SystemColors.Window };
+
+            // Status panel (bottom)
+            var statusPanel = BuildStatusConsolePanel();
+            var feedbackPanel = BuildFeedbackPanel();
+            var ctlRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Height = 28 };
+            _btnHistory = new Button { Text = "History", Width = 80, Height = 24 };
+            _btnHistory.Click += (s, e) =>
+            {
+                try
+                {
+                    if (_stepStore == null) { MessageBox.Show(this, "No step store available", "History", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                    using (var dlg = new HistoryBrowser(_stepStore)) dlg.ShowDialog(this);
+                }
+                catch (Exception ex) { MessageBox.Show(this, ex.Message, "History", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            };
+            ctlRow.Controls.Add(_btnHistory);
+
+            root.Controls.Add(presetRow, 0, 0);
+            root.Controls.Add(_prompt, 0, 1);
+            root.Controls.Add(_build, 0, 2);
+            root.Controls.Add(_log, 0, 3);
+            root.Controls.Add(statusPanel, 0, 4);
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
+            root.RowCount = 6;
+            root.Controls.Add(feedbackPanel, 0, 5);
+            // Add controls row above feedback if desired (keeping layout minimal)
+            // root.Controls.Add(ctlRow, 0, 5);
+            Controls.Add(root);
+
+            // Initial statuses
+            // Subscribe to SOLIDWORKS events to clear/update the modified indicator
+            try
+            {
+                var swEventPtr = _swApp as SldWorks;
+                if (swEventPtr != null)
+                {
+                    // Subscribe to common global events; clear modified state when files open/new/doc change
+                    swEventPtr.ActiveModelDocChangeNotify += new DSldWorksEvents_ActiveModelDocChangeNotifyEventHandler(OnActiveModelDocChanged);
+                    swEventPtr.FileOpenPostNotify += new DSldWorksEvents_FileOpenPostNotifyEventHandler(OnFileOpenPostNotify);
+                    swEventPtr.FileNewNotify2 += new DSldWorksEvents_FileNewNotify2EventHandler(OnFileNewNotify2);
+                    swEventPtr.DocumentLoadNotify2 += new DSldWorksEvents_DocumentLoadNotify2EventHandler(OnDocumentLoadNotify2);
+                }
+            }
+            catch { }
+
+            SetLlmStatus("Idle", Color.DimGray);
+            SetDbStatus("Unknown", Color.DimGray);
+            SetSwStatus("Idle", Color.DimGray);
+            SetTimes(null, null);
+            SetLastError(null);
+            // Subscribe to the global addin logger so UI shows messages from other components
+            try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
+            // Initialize DB/logging and stores and append status details
+            try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
+        }
+
+        private Control BuildStatusConsolePanel()
+        {
+            var gb = new GroupBox { Text = "Status", Dock = DockStyle.Fill };
+            var panel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 3,
+                Padding = new Padding(6)
+            };
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));   // toolbar
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // console
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));    // error/copy row
+
+            // Toolbar
+            var bar = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, Dock = DockStyle.Fill, Height = 24, WrapContents = false };
+            _btnStatusCopyAll = new Button { Text = "Copy All", Height = 22, Width = 80 };
+            _btnStatusClear = new Button { Text = "Clear", Height = 22, Width = 70 };
+            var _btnSetApiKey = new Button { Text = "Set API Key", Height = 22, Width = 100 };
+            var _btnSignIn = new Button { Text = "Sign in", Height = 22, Width = 80 };
+            _btnStatusExpand = new Button { Text = "Expand", Height = 22, Width = 80 };
+            _btnStatusCopyAll.Click += (s, e) => { try { if (!string.IsNullOrEmpty(_statusConsole?.Text)) Clipboard.SetText(_statusConsole.Text); } catch { } };
+            _btnStatusClear.Click += (s, e) => { try { _statusConsole.Clear(); } catch { } };
+            _btnStatusExpand.Click += (s, e) => ToggleStatusExpand();
+            _btnSetApiKey.Click += (s, e) =>
+            {
+                try
+                {
+                    using (var dlg = new global::SolidWorks.TaskpaneCalculator.UI.CredentialDialog())
+                    {
+                        dlg.ShowDialog(this);
+                        if (dlg.Saved)
+                        {
+                            AppendStatusLine("[LLM] API key saved to Credential Manager");
+                        }
+                    }
+                }
+                catch (Exception ex) { AppendDetailedStatus("LLM", "Save key dialog error", ex); }
+            };
+            _btnSignIn.Click += async (s, e) =>
+            {
+                try
+                {
+                    _btnSignIn.Enabled = false;
+                    GoogleOAuthConfig.RefreshCache();
+                    var oauthConfig = GoogleOAuthConfig.Load();
+                    if (oauthConfig == null || string.IsNullOrWhiteSpace(oauthConfig.ClientId))
+                    {
+                        AppendDetailedStatus("LLM", "Google OAuth client configuration not found. Place client_secret*.json in the add-in folder or set GOOGLE_OAUTH_CLIENT_ID.", null);
+                        MessageBox.Show(this, "Google OAuth client configuration not found. Copy your client_secret*.json into the add-in folder and try again.", "Sign in", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
+                    AppendStatusLine("[LLM] Starting OAuth sign-in...");
+                    if (!string.IsNullOrWhiteSpace(oauthConfig.SourcePath))
+                    {
+                        AppendStatusLine("[LLM] Using OAuth client file: " + oauthConfig.SourcePath);
+                    }
+                    var configuredScopes = (oauthConfig.Scopes?.Count ?? 0) > 0 ? oauthConfig.Scopes : new[] { "https://www.googleapis.com/auth/cloud-platform" };
+                    var scopeArray = configuredScopes is string[] arr ? arr : new System.Collections.Generic.List<string>(configuredScopes).ToArray();
+                    string tokenJson = null;
+                    try
+                    {
+                        tokenJson = await Services.OAuthDesktopHelper.AuthorizeAsync(oauthConfig.ClientId, scopeArray);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendDetailedStatus("LLM", "OAuth flow failed", ex);
+                    }
+                    if (!string.IsNullOrWhiteSpace(tokenJson))
+                    {
+                        try
+                        {
+                            Services.TokenManager.SaveTokenJson(tokenJson);
+                            AppendStatusLine("[LLM] OAuth token saved to Credential Manager.");
+                        }
+                        catch (Exception ex)
+                        {
+                            AppendDetailedStatus("LLM", "Failed saving token", ex);
+                        }
+                    }
+                }
+                finally { _btnSignIn.Enabled = true; }
+            };
+            bar.Controls.Add(_btnStatusCopyAll);
+            bar.Controls.Add(_btnStatusClear);
+            bar.Controls.Add(_btnSetApiKey);
+            bar.Controls.Add(_btnSignIn);
+            bar.Controls.Add(_btnStatusExpand);
+
+            // Console-like box
+            _statusConsole = new RichTextBox
+            {
+                Dock = DockStyle.Fill,
+                ReadOnly = true,
+                BackColor = Color.FromArgb(30, 30, 30),
+                ForeColor = Color.Gainsboro,
+                Font = new Font("Consolas", 9f, FontStyle.Regular),
+                BorderStyle = BorderStyle.FixedSingle,
+                WordWrap = false,
+                HideSelection = false
+            };
+            var ctx = new ContextMenu();
+            ctx.MenuItems.Add(new MenuItem("Copy", (s, e) => { try { _statusConsole.Copy(); } catch { } }));
+            ctx.MenuItems.Add(new MenuItem("Copy All", (s, e) => { try { Clipboard.SetText(_statusConsole.Text); } catch { } }));
+            ctx.MenuItems.Add(new MenuItem("Select All", (s, e) => { try { _statusConsole.SelectAll(); } catch { } }));
+            _statusConsole.ContextMenu = ctx;
+
+            // Error row with copy
+            var errRow = new Panel { Dock = DockStyle.Fill };
+            _txtLastError = new TextBox { ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, Dock = DockStyle.Fill };
+            _btnCopyError = new Button { Text = "Copy Error", Dock = DockStyle.Right, Width = 90 };
+            _btnCopyError.Click += (s, e) =>
+            {
+                try
+                {
+                    var details = BuildErrorCopyText();
+                    if (!string.IsNullOrWhiteSpace(details)) Clipboard.SetText(details);
+                }
+                catch { }
+            };
+            _btnCopyRun = new Button { Text = "Copy Run", Dock = DockStyle.Right, Width = 90 };
+            _btnCopyRun.Click += (s, e) =>
+            {
+                try
+                {
+                    var details = BuildRunCopyText();
+                    if (!string.IsNullOrWhiteSpace(details)) Clipboard.SetText(details);
+                }
+                catch { }
+            };
+            errRow.Controls.Add(_txtLastError);
+            errRow.Controls.Add(_btnCopyRun);
+            errRow.Controls.Add(_btnCopyError);
+
+            panel.Controls.Add(bar, 0, 0);
+            panel.Controls.Add(_statusConsole, 0, 1);
+            panel.Controls.Add(errRow, 0, 2);
+            gb.Controls.Add(panel);
+            return gb;
+        }
+
+        // Initialize DB/logging and related stores at startup and append status lines
+        private void InitDbAndStores()
+        {
+            try
+            {
+                var baseDir = @"D:\SolidWorks API\7. SolidWorks Taskpane Text To CAD"; // workspace folder
+                _fileLogger = new FileDbLogger(baseDir);
+
+                var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI")
+                               ?? System.Environment.GetEnvironmentVariable("MONGO_LOG_CONN")
+                               ?? string.Empty;
+                var mongoDb = System.Environment.GetEnvironmentVariable("MONGODB_DB") ?? "TaskPaneAddin";
+                var mongoCol = System.Environment.GetEnvironmentVariable("MONGODB_COLLECTION") ?? "SW";
+                if (!string.IsNullOrWhiteSpace(mongoUri))
+                {
+                    try { _mongoLogger = new MongoLogger(mongoUri, mongoDb, mongoCol); } catch (Exception ex) { AppendDetailedStatus("DB:init", "MongoLogger ctor exception", ex); }
+                }
+
+                // Good feedback store
+                if (!string.IsNullOrWhiteSpace(mongoUri))
+                {
+                    try { _goodStore = new MongoFeedbackStore(mongoUri, mongoDb, "good_feedback"); }
+                    catch (Exception ex) { AppendDetailedStatus("DB:init", "MongoFeedbackStore ctor exception", ex); }
+                }
+                if (_goodStore == null)
+                {
+                    try { _goodStore = new SqliteFeedbackStore(baseDir); }
+                    catch (Exception ex) { AppendStatusLine("[DB:init] SqliteFeedbackStore ctor exception: " + ex.Message); _goodStore = new FileGoodFeedbackStore(baseDir); }
+                }
+
+                // Step store
+                if (!string.IsNullOrWhiteSpace(mongoUri))
+                {
+                    try { _stepStore = new MongoStepStore(mongoUri, mongoDb); }
+                    catch (Exception ex) { AppendDetailedStatus("DB:init", "MongoStepStore ctor exception", ex); }
+                }
+                if (_stepStore == null)
+                {
+                    try { _stepStore = new SqliteStepStore(baseDir); }
+                    catch (Exception ex) { AppendStatusLine("[DB:init] SqliteStepStore ctor exception: " + ex.Message); }
+                }
+
+                // Report status and details
+                if (_mongoLogger != null && _mongoLogger.IsAvailable)
+                {
+                    SetDbStatus("MongoDB ready", Color.DarkGreen);
+                    try
+                    {
+                        var info = Services.MongoLoggerExtensions.GetDebugInfo(_mongoLogger);
+                        foreach (var line in info)
+                        {
+                            AppendStatusLine("[DB] " + line);
+                        }
+                    }
+                    catch (Exception ex) { AppendDetailedStatus("DB", "debug info error", ex); }
+                }
+                else if (!string.IsNullOrWhiteSpace(_mongoLogger?.LastError))
+                {
+                    SetDbStatus("Mongo error: " + _mongoLogger.LastError, Color.Firebrick);
+                    AppendStatusLine("[DB] Mongo error: " + _mongoLogger.LastError);
+                }
+                else
+                {
+                    SetDbStatus("File/SQLite ready", Color.DarkGreen);
+                    AppendStatusLine("[DB] Logging using File/SQLite at: " + baseDir);
+                }
+            }
+            catch (Exception ex)
+            {
+                SetDbStatus("Init error", Color.Firebrick);
+                AppendDetailedStatus("DB:init", "exception", ex);
+            }
+        }
+
+        private void ToggleStatusExpand()
+        {
+            try
+            {
+                var parent = this.Parent as Control;
+                // We control by changing the RowStyles in the root layout
+                var root = this.Parent as TableLayoutPanel;
+                if (root == null && this.Controls.Count > 0) root = this.Controls[0] as TableLayoutPanel;
+            }
+            catch { }
+            _statusExpanded = !_statusExpanded;
+            _btnStatusExpand.Text = _statusExpanded ? "Collapse" : "Expand";
+            // Actual layout change could be handled by adjusting RowStyles; fallback below tweaks font size.
+            // Fallback: just change font size to simulate expand
+            if (_statusConsole != null)
+            {
+                _statusConsole.Font = new Font(_statusConsole.Font.FontFamily, _statusExpanded ? 10.5f : 9f);
+            }
+        }
+
+        private void AppendDbDebug()
+        {
+            try
+            {
+                if (_mongoLogger != null)
+                {
+                    foreach (var line in Services.MongoLoggerExtensions.GetDebugInfo(_mongoLogger))
+                    {
+                        AppendStatusLine("[DB:debug] " + line);
+                    }
+                    if (!string.IsNullOrWhiteSpace(_mongoLogger.LastError))
+                    {
+                        AppendStatusLine("[DB:debug] last_error: " + _mongoLogger.LastError);
+                    }
+                }
+                else
+                {
+                    AppendStatusLine("[DB:debug] Mongo not configured; using File/SQLite");
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("DB:debug", "exception", ex);
+            }
+        }
+
+        private Control BuildFeedbackPanel()
+        {
+            var gb = new GroupBox { Text = "Feedback", Dock = DockStyle.Fill };
+            var tl = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3, Padding = new Padding(6) };
+            tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
+            tl.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            tl.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+            tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));
+            tl.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            // Spacer row to keep empty space below the comment box
+            tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 10));
+
+            _btnThumbUp = new Button { Text = "Thumb Up", Dock = DockStyle.Fill };
+            _btnThumbDown = new Button { Text = "Thumb Down", Dock = DockStyle.Fill };
+            _txtFeedback = new TextBox { Dock = DockStyle.Fill };
+
+            _btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
+            _btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
+
+            tl.Controls.Add(_btnThumbUp, 0, 0);
+            tl.Controls.Add(_btnThumbDown, 2, 0);
+            tl.SetColumnSpan(_txtFeedback, 3);
+            tl.Controls.Add(_txtFeedback, 0, 1);
+            // Add an empty spacer row after the comment input
+            var spacer = new Panel { Dock = DockStyle.Fill }; // height controlled by RowStyle above
+            tl.SetColumnSpan(spacer, 3);
+            tl.Controls.Add(spacer, 0, 2);
+            gb.Controls.Add(tl);
+            return gb;
+        }
+
+        private void SetLlmStatus(string text, Color color)
+        {
+            if (_lblLlmStatus == null) return;
+            _lblLlmStatus.Text = text ?? string.Empty;
+            _lblLlmStatus.ForeColor = color;
+            AppendStatusLine($"[LLM] {text}");
+        }
+
+        private void SetDbStatus(string text, Color color)
+        {
+            if (_lblDbStatus == null) return;
+            _lblDbStatus.Text = text ?? string.Empty;
+            _lblDbStatus.ForeColor = color;
+            _lastDbStatus = text;
+            AppendStatusLine($"[DB] {text}");
+        }
+
+        private void SetSwStatus(string text, Color color)
+        {
+            if (_lblSwStatus == null) return;
+            _lblSwStatus.Text = text ?? string.Empty;
+            _lblSwStatus.ForeColor = color;
+            AppendStatusLine($"[SW] {text}");
+        }
+
+        private void SetTimes(TimeSpan? llm, TimeSpan? total)
+        {
+            if (_lblTimes == null) return;
+            if (llm.HasValue || total.HasValue)
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (llm.HasValue) parts.Add($"LLM {llm.Value.TotalMilliseconds:F0} ms");
+                if (total.HasValue) parts.Add($"Total {total.Value.TotalMilliseconds:F0} ms");
+                _lblTimes.Text = string.Join(", ", parts);
+                AppendStatusLine($"[Timing] {_lblTimes.Text}");
+            }
+            else
+            {
+                _lblTimes.Text = "—";
+            }
+        }
+
+        private void SetLastError(string err)
+        {
+            _lastError = err;
+            if (_txtLastError == null) return;
+            _txtLastError.Text = string.IsNullOrWhiteSpace(err) ? "—" : err;
+            _txtLastError.ForeColor = string.IsNullOrWhiteSpace(err) ? Color.DimGray : Color.Firebrick;
+            _btnCopyError.Enabled = !string.IsNullOrWhiteSpace(err);
+            if (!string.IsNullOrWhiteSpace(err)) AppendStatusLine($"[Error] {err}");
+        }
+
+        private string BuildErrorCopyText()
+        {
+            if (string.IsNullOrWhiteSpace(_lastError)) return null;
+            var sb = new StringBuilder();
+            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"Error: {_lastError}");
+            if (_lastLlm != TimeSpan.Zero || _lastTotal != TimeSpan.Zero)
+            {
+                sb.AppendLine($"LLM ms: {_lastLlm.TotalMilliseconds:F0}");
+                sb.AppendLine($"Total ms: {_lastTotal.TotalMilliseconds:F0}");
+            }
+            if (!string.IsNullOrWhiteSpace(_lastPrompt)) sb.AppendLine($"Prompt: {_lastPrompt}");
+            if (!string.IsNullOrWhiteSpace(_lastReply)) sb.AppendLine($"Reply: {_lastReply}");
+            return sb.ToString();
+        }
+
+        private string BuildRunCopyText()
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            if (!string.IsNullOrWhiteSpace(_lastModel)) sb.AppendLine($"Model: {_lastModel}");
+            if (!string.IsNullOrWhiteSpace(_lastPrompt)) sb.AppendLine($"Prompt: {_lastPrompt}");
+            if (!string.IsNullOrWhiteSpace(_lastReply)) sb.AppendLine($"Reply: {_lastReply}");
+            if (_lastLlm != TimeSpan.Zero || _lastTotal != TimeSpan.Zero)
+            {
+                sb.AppendLine($"LLM ms: {_lastLlm.TotalMilliseconds:F0}");
+                sb.AppendLine($"Total ms: {_lastTotal.TotalMilliseconds:F0}");
+            }
+            if (!string.IsNullOrWhiteSpace(_lastDbStatus)) sb.AppendLine($"DB: {_lastDbStatus}");
+            if (_lastDbLogged.HasValue) sb.AppendLine($"DbLogged: {_lastDbLogged.Value}");
+            if (!string.IsNullOrWhiteSpace(_lastError)) sb.AppendLine($"Error: {_lastError}");
+            return sb.ToString();
+        }
+
+        private GeminiClient GetClient()
+        {
+            if (_client == null)
+            {
+                // WARNING: Storing API keys directly in code is not secure.
+                // This is for demonstration purposes only.
+                var key = "AIzaSyBUzKATKs5ea0mTSmGziZDnDdjaDK1RpjE"; // <-- IMPORTANT: This key is now hardcoded.
+
+                if (key == "REPLACE_WITH_YOUR_KEY_DO_NOT_COMMIT")
+                {
+                    AppendDetailedStatus("LLM", "API Key is not set. Please edit UI/TextToCADTaskpane.cs and replace the placeholder key.", null);
+                    throw new InvalidOperationException("API Key is not set in the source code. Please edit UI/TextToCADTaskpane.cs.");
+                }
+
+                var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
+                                     ?? "gemini-1.0-pro"; // Updated to a more current model
+                _client = new GeminiClient(key, preferredModel);
+                AppendStatusLine("[LLM] Gemini client constructed with hardcoded API key.");
+                
+                // Initialize logging and data stores
+                var baseDir = @"D:\SolidWorks API\9. SolidWorks Taskpane Text To CAD"; // workspace folder
+                _fileLogger = new FileDbLogger(baseDir);
+
+                var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI") ?? string.Empty;
+                var mongoDb = System.Environment.GetEnvironmentVariable("MONGODB_DB") ?? "TaskPaneAddin";
+                
+                if (!string.IsNullOrWhiteSpace(mongoUri))
+                {
+                    try
+                    {
+                        _mongoLogger = new MongoLogger(mongoUri, mongoDb, "SW");
+                        _goodStore = new MongoFeedbackStore(mongoUri, mongoDb, "good_feedback");
+                        _stepStore = new MongoStepStore(mongoUri, mongoDb);
+                        AppendStatusLine("[DB] MongoDB stores initialized.");
+                    }
+                    catch (Exception ex) { AppendDetailedStatus("DB", "Mongo store initialization failed", ex); }
+                }
+
+                if (_goodStore == null)
+                {
+                    try { _goodStore = new SqliteFeedbackStore(baseDir); }
+                    catch { _goodStore = new FileGoodFeedbackStore(baseDir); }
+                }
+                if (_stepStore == null)
+                {
+                    try { _stepStore = new SqliteStepStore(baseDir); }
+                    catch { /* keep null if not available */ }
+                }
+
+                if (_mongoLogger != null && _mongoLogger.IsAvailable)
+                {
+                    SetDbStatus("MongoDB ready", Color.DarkGreen);
+                }
+                else
+                {
+                    SetDbStatus("File/SQLite ready", Color.DarkGreen);
+                }
+            }
+            return _client;
+        }
+
+        private async Task BuildFromPromptAsync()
+        {
+            var text = (_prompt.Text ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(text))
+            {
+                Log("Enter a prompt describing a simple box or cylinder in mm.");
+                return;
+            }
+
+            var totalSw = System.Diagnostics.Stopwatch.StartNew();
+            string reply = null;
+            string errText = null;
+            TimeSpan llmMs = TimeSpan.Zero;
+            StepExecutionResult exec = null;
+            try
+            {
+                _build.Enabled = false;
+                _lastPrompt = text;
+                Log("> " + text);
+                SetLlmStatus("Sending…", Color.DarkOrange);
+                SetLastError(null);
+                SetTimes(null, null);
+
+                // Ask Gemini to produce a corrective, executable plan of SOLIDWORKS steps (few-shot guided)
+                var fewshot = new StringBuilder()
+                    .Append("Examples:")
+                    .Append("\nInput: Box 100x50x25 mm")
+                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
+                    .Append("\nInput: Cylinder 40 dia x 80 mm")
+                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
+
+                // Add dynamic few-shots from SQLite good feedback
+                if (_goodStore != null)
+                {
+                    var extras = _goodStore.GetRecentFewShots(2);
+                    foreach (var s in extras)
+                    {
+                        fewshot.Append(s);
+                    }
+                }
+                // Add retrieval from step store
+                if (_stepStore != null)
+                {
+                    var more = _stepStore.GetRelevantFewShots(text, 3);
+                    foreach (var s in more) fewshot.Append(s);
+                }
+
+                var sysPrompt =
+                    "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
+                    "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
+                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + fewshot + "\nNow generate plan for: ";
+                var client = GetClient();
+                _lastModel = client?.Model;
+                var llmSw = System.Diagnostics.Stopwatch.StartNew();
+                reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
+                llmSw.Stop();
+                llmMs = llmSw.Elapsed;
+                _lastReply = reply;
+                Log(reply);
+                SetLlmStatus("OK", Color.DarkGreen);
+
+                // Try-corrective loop: up to 2 attempts; on failure, feed back error log to LLM to fix
+                SetSwStatus("Working…", Color.DarkOrange);
+                var attempt = 0;
+                var maxAttempts = 2;
+                string planJson = ExtractRawJson(reply);
+                Newtonsoft.Json.Linq.JObject planDoc = null;
+                for (; attempt < maxAttempts; attempt++)
+                {
+                    try
+                    {
+                        planDoc = Newtonsoft.Json.Linq.JObject.Parse(planJson);
+                    }
+                    catch (Exception ex)
+                    {
+                        errText = "plan-parse: " + ex.Message;
+                        break;
+                    }
+
+                    exec = Services.StepExecutor.Execute(planDoc, _swApp);
+                    if (exec.Success) break;
+
+                    // Build corrective prompt with error log for next attempt
+                    var errDoc = new JObject
+                    {
+                        ["last_plan"] = SafeJson(planJson),
+                        ["errors"] = new JArray(exec.Log)
+                    };
+                    var corrective =
+                        "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
+                        errDoc.ToString(Newtonsoft.Json.Formatting.None) +
+                        "\nRemember: output only JSON with steps; use Front Plane and mm units.";
+                    // If we created a model this attempt and failed, close it before retry
+                    try
+                    {
+                        if (exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
+                        {
+                            _swApp.CloseDoc(exec.ModelTitle);
+                        }
+                    }
+                    catch { }
+
+                    var llmFixSw = System.Diagnostics.Stopwatch.StartNew();
+                    var fixedPlan = await client.GenerateAsync(corrective);
+                    llmFixSw.Stop();
+                    llmMs += llmFixSw.Elapsed;
+                    planJson = ExtractRawJson(fixedPlan);
+                }
+
+                if (exec != null && exec.Success)
+                {
+                    Log("Model created.");
+                    SetSwStatus("OK", Color.DarkGreen);
+                    // Clear modified state after successful create/save
+                    try { SetModified(false); } catch { }
+                }
+                else
+                {
+                    var swError = (exec != null && exec.Log.Count > 0 && exec.Log[exec.Log.Count - 1].ContainsKey("error"))
+                        ? exec.Log[exec.Log.Count - 1].Value<string>("error")
+                        : (errText ?? "Unknown error");
+                    Log("SOLIDWORKS error: " + swError);
+                    SetSwStatus("Error", Color.Firebrick);
+                    if (string.IsNullOrWhiteSpace(errText)) errText = swError;
+                    SetLastError(swError);
+                    // Close any newly created model on final failure to avoid leftover document
+                    try
+                    {
+                        if (exec != null && exec.CreatedNewPart && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
+                        {
+                            _swApp.CloseDoc(exec.ModelTitle);
+                        }
+                    }
+                    catch { }
+                }
+                _lastLlm = llmMs;
+                _lastTotal = totalSw.Elapsed;
+                SetTimes(llmMs, totalSw.Elapsed);
+
+                // Persist to step store (runs + steps)
+                try
+                {
+                    _lastRunId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                    if (_stepStore != null)
+                    {
+                        var ok = await _stepStore.SaveRunWithStepsAsync(
+                            _lastRunId,
+                            text,
+                            _lastModel ?? "gemini",
+                            ExtractRawJson(_lastReply),
+                            exec,
+                            llmMs,
+                            totalSw.Elapsed,
+                            errText);
+                        if (!ok && !string.IsNullOrWhiteSpace(_stepStore.LastError))
+                        {
+                            SetDbStatus("StepStore error: " + _stepStore.LastError, Color.Firebrick);
+                        }
+                    }
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                errText = ex.Message;
+                Log("Error: " + ex.Message);
+                SetLlmStatus("Error", Color.Firebrick);
+                SetSwStatus("Error", Color.Firebrick);
+                SetLastError(ex.Message);
+                _lastLlm = llmMs;
+                _lastTotal = totalSw.Elapsed;
+                SetTimes(llmMs, totalSw.Elapsed);
+            }
+            finally
+            {
+                totalSw.Stop();
+                try
+                {
+                    SetDbStatus("Logging…", Color.DarkOrange);
+                    bool logged = false;
+                    // Try Mongo first
+                    if (_mongoLogger != null && _mongoLogger.IsAvailable)
+                    {
+                        logged = await _mongoLogger.LogAsync(text, reply, _lastModel ?? "gemini", llmMs, totalSw.Elapsed, errText);
+                        if (!logged && !string.IsNullOrWhiteSpace(_mongoLogger.LastError))
+                        {
+                            SetDbStatus("Mongo log error: " + _mongoLogger.LastError, Color.Firebrick);
+                        }
+                        else if (logged)
+                        {
+                            // Also insert detailed run doc into a secondary collection
+                            try
+                            {
+                                var doc = new MongoDB.Bson.BsonDocument
+                                {
+                                    { "runId", _lastRunId ?? DateTime.UtcNow.ToString("yyyyMMddHHmmssfff") },
+                                    { "timestamp", DateTime.UtcNow },
+                                    { "prompt", text },
+                                    { "model", _lastModel ?? "gemini" },
+                                    { "plan", ExtractRawJson(_lastReply ?? "{}") },
+                                    { "exec", MongoDB.Bson.Serialization.BsonSerializer.Deserialize<MongoDB.Bson.BsonArray>(ExecLogToJson(exec).ToString()) },
+                                    { "success", exec?.Success ?? false },
+                                    { "llmMs", (long)llmMs.TotalMilliseconds },
+                                    { "totalMs", (long)totalSw.Elapsed.TotalMilliseconds },
+                                    { "error", errText ?? string.Empty }
+                                };
+                                await _mongoLogger.InsertAsync("SW_Runs", doc);
+                            }
+                            catch { }
+                        }
+                    }
+
+                    // Fallback to file logger if Mongo failed/unavailable
+                    if (!logged && _fileLogger != null)
+                    {
+                        logged = await _fileLogger.LogAsync(text, reply, _lastModel ?? "gemini", llmMs, totalSw.Elapsed, errText);
+                        if (string.IsNullOrEmpty(_lastRunId)) _lastRunId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                        try
+                        {
+                            var doc = new JObject
+                            {
+                                ["runId"] = _lastRunId,
+                                ["timestamp"] = DateTime.UtcNow,
+                                ["prompt"] = text,
+                                ["model"] = _lastModel ?? "gemini",
+                                ["plan"] = SafeJson(ExtractRawJson(_lastReply)),
+                                ["exec"] = ExecLogToJson(exec),
+                                ["success"] = exec?.Success ?? false,
+                                ["llmMs"] = (long)llmMs.TotalMilliseconds,
+                                ["totalMs"] = (long)totalSw.Elapsed.TotalMilliseconds,
+                                ["error"] = errText ?? string.Empty
+                            };
+                            await _fileLogger.InsertAsync("SW_Runs", doc);
+                        }
+                        catch { }
+                    }
+
+                    _lastDbLogged = logged;
+                    SetDbStatus(logged ? "Logged" : "Log error", logged ? Color.DarkGreen : Color.Firebrick);
+                }
+                catch
+                {
+                    SetDbStatus("Log error (exception)", Color.Firebrick);
+                }
+                _build.Enabled = true;
+            }
+        }
+
+        private void SetModified(bool modified)
+        {
+            _isModified = modified;
+            if (_lblModified != null)
+            {
+                _lblModified.Visible = modified;
+            }
+        }
+
+        private string GetAddinVersion()
+        {
+            try
+            {
+                var asm = typeof(TextToCADTaskpane).Assembly;
+                var fileVer = System.Diagnostics.FileVersionInfo.GetVersionInfo(asm.Location)?.FileVersion;
+                if (!string.IsNullOrWhiteSpace(fileVer)) return "v" + fileVer;
+                var ver = asm.GetName().Version?.ToString();
+                return string.IsNullOrWhiteSpace(ver) ? "v?" : "v" + ver;
+            }
+            catch { return "v?"; }
+        }
+
+        // SOLIDWORKS event handlers (simple int-return signatures expected by COM)
+        private int OnFileSaved(int saveType, string fileName)
+        {
+            try
+            {
+                SetModified(false);
+            }
+            catch { }
+            return 0;
+        }
+
+        private int OnActiveModelDocChanged()
+        {
+            try
+            {
+                SetModified(false);
+            }
+            catch { }
+            return 0;
+        }
+
+        private int OnFileOpenPostNotify(string fileName)
+        {
+            try { SetModified(false); } catch { }
+            return 0;
+        }
+
+        private int OnFileNewNotify2(object newDoc, int docType, string templateName)
+        {
+            try { SetModified(false); } catch { }
+            return 0;
+        }
+
+        private int OnDocumentLoadNotify2(string docTitle, string docPath)
+        {
+            try { SetModified(false); } catch { }
+            return 0;
+        }
+
+        private static JToken SafeJson(string json)
+        {
+            try { return JToken.Parse(json); } catch { return (json ?? string.Empty); }
+        }
+
+        private async Task SubmitFeedbackAsync(bool up)
+        {
+            try
+            {
+                if (_fileLogger == null && _mongoLogger == null)
+                {
+                    SetDbStatus("Feedback not saved (no logger)", Color.DarkOrange);
+                    return;
+                }
+                var fb = new JObject
+                {
+                    ["runId"] = _lastRunId ?? string.Empty,
+                    ["timestamp"] = DateTime.UtcNow,
+                    ["thumb"] = up ? "up" : "down",
+                    ["comment"] = _txtFeedback?.Text ?? string.Empty,
+                    ["prompt"] = _lastPrompt ?? string.Empty,
+                    ["model"] = _lastModel ?? string.Empty
+                };
+                bool ok = false;
+                // Try Mongo first
+                if (_mongoLogger != null && _mongoLogger.IsAvailable)
+                {
+                    try
+                    {
+                        var bdoc = MongoDB.Bson.Serialization.BsonSerializer.Deserialize<MongoDB.Bson.BsonDocument>(fb.ToString());
+                        ok = await _mongoLogger.InsertAsync("Feedback", bdoc);
+                    }
+                    catch { ok = false; }
+                }
+                // Fallback to file
+                if (!ok && _fileLogger != null)
+                {
+                    ok = await _fileLogger.InsertAsync("Feedback", fb);
+                }
+                if (up && _goodStore != null)
+                {
+                    // Also persist to SQLite as a positive example
+                    // Try to capture the last plan from the last reply
+                    string plan = ExtractRawJson(_lastReply ?? "{}");
+                    var saved = await _goodStore.SaveGoodAsync(_lastRunId, _lastPrompt, _lastModel, plan, _txtFeedback?.Text);
+                    if (!saved && !string.IsNullOrWhiteSpace(_goodStore.LastError))
+                    {
+                        SetDbStatus("GoodStore error: " + _goodStore.LastError, Color.Firebrick);
+                    }
+                }
+                // Also mirror to step store
+                if (_stepStore != null)
+                {
+                    var s2ok = await _stepStore.SaveFeedbackAsync(_lastRunId, up, _txtFeedback?.Text);
+                    if (!s2ok && !string.IsNullOrWhiteSpace(_stepStore.LastError))
+                    {
+                        SetDbStatus("StepStore fb error: " + _stepStore.LastError, Color.Firebrick);
+                    }
+                }
+                SetDbStatus(ok ? "Feedback saved" : "Feedback error", ok ? Color.DarkGreen : Color.Firebrick);
+            }
+            catch (Exception ex)
+            {
+                SetDbStatus("Feedback error: " + ex.Message, Color.Firebrick);
+            }
+        }
+
+        private bool BuildModel(ShapeSpec spec, out string error)
+        {
+            error = null;
+            if (_swApp == null) { error = "SOLIDWORKS app not available"; return false; }
+
+            // New part
+            var model = (IModelDoc2)_swApp.NewDocument("", (int)swDwgPaperSizes_e.swDwgPaperA4size, 0, 0);
+            if (model == null)
+            {
+                // fallback using default part template setting
+                model = (IModelDoc2)_swApp.NewPart();
+            }
+            if (model == null) { error = "Failed to create new part (check default template)"; return false; }
+
+            int actErr = 0;
+            _swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr);
+
+            if (spec.Shape == "box")
+            {
+                if (!BuildBox(model, spec.LengthMm.Value, spec.WidthMm.Value, spec.HeightMm.Value, out error)) return false;
+            }
+            else if (spec.Shape == "cylinder")
+            {
+                if (!BuildCylinder(model, spec.DiameterMm.Value, spec.HeightMm.Value, out error)) return false;
+            }
+            return true;
+        }
+
+        private bool BuildBox(IModelDoc2 model, double length, double width, double height, out string error)
+        {
+            error = null;
+            var sketchMgr = model.SketchManager;
+            var featMgr = model.FeatureManager;
+
+            // Front plane
+            var sel = model.Extension.SelectByID2("Front Plane", "PLANE", 0, 0, 0, false, 0, null, 0);
+            if (!sel) { error = "Could not select Front Plane"; return false; }
+            sketchMgr.InsertSketch(true);
+
+            // Center rectangle on origin sized to length x width (mm -> m conversion factor = 0.001)
+            double L = length / 1000.0, W = width / 1000.0;
+            var rect = sketchMgr.CreateCenterRectangle(0, 0, 0, L / 2.0, W / 2.0, 0);
+            if (rect == null) { error = "Failed to create rectangle"; return false; }
+            sketchMgr.InsertSketch(true);
+
+            // Extrude by height
+            double H = height / 1000.0;
+            var feat = featMgr.FeatureExtrusion2(true,            // boss
+                                      false,
+                                      false,
+                                      (int)swEndConditions_e.swEndCondBlind,
+                                      (int)swEndConditions_e.swEndCondBlind,
+                                      H,
+                                      0,
+                                      false,
+                                      false,
+                                      false,
+                                      false,
+                                      0,
+                                      0,
+                                      false,
+                                      false,
+                                      false,
+                                      false,
+                                      true,
+                                      false,
+                                      false,
+                                      (int)swStartConditions_e.swStartSketchPlane,
+                                      0,
+                                      false);
+            if (feat == null) { error = "Extrude failed"; return false; }
+            return true;
+        }
+
+        private bool BuildCylinder(IModelDoc2 model, double diameter, double height, out string error)
+        {
+            error = null;
+            var sketchMgr = model.SketchManager;
+            var featMgr = model.FeatureManager;
+
+            // Front plane
+            var sel = model.Extension.SelectByID2("Front Plane", "PLANE", 0, 0, 0, false, 0, null, 0);
+            if (!sel) { error = "Could not select Front Plane"; return false; }
+            sketchMgr.InsertSketch(true);
+
+            // Circle at origin with diameter (mm)
+            double R = (diameter / 1000.0) / 2.0;
+            var circ = sketchMgr.CreateCircleByRadius(0, 0, 0, R);
+            if (circ == null) { error = "Failed to create circle"; return false; }
+            sketchMgr.InsertSketch(true);
+
+            // Extrude by height (mm)
+            double H = height / 1000.0;
+            var feat = featMgr.FeatureExtrusion2(true,
+                                      false,
+                                      false,
+                                      (int)swEndConditions_e.swEndCondBlind,
+                                      (int)swEndConditions_e.swEndCondBlind,
+                                      H,
+                                      0,
+                                      false,
+                                      false,
+                                      false,
+                                      false,
+                                      0,
+                                      0,
+                                      false,
+                                      false,
+                                      false,
+                                      false,
+                                      true,
+                                      false,
+                                      false,
+                                      (int)swStartConditions_e.swStartSketchPlane,
+                                      0,
+                                      false);
+            if (feat == null) { error = "Extrude failed"; return false; }
+            return true;
+        }
+
+        private bool TryParseSpec(string json, out ShapeSpec spec, out string error)
+        {
+            spec = null;
+            error = null;
+            try
+            {
+                var raw = ExtractRawJson(json);
+                var bytes = Encoding.UTF8.GetBytes(raw);
+                using (var ms = new System.IO.MemoryStream(bytes))
+                {
+                    var ser = new DataContractJsonSerializer(typeof(ShapeSpec));
+                    spec = (ShapeSpec)ser.ReadObject(ms);
+                }
+
+                if (spec == null || string.IsNullOrEmpty(spec.Shape)) { error = "missing shape"; return false; }
+                spec.Shape = spec.Shape.ToLowerInvariant();
+                if (spec.Shape == "box")
+                {
+                    if (!spec.LengthMm.HasValue || !spec.WidthMm.HasValue || !spec.HeightMm.HasValue)
+                    { error = "box requires length,width,height"; return false; }
+                }
+                else if (spec.Shape == "cylinder")
+                {
+                    if (!spec.DiameterMm.HasValue || !spec.HeightMm.HasValue)
+                    { error = "cylinder requires diameter,height"; return false; }
+                }
+                else
+                {
+                    error = "unsupported shape"; return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return false;
+            }
+        }
+
+        private string ExtractRawJson(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return "{}";
+            var t = text.Trim();
+
+            // Strip markdown code fences if present
+            if (t.StartsWith("```"))
+            {
+                var newline = t.IndexOf('\n');
+                if (newline >= 0)
+                {
+                    t = t.Substring(newline + 1);
+                    var fence = t.LastIndexOf("```", StringComparison.Ordinal);
+                    if (fence >= 0) t = t.Substring(0, fence);
+                    t = t.Trim();
+                }
+            }
+
+            // Extract the first balanced JSON object if extra text remains
+            int start = t.IndexOf('{');
+            if (start >= 0)
+            {
+                int depth = 0;
+                bool inString = false;
+                for (int i = start; i < t.Length; i++)
+                {
+                    char c = t[i];
+                    if (c == '"')
+                    {
+                        // naive toggle; sufficient for our simple JSON
+                        inString = !inString;
+                    }
+                    if (!inString)
+                    {
+                        if (c == '{') depth++;
+                        else if (c == '}')
+                        {
+                            depth--;
+                            if (depth == 0)
+                            {
+                                return t.Substring(start, i - start + 1);
+                            }
+                        }
+                    }
+                }
+                // unmatched braces; return best-effort
+                return t.Substring(start).Trim();
+            }
+
+            return t;
+        }
+
+        private void Log(string text)
+        {
+            _log.AppendText(text + "\n");
+            _log.SelectionStart = _log.TextLength;
+            _log.ScrollToCaret();
+        }
+
+        private void AppendStatusLine(string line)
+        {
+            try
+            {
+                if (_statusConsole == null) return;
+                var ts = DateTime.Now.ToString("HH:mm:ss");
+                _statusConsole.SelectionStart = _statusConsole.TextLength;
+                _statusConsole.SelectionColor = Color.Gainsboro;
+                _statusConsole.AppendText($"{ts} {line}\n");
+                _statusConsole.SelectionStart = _statusConsole.TextLength;
+                _statusConsole.ScrollToCaret();
+                try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
+            }
+            catch { }
+        }
+
+        // Mirror status console to a temp file for persistent debugging traces.
+        private void MirrorStatusToTempFile(string line)
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "TextToCAD_Status.log");
+                System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
+            }
+            catch { }
+        }
+
+        // Append a detailed status entry including exception stack traces when available.
+        // This is safe to call even when loggers are not yet initialized.
+        private void AppendDetailedStatus(string category, string message, Exception ex)
+        {
+            try
+            {
+                var header = string.IsNullOrWhiteSpace(message) ? $"[{category}]" : $"[{category}] {message}";
+                AppendStatusLine(header);
+                if (ex != null)
+                {
+                    // Include full exception.ToString() which contains stack trace and inner exceptions
+                    var full = ex.ToString();
+                    var lines = full.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var ln in lines)
+                    {
+                        AppendStatusLine("  " + ln.Trim());
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private JArray ExecLogToJson(StepExecutionResult exec)
+        {
+            var arr = new JArray();
+            if (exec?.Log != null)
+            {
+                foreach (var entry in exec.Log)
+                {
+                    arr.Add(entry);
+                }
+            }
+            return arr;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _client?.Dispose();
+            }
+            base.Dispose(disposing);
+        }
+    }
+
+    [DataContract]
+    internal class ShapeSpec
+    {
+        [DataMember(Name = "shape")]
+        public string Shape { get; set; }
+
+        [DataMember(Name = "length", EmitDefaultValue = false)]
+        public double? LengthMm { get; set; }
+
+        [DataMember(Name = "width", EmitDefaultValue = false)]
+        public double? WidthMm { get; set; }
+
+        [DataMember(Name = "height", EmitDefaultValue = false)]
+        public double? HeightMm { get; set; }
+
+        [DataMember(Name = "diameter", EmitDefaultValue = false)]
+        public double? DiameterMm { get; set; }
+    }
+}

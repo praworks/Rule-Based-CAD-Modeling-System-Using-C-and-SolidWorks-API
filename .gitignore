@@ -1,0 +1,9 @@
+# Ignore local API key file
+GEMINI_API_KEY.txt
+client_secret_*.json
+
+# Build artifacts
+bin/
+obj/
+*.user
+*.suo

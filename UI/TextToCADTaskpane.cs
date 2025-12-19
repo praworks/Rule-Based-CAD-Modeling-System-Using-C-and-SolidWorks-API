@@ -7,10 +7,10 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
-using SolidWorks.TaskpaneCalculator.Services;
+using AICAD.Services;
 using Newtonsoft.Json.Linq;
 
-namespace SolidWorks.TaskpaneCalculator.UI
+namespace AICAD.UI
 {
     public class TextToCADTaskpane : UserControl
     {
@@ -217,7 +217,7 @@ namespace SolidWorks.TaskpaneCalculator.UI
             {
                 try
                 {
-                    using (var dlg = new global::SolidWorks.TaskpaneCalculator.UI.CredentialDialog())
+                    using (var dlg = new global::AICAD.UI.CredentialDialog())
                     {
                         dlg.ShowDialog(this);
                         if (dlg.Saved)

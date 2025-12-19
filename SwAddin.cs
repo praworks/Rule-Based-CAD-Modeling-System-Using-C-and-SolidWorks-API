@@ -4,9 +4,9 @@ using Microsoft.Win32;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
-using SolidWorks.TaskpaneCalculator.Services;
+using AICAD.Services;
 
-namespace SolidWorks.TaskpaneCalculator
+namespace AICAD
 {
     [ComVisible(true)]
     [Guid("D5B8E2F9-2F3E-4D44-907F-2B983D32AF37")]

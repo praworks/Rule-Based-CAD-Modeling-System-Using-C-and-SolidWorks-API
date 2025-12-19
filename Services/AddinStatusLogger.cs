@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     // Simple global logger for the Add-in which raises events and optionally writes to a local file.
     public static class AddinStatusLogger

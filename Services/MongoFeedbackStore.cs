@@ -4,7 +4,7 @@ using System.Threading.Tasks;
 using MongoDB.Bson;
 using MongoDB.Driver;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     internal class MongoFeedbackStore : IGoodFeedbackStore
     {

@@ -7,7 +7,7 @@ using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     internal class SqliteStepStore : IStepStore
     {

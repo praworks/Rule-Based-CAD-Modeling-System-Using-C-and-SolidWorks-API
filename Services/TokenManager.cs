@@ -8,7 +8,7 @@ using System.Runtime.Serialization.Json;
 using System.IO;
 using Newtonsoft.Json.Linq;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     public static class TokenManager
     {

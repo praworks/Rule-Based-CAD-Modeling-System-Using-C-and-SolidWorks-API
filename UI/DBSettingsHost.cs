@@ -2,7 +2,7 @@ using System;
 using System.Windows.Forms;
 using System.Windows.Forms.Integration;
 
-namespace SolidWorks.TaskpaneCalculator.UI
+namespace AICAD.UI
 {
     public class DBSettingsHost : UserControl
     {

@@ -3,7 +3,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Diagnostics;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     // Minimal wrapper to read Generic Credentials from Windows Credential Manager
     public static class CredentialManager

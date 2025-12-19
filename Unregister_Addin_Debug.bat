@@ -2,7 +2,7 @@
 setlocal
 REM Run as Administrator
 set REGASM64="C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
-set DLL_PATH="%~dp0bin\Debug\SolidWorks.TaskpaneCalculator.dll"
+set DLL_PATH="%~dp0bin\Debug\AI-CAD-December.dll"
 
 if not exist %REGASM64% (
   echo Could not find RegAsm at %REGASM64%

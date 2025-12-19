@@ -1,9 +1,9 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
-using SolidWorks.TaskpaneCalculator.Services;
+using AICAD.Services;
 
-namespace SolidWorks.TaskpaneCalculator.UI
+namespace AICAD.UI
 {
     public class CredentialDialog : Form
     {

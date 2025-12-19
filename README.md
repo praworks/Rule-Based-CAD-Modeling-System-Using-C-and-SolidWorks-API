@@ -5,7 +5,7 @@ A SolidWorks taskpane add-in that turns natural language into simple 3D models.
 Type a prompt like "box 100x50x25 mm" or "cylinder Ø40 x 80 mm" and it creates a new part with the requested features.
 
 ## Build
-- Open `SolidWorks.TaskpaneCalculator.sln` in Visual Studio (or build with MSBuild).
+- Open `AI-CAD.sln` in Visual Studio (or build with MSBuild).
 - Requires Visual Studio with .NET Framework 4.7.2 targeting pack and SolidWorks Interop assemblies (already referenced in `References/`).
 - Project targets x64 and embeds interop types.
 

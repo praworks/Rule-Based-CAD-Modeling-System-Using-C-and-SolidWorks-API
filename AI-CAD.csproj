@@ -7,12 +7,13 @@
     <ProjectGuid>{4ED36076-EBCF-42EF-90D8-21BEAF2A523D}</ProjectGuid>
     <OutputType>Library</OutputType>
     <AppDesignerFolder>Properties</AppDesignerFolder>
-    <RootNamespace>SolidWorks.TaskpaneCalculator</RootNamespace>
-    <AssemblyName>SolidWorks.TaskpaneCalculator</AssemblyName>
+    <RootNamespace>AICAD</RootNamespace>
+    <AssemblyName>AI-CAD-December</AssemblyName>
     <TargetFrameworkVersion>v4.7.2</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
+    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\build_obj\</BaseIntermediateOutputPath>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -128,7 +129,7 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
     <PackageReference Include="MongoDB.Driver" Version="2.23.1" />
-    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="4.5.3" />
+    <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="5.0.0" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

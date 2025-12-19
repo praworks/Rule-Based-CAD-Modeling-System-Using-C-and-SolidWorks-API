@@ -8,7 +8,7 @@ using MongoDB.Bson;
 using MongoDB.Driver;
 using System.Threading.Tasks;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     /// <summary>
     /// Lightweight Mongo logger backed by MongoDB.Driver.

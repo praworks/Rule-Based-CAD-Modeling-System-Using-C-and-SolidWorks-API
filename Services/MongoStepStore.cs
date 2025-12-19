@@ -7,7 +7,7 @@ using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
 using Newtonsoft.Json.Linq;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     internal class MongoStepStore : IStepStore
     {

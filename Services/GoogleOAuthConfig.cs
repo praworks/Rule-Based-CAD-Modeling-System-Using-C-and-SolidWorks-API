@@ -4,7 +4,7 @@ using System.IO;
 using System.Reflection;
 using Newtonsoft.Json.Linq;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     /// <summary>
     /// Helper for locating Google OAuth client configuration (client id/secret) either from

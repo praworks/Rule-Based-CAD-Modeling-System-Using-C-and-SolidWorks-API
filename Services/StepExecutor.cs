@@ -5,7 +5,7 @@ using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     internal class StepExecutionResult
     {

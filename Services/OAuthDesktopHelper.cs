@@ -10,7 +10,7 @@ using System.Runtime.Serialization.Json;
 using System.IO;
 using System.Net.Sockets;
 
-namespace SolidWorks.TaskpaneCalculator.Services
+namespace AICAD.Services
 {
     // Minimal Desktop OAuth (PKCE + loopback) helper for Google OAuth
     // Usage: call OAuthDesktopHelper.AuthorizeAsync(clientId, scopes) to get a JSON token response.

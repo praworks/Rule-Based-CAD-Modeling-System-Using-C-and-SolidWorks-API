@@ -2,9 +2,9 @@ using System;
 using System.Drawing;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-using SolidWorks.TaskpaneCalculator.Services;
+using AICAD.Services;
 
-namespace SolidWorks.TaskpaneCalculator.UI
+namespace AICAD.UI
 {
     public class GeminiChatTaskpane : UserControl
     {
@@ -59,7 +59,7 @@ namespace SolidWorks.TaskpaneCalculator.UI
         {
             if (_client == null)
             {
-                var key = global::SolidWorks.TaskpaneCalculator.Services.CredentialManager.ReadGenericSecret("SolidWorksTextToCAD_GEMINI_API_KEY")
+                var key = global::AICAD.Services.CredentialManager.ReadGenericSecret("SolidWorksTextToCAD_GEMINI_API_KEY")
                           ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User)
                           ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.Process)
                           ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.Machine);

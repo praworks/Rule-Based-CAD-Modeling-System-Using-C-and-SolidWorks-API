@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 
-namespace SolidWorks.TaskpaneCalculator.UI
+namespace AICAD.UI
 {
     public partial class DBSettingsControl : UserControl
     {

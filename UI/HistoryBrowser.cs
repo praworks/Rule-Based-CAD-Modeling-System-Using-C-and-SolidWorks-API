@@ -2,9 +2,9 @@ using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
-using SolidWorks.TaskpaneCalculator.Services;
+using AICAD.Services;
 
-namespace SolidWorks.TaskpaneCalculator.UI
+namespace AICAD.UI
 {
     internal class HistoryBrowser : Form
     {

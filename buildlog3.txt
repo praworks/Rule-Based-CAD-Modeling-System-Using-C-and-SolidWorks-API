@@ -1,0 +1,7 @@
+Rebuild started at 10:34 PM...
+1>------ Rebuild All started: Project: AI-CAD, Configuration: Debug Any CPU ------
+1>D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\Services\SqliteFeedbackStore.cs(3,19,3,25): error CS0234: The type or namespace name 'SQLite' does not exist in the namespace 'System.Data' (are you missing an assembly reference?)
+1>D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\Services\SqliteStepStore.cs(3,19,3,25): error CS0234: The type or namespace name 'SQLite' does not exist in the namespace 'System.Data' (are you missing an assembly reference?)
+========== Rebuild All: 0 succeeded, 1 failed, 0 skipped ==========
+========== Rebuild completed at 10:34 PM and took 02.369 seconds ==========
+

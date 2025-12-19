@@ -51,8 +51,8 @@ namespace AICAD.UI
         private Button _btnThumbDown;
         private TextBox _txtFeedback;
         private string _lastRunId;
-    private IStepStore _stepStore; // NEW
-    private Button _btnHistory; // NEW
+    private IStepStore _stepStore;
+    private Button _btnHistory;
 
         public TextToCADTaskpane(ISldWorks swApp)
         {
@@ -137,8 +137,15 @@ namespace AICAD.UI
             // Status panel (bottom)
             var statusPanel = BuildStatusConsolePanel();
             var feedbackPanel = BuildFeedbackPanel();
-            var ctlRow = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight, Height = 28 };
-            _btnHistory = new Button { Text = "History", Width = 80, Height = 24 };
+            var ctlRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.RightToLeft,
+                Height = 32,
+                Padding = new Padding(0, 4, 0, 0),
+                WrapContents = false
+            };
+            _btnHistory = new Button { Text = "History", Width = 80, Height = 26 };
             _btnHistory.Click += (s, e) =>
             {
                 try
@@ -156,10 +163,10 @@ namespace AICAD.UI
             root.Controls.Add(_log, 0, 3);
             root.Controls.Add(statusPanel, 0, 4);
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
-            root.RowCount = 6;
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            root.RowCount = 7;
             root.Controls.Add(feedbackPanel, 0, 5);
-            // Add controls row above feedback if desired (keeping layout minimal)
-            // root.Controls.Add(ctlRow, 0, 5);
+            root.Controls.Add(ctlRow, 0, 6);
             Controls.Add(root);
 
             // Initial statuses
@@ -462,8 +469,8 @@ namespace AICAD.UI
             // Spacer row to keep empty space below the comment box
             tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 10));
 
-            _btnThumbUp = new Button { Text = "Thumb Up", Dock = DockStyle.Fill };
-            _btnThumbDown = new Button { Text = "Thumb Down", Dock = DockStyle.Fill };
+            _btnThumbUp = new Button { Text = "👍", Dock = DockStyle.Fill };
+            _btnThumbDown = new Button { Text = "👎", Dock = DockStyle.Fill };
             _txtFeedback = new TextBox { Dock = DockStyle.Fill };
 
             _btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);

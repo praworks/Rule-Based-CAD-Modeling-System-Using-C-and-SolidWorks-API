@@ -118,7 +118,7 @@
     <Compile Include="UI\DBSettingsControl.xaml.cs">
       <DependentUpon>DBSettingsControl.xaml</DependentUpon>
     </Compile>
-    <Compile Include="SwAddinNew.cs" />
+    <Compile Include="UI\SettingsDialog.cs" />
     <Page Include="UI\DBSettingsControl.xaml">
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
@@ -130,6 +130,26 @@
     <PackageReference Include="System.Data.SQLite.Core" Version="1.0.118" />
     <PackageReference Include="MongoDB.Driver" Version="2.23.1" />
     <PackageReference Include="System.Runtime.CompilerServices.Unsafe" Version="5.0.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Reference Include="Newtonsoft.Json">
+      <HintPath>bin\Debug\Newtonsoft.Json.dll</HintPath>
+    </Reference>
+    <Reference Include="MongoDB.Driver">
+      <HintPath>bin\Debug\MongoDB.Driver.dll</HintPath>
+    </Reference>
+    <Reference Include="MongoDB.Bson">
+      <HintPath>bin\Debug\MongoDB.Bson.dll</HintPath>
+    </Reference>
+    <Reference Include="MongoDB.Driver.Core">
+      <HintPath>bin\Debug\MongoDB.Driver.Core.dll</HintPath>
+    </Reference>
+    <Reference Include="MongoDB.Libmongocrypt">
+      <HintPath>bin\Debug\MongoDB.Libmongocrypt.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Data.SQLite">
+      <HintPath>bin\Debug\System.Data.SQLite.dll</HintPath>
+    </Reference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

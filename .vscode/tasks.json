@@ -1,0 +1,16 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "Build AI-CAD Project",
+			"type": "shell",
+			"command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe",
+			"args": [
+				"AI-CAD.sln",
+				"/rebuild",
+				"Debug|Any CPU"
+			],
+			"group": "build"
+		}
+	]
+}

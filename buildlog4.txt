@@ -1,0 +1,10 @@
+Rebuild started at 10:35 PM...
+1>------ Rebuild All started: Project: AI-CAD, Configuration: Debug Any CPU ------
+1>D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\UI\TextToCADTaskpane.cs(31,19,31,31): warning CS0649: Field 'TextToCADTaskpane._lblSwStatus' is never assigned to, and will always have its default value null
+1>D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\UI\TextToCADTaskpane.cs(29,19,29,32): warning CS0649: Field 'TextToCADTaskpane._lblLlmStatus' is never assigned to, and will always have its default value null
+1>D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\UI\TextToCADTaskpane.cs(32,19,32,28): warning CS0649: Field 'TextToCADTaskpane._lblTimes' is never assigned to, and will always have its default value null
+1>D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\UI\TextToCADTaskpane.cs(30,19,30,31): warning CS0649: Field 'TextToCADTaskpane._lblDbStatus' is never assigned to, and will always have its default value null
+1>  AI-CAD -> d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\AI-CAD-December.dll
+========== Rebuild All: 1 succeeded, 0 failed, 0 skipped ==========
+========== Rebuild completed at 10:35 PM and took 02.343 seconds ==========
+

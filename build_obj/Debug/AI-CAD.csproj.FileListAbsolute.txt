@@ -1,0 +1,11 @@
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD.csproj.AssemblyReference.cache
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\UI\DBSettingsControl.baml
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\UI\DBSettingsControl.g.cs
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December_MarkupCompile.cache
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.g.resources
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD.csproj.CoreCompileInputs.cache
+D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\AI-CAD-December.dll
+D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\AI-CAD-December.pdb
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD.csproj.Up2Date
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.dll
+d:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.pdb

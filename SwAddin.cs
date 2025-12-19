@@ -101,7 +101,7 @@ namespace AICAD
                 using (var rk = Registry.LocalMachine.CreateSubKey(addinKey))
                 {
                     rk?.SetValue(null, 1); // Load/visible
-                    rk?.SetValue("Title", "AI-CAD");
+                    rk?.SetValue("Title", "AI-CAD-December");
                     rk?.SetValue("Description", "AI-assisted CAD taskpane for generating simple parametric models from natural language.");
                 }
 

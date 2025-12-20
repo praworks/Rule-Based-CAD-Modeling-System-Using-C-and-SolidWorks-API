@@ -22,10 +22,11 @@ namespace AICAD.UI
         public StatusWindow()
         {
             Text = "AI-CAD-December - Status Console";
-            Size = new Size(800, 600);
+            Size = new Size(800, 40);
             StartPosition = FormStartPosition.CenterParent;
             MinimizeBox = true;
             MaximizeBox = true;
+            BackColor = Color.FromArgb(179, 229, 179);  // Pastel green
             
             BuildUI();
         }
@@ -37,7 +38,8 @@ namespace AICAD.UI
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
                 RowCount = 3,
-                Padding = new Padding(10)
+                Padding = new Padding(10),
+                BackColor = Color.FromArgb(179, 229, 179)  // Pastel green
             };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));    // toolbar
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // console
@@ -96,8 +98,8 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
-                BackColor = Color.FromArgb(30, 30, 30),
-                ForeColor = Color.Gainsboro,
+                BackColor = Color.FromArgb(220, 245, 220),
+                ForeColor = Color.Black,
                 Font = new Font("Consolas", 9f, FontStyle.Regular),
                 BorderStyle = BorderStyle.FixedSingle,
                 WordWrap = false,

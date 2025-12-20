@@ -11,6 +11,15 @@
 				"Debug|Any CPU"
 			],
 			"group": "build"
+		},
+		{
+			"label": "Build + Register AI-CAD (Admin)",
+			"type": "process",
+			"command": "${workspaceFolder}\\BuildAndRegister.bat",
+			"options": {
+				"cwd": "${workspaceFolder}"
+			},
+			"problemMatcher": []
 		}
 	]
 }

@@ -18,7 +18,7 @@ namespace AICAD.UI
     private Label _lblModified;
     private Label _lblVersion;
     private bool _isModified = false;
-        private readonly RichTextBox _log;
+        private readonly Label _log;
         private readonly TextBox _prompt;
         private readonly Button _build;
         private readonly ComboBox _shapePreset;
@@ -45,23 +45,52 @@ namespace AICAD.UI
         private string _lastRunId;
     private IStepStore _stepStore;
     private Button _btnHistory;
+    private Label _lblRealTimeStatus;
 
         public TextToCADTaskpane(ISldWorks swApp)
         {
             _swApp = swApp;
             Dock = DockStyle.Fill;
+            // Root: two rows. Row 0 holds all content; Row 1 pins buttons to bottom.
             var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 1,
-                RowCount = 5,
+                RowCount = 2,
                 Padding = new Padding(6)
             };
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));  // presets
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));   // prompt
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // build
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));   // controls
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // log
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // content
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // controls (buttons at bottom)
+
+            // Content: presets, prompt, build, status, log
+            var content = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 1,
+                RowCount = 7,
+                Padding = new Padding(0)
+            };
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));  // presets
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));   // prompt
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // build
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));   // status label
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));   // log strip
+            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));   // thumbs row
+            content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // spacer to absorb extra height
+            var thumbsRow = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.LeftToRight,
+                Height = 28,
+                Padding = new Padding(6, 2, 6, 2),
+                WrapContents = false
+            };
+            _btnThumbUp = new Button { Text = "👍", Width = 36, Height = 24, Margin = new Padding(0, 0, 6, 0) };
+            _btnThumbDown = new Button { Text = "👎", Width = 36, Height = 24 };
+            _btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
+            _btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
+            thumbsRow.Controls.Add(_btnThumbUp);
+            thumbsRow.Controls.Add(_btnThumbDown);
 
             // Presets
             var presetRow = new Panel { Dock = DockStyle.Fill, Height = 28 };
@@ -118,8 +147,8 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.RightToLeft,
-                Height = 36,
-                Padding = new Padding(0, 4, 0, 0),
+                Height = 32,
+                Padding = new Padding(0, 3, 0, 0),
                 WrapContents = false
             };
 
@@ -172,13 +201,43 @@ namespace AICAD.UI
             ctlRow.Controls.Add(statusBtn);
             ctlRow.Controls.Add(settingsBtn);
 
-            _log = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = SystemColors.Window };
+            _lblRealTimeStatus = new Label
+            {
+                Text = "Ready",
+                AutoSize = false,
+                Dock = DockStyle.Fill,
+                Height = 30,
+                ForeColor = Color.DimGray,
+                Padding = new Padding(6, 4, 6, 4),
+                TextAlign = ContentAlignment.MiddleLeft
+            };
 
-            root.Controls.Add(presetRow, 0, 0);
-            root.Controls.Add(_prompt, 0, 1);
-            root.Controls.Add(_build, 0, 2);
-            root.Controls.Add(ctlRow, 0, 3);
-            root.Controls.Add(_log, 0, 4);
+            _log = new Label
+            {
+                Dock = DockStyle.Fill,
+                Height = 30,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(6, 7, 6, 7),
+                BackColor = Color.WhiteSmoke,
+                ForeColor = Color.DimGray,
+                BorderStyle = BorderStyle.FixedSingle,
+                MinimumSize = new Size(0, 30),
+                MaximumSize = new Size(0, 30)
+            };
+
+            // Build content layout (top to bottom)
+            content.Controls.Add(presetRow, 0, 0);
+            content.Controls.Add(_prompt, 0, 1);
+            content.Controls.Add(_build, 0, 2);
+            content.Controls.Add(_lblRealTimeStatus, 0, 3);
+            content.Controls.Add(_log, 0, 4);
+            content.Controls.Add(thumbsRow, 0, 5);
+            // Spacer keeps log from stretching when the pane is tall.
+            content.Controls.Add(new Panel { Dock = DockStyle.Fill }, 0, 6);
+
+            // Root: content + bottom buttons
+            root.Controls.Add(content, 0, 0);
+            root.Controls.Add(ctlRow, 0, 1);
 
             Controls.Add(root);
 
@@ -333,6 +392,14 @@ namespace AICAD.UI
             tl.Controls.Add(spacer, 0, 2);
             gb.Controls.Add(tl);
             return gb;
+        }
+
+        private void SetRealTimeStatus(string text, Color color)
+        {
+            if (_lblRealTimeStatus == null) return;
+            _lblRealTimeStatus.Text = text ?? string.Empty;
+            _lblRealTimeStatus.ForeColor = color;
+            AppendStatusLine($"[Status] {text}");
         }
 
         private void SetLlmStatus(string text, Color color)
@@ -507,6 +574,7 @@ namespace AICAD.UI
                 _build.Enabled = false;
                 _lastPrompt = text;
                 Log("> " + text);
+                SetRealTimeStatus("Communicating with LLM…", Color.DarkOrange);
                 SetLlmStatus("Sending…", Color.DarkOrange);
                 SetLastError(null);
                 SetTimes(null, null);
@@ -541,15 +609,18 @@ namespace AICAD.UI
                     "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + fewshot + "\nNow generate plan for: ";
                 var client = GetClient();
                 _lastModel = client?.Model;
+                SetRealTimeStatus("Applying few-shot examples…", Color.DarkOrange);
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
                 llmSw.Stop();
                 llmMs = llmSw.Elapsed;
                 _lastReply = reply;
                 Log(reply);
+                SetRealTimeStatus("Received response from LLM", Color.DarkGreen);
                 SetLlmStatus("OK", Color.DarkGreen);
 
                 // Try-corrective loop: up to 2 attempts; on failure, feed back error log to LLM to fix
+                SetRealTimeStatus("Executing plan…", Color.DarkOrange);
                 SetSwStatus("Working…", Color.DarkOrange);
                 var attempt = 0;
                 var maxAttempts = 2;
@@ -600,6 +671,7 @@ namespace AICAD.UI
                 if (exec != null && exec.Success)
                 {
                     Log("Model created.");
+                    SetRealTimeStatus("Creating model…", Color.DarkOrange);
                     SetSwStatus("OK", Color.DarkGreen);
                     // Clear modified state after successful create/save
                     try { SetModified(false); } catch { }
@@ -610,6 +682,7 @@ namespace AICAD.UI
                         ? exec.Log[exec.Log.Count - 1].Value<string>("error")
                         : (errText ?? "Unknown error");
                     Log("SOLIDWORKS error: " + swError);
+                    SetRealTimeStatus("Error: " + swError, Color.Firebrick);
                     SetSwStatus("Error", Color.Firebrick);
                     if (string.IsNullOrWhiteSpace(errText)) errText = swError;
                     SetLastError(swError);
@@ -654,6 +727,7 @@ namespace AICAD.UI
             {
                 errText = ex.Message;
                 Log("Error: " + ex.Message);
+                SetRealTimeStatus("Error: " + ex.Message, Color.Firebrick);
                 SetLlmStatus("Error", Color.Firebrick);
                 SetSwStatus("Error", Color.Firebrick);
                 SetLastError(ex.Message);
@@ -666,6 +740,7 @@ namespace AICAD.UI
                 totalSw.Stop();
                 try
                 {
+                    SetRealTimeStatus("Saving feedback to database…", Color.DarkOrange);
                     SetDbStatus("Logging…", Color.DarkOrange);
                     bool logged = false;
                     // Try Mongo first
@@ -727,10 +802,12 @@ namespace AICAD.UI
 
                     _lastDbLogged = logged;
                     SetDbStatus(logged ? "Logged" : "Log error", logged ? Color.DarkGreen : Color.Firebrick);
+                    SetRealTimeStatus(logged ? "Completed" : "Error logging", logged ? Color.DarkGreen : Color.Firebrick);
                 }
                 catch
                 {
                     SetDbStatus("Log error (exception)", Color.Firebrick);
+                    SetRealTimeStatus("Error logging", Color.Firebrick);
                 }
                 _build.Enabled = true;
             }
@@ -1077,9 +1154,14 @@ namespace AICAD.UI
 
         private void Log(string text)
         {
-            _log.AppendText(text + "\n");
-            _log.SelectionStart = _log.TextLength;
-            _log.ScrollToCaret();
+            if (_log.InvokeRequired)
+            {
+                _log.Invoke(new Action(() => _log.Text = text));
+            }
+            else
+            {
+                _log.Text = text;
+            }
         }
 
         private void AppendStatusLine(string line)

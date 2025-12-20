@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
 using SolidWorks.Interop.sldworks;
@@ -28,7 +29,8 @@ namespace AICAD
             try
             {
                 // Create AI-CAD-December Taskpane (main)
-                _textToCadTaskpaneView = _app.CreateTaskpaneView2(string.Empty, "AI-CAD-December");
+                var iconPath = TryGetTaskpaneIconPath();
+                _textToCadTaskpaneView = _app.CreateTaskpaneView2(iconPath, "AI-CAD-December");
                 _textToCadControl = new UI.TextToCADTaskpane(_app);
                 _textToCadTaskpaneView.DisplayWindowFromHandlex64(_textToCadControl.Handle.ToInt64());
                 try { AddinStatusLogger.Log("AICadAddin", "Created AI-CAD-December taskpane"); } catch { }
@@ -41,6 +43,29 @@ namespace AICAD
 
             try { AddinStatusLogger.Log("AICadAddin", "ConnectToSW completed"); } catch { }
             return true;
+        }
+
+        private static string TryGetTaskpaneIconPath()
+        {
+            try
+            {
+                // 1) Allow overriding via environment variable
+                var envIcon = System.Environment.GetEnvironmentVariable("AICAD_TASKPANE_ICON")?.Trim('"');
+                if (!string.IsNullOrWhiteSpace(envIcon) && File.Exists(envIcon)) return envIcon;
+
+                // 2) Look in app folder Resources for common names
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                string[] candidates = new[]
+                {
+                    Path.Combine(baseDir, "Resources", "taskpane_icon.bmp"),
+                    Path.Combine(baseDir, "Resources", "taskpane_icon.png"),
+                    Path.Combine(baseDir, "taskpane_icon.bmp"),
+                    Path.Combine(baseDir, "taskpane_icon.png")
+                };
+                foreach (var p in candidates) if (File.Exists(p)) return p;
+            }
+            catch { }
+            return string.Empty; // fallback to default SW icon
         }
 
         public bool DisconnectFromSW()

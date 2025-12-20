@@ -26,19 +26,7 @@ namespace AICAD.UI
     private FileDbLogger _fileLogger;
     private MongoLogger _mongoLogger;
         private IGoodFeedbackStore _goodStore;
-    private Label _lblLlmStatus;
-    private Label _lblDbStatus;
-    private Label _lblSwStatus;
-    private Label _lblTimes;
-        private TextBox _txtLastError;
-        private Button _btnCopyError;
-        private Button _btnCopyRun;
-    private RichTextBox _statusConsole;
-    private Button _btnStatusCopyAll;
-    private Button _btnStatusClear;
-    private Button _btnStatusExpand;
-    // _btnStatusDbInfo removed: DB info will be logged automatically at startup
-    private bool _statusExpanded = false;
+    private StatusWindow _statusWindow;
         private TimeSpan _lastLlm = TimeSpan.Zero;
         private TimeSpan _lastTotal = TimeSpan.Zero;
         private string _lastError;
@@ -47,6 +35,10 @@ namespace AICAD.UI
         private string _lastModel;
         private string _lastDbStatus;
         private bool? _lastDbLogged;
+        private Label _lblLlmStatus;
+        private Label _lblDbStatus;
+        private Label _lblSwStatus;
+        private Label _lblTimes;
         private Button _btnThumbUp;
         private Button _btnThumbDown;
         private TextBox _txtFeedback;
@@ -58,7 +50,6 @@ namespace AICAD.UI
         {
             _swApp = swApp;
             Dock = DockStyle.Fill;
-
             var root = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -68,9 +59,9 @@ namespace AICAD.UI
             };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));  // presets
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));   // prompt
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // button
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 60));    // log
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 40));    // status console (expandable)
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // build
+            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 36));   // controls
+            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // log
 
             // Presets
             var presetRow = new Panel { Dock = DockStyle.Fill, Height = 28 };
@@ -97,7 +88,6 @@ namespace AICAD.UI
             presetRow.Controls.Add(_shapePreset);
             presetRow.Controls.Add(label);
 
-            // Modified indicator (right aligned)
             _lblModified = new Label
             {
                 Text = "Unsaved changes",
@@ -107,7 +97,6 @@ namespace AICAD.UI
                 Visible = false,
                 Padding = new Padding(0, 6, 6, 0)
             };
-            // Version label (right aligned, left of modified)
             _lblVersion = new Label
             {
                 Text = GetAddinVersion(),
@@ -119,80 +108,85 @@ namespace AICAD.UI
             presetRow.Controls.Add(_lblVersion);
             presetRow.Controls.Add(_lblModified);
 
-            // Prompt
             _prompt = new TextBox { Dock = DockStyle.Fill, Multiline = true, Height = 60 };
-            // Any edit in the prompt sets the modified indicator
-            _prompt.TextChanged += (s, e) =>
-            {
-                try { SetModified(true); } catch { }
-            };
+            _prompt.TextChanged += (s, e) => { try { SetModified(true); } catch { } };
 
-            // Build button
             _build = new Button { Text = "Build Model", Dock = DockStyle.Fill, Height = 30 };
             _build.Click += async (s, e) => await BuildFromPromptAsync();
 
-            // Log
-            _log = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = SystemColors.Window };
-
-            // Status panel (bottom)
-            var statusPanel = BuildStatusConsolePanel();
-            var feedbackPanel = BuildFeedbackPanel();
             var ctlRow = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.RightToLeft,
-                Height = 32,
+                Height = 36,
                 Padding = new Padding(0, 4, 0, 0),
                 WrapContents = false
             };
+
             _btnHistory = new Button { Text = "History", Width = 80, Height = 26 };
             _btnHistory.Click += (s, e) =>
             {
                 try
                 {
-                    if (_stepStore == null) { MessageBox.Show(this, "No step store available", "History", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+                    if (_stepStore == null)
+                    {
+                        MessageBox.Show(this, "No step store available", "History", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
+                    }
                     using (var dlg = new HistoryBrowser(_stepStore)) dlg.ShowDialog(this);
                 }
                 catch (Exception ex) { MessageBox.Show(this, ex.Message, "History", MessageBoxButtons.OK, MessageBoxIcon.Error); }
             };
-            ctlRow.Controls.Add(_btnHistory);
 
-            // Settings button for DB and API key management
-            var btnSettings = new Button { Text = "Settings", Width = 80, Height = 26 };
-            btnSettings.Click += (s, e) =>
+            var statusBtn = new Button { Text = "Status", Width = 80, Height = 26 };
+            statusBtn.Click += (s, e) =>
             {
                 try
                 {
-                    using (var dlg = new SettingsDialog())
+                    if (_statusWindow == null || _statusWindow.IsDisposed)
+                    {
+                        _statusWindow = new StatusWindow();
+                        _statusWindow.CopyErrorClicked += StatusWindow_CopyErrorClicked;
+                        _statusWindow.CopyRunClicked += StatusWindow_CopyRunClicked;
+                    }
+                    _statusWindow.Show();
+                    _statusWindow.BringToFront();
+                }
+                catch (Exception ex) { AppendDetailedStatus("UI", "Status window error", ex); }
+            };
+
+            var settingsBtn = new Button { Text = "Settings", Width = 80, Height = 26 };
+            settingsBtn.Click += (s, e) =>
+            {
+                try
+                {
+                    using (var dlg = new global::AICAD.UI.SettingsDialog())
                     {
                         dlg.ShowDialog(this);
                     }
                 }
-                catch (Exception ex) { MessageBox.Show(this, ex.Message, "Settings", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+                catch (Exception ex) { AppendDetailedStatus("UI", "Settings dialog error", ex); }
             };
-            ctlRow.Controls.Add(btnSettings);
+
+            ctlRow.Controls.Add(_btnHistory);
+            ctlRow.Controls.Add(statusBtn);
+            ctlRow.Controls.Add(settingsBtn);
+
+            _log = new RichTextBox { Dock = DockStyle.Fill, ReadOnly = true, BackColor = SystemColors.Window };
 
             root.Controls.Add(presetRow, 0, 0);
             root.Controls.Add(_prompt, 0, 1);
             root.Controls.Add(_build, 0, 2);
-            root.Controls.Add(_log, 0, 3);
-            root.Controls.Add(statusPanel, 0, 4);
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-            root.RowCount = 6;
-            // Feedback panel hidden for cleaner interface
-            // root.Controls.Add(feedbackPanel, 0, 5);
-            root.Controls.Add(ctlRow, 0, 5);
+            root.Controls.Add(ctlRow, 0, 3);
+            root.Controls.Add(_log, 0, 4);
+
             Controls.Add(root);
 
-            // Initial statuses
-            // Subscribe to SOLIDWORKS events to clear/update the modified indicator
             try
             {
                 var swEventPtr = _swApp as SldWorks;
                 if (swEventPtr != null)
                 {
-                    // Subscribe to common global events; clear modified state when files open/new/doc change
                     swEventPtr.ActiveModelDocChangeNotify += new DSldWorksEvents_ActiveModelDocChangeNotifyEventHandler(OnActiveModelDocChanged);
                     swEventPtr.FileOpenPostNotify += new DSldWorksEvents_FileOpenPostNotifyEventHandler(OnFileOpenPostNotify);
                     swEventPtr.FileNewNotify2 += new DSldWorksEvents_FileNewNotify2EventHandler(OnFileNewNotify2);
@@ -206,151 +200,8 @@ namespace AICAD.UI
             SetSwStatus("Idle", Color.DimGray);
             SetTimes(null, null);
             SetLastError(null);
-            // Subscribe to the global addin logger so UI shows messages from other components
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
-            // Initialize DB/logging and stores and append status details
             try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
-        }
-
-        private Control BuildStatusConsolePanel()
-        {
-            var gb = new GroupBox { Text = "Status", Dock = DockStyle.Fill };
-            var panel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 3,
-                Padding = new Padding(6)
-            };
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24));   // toolbar
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // console
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));    // error/copy row
-
-            // Toolbar
-            var bar = new FlowLayoutPanel { FlowDirection = FlowDirection.LeftToRight, Dock = DockStyle.Fill, Height = 24, WrapContents = false };
-            _btnStatusCopyAll = new Button { Text = "Copy All", Height = 22, Width = 80 };
-            _btnStatusClear = new Button { Text = "Clear", Height = 22, Width = 70 };
-            var _btnSetApiKey = new Button { Text = "Set API Key", Height = 22, Width = 100 };
-            var _btnSignIn = new Button { Text = "Sign in", Height = 22, Width = 80 };
-            _btnStatusExpand = new Button { Text = "Expand", Height = 22, Width = 80 };
-            _btnStatusCopyAll.Click += (s, e) => { try { if (!string.IsNullOrEmpty(_statusConsole?.Text)) Clipboard.SetText(_statusConsole.Text); } catch { } };
-            _btnStatusClear.Click += (s, e) => { try { _statusConsole.Clear(); } catch { } };
-            _btnStatusExpand.Click += (s, e) => ToggleStatusExpand();
-            _btnSetApiKey.Click += (s, e) =>
-            {
-                try
-                {
-                    using (var dlg = new global::AICAD.UI.CredentialDialog())
-                    {
-                        dlg.ShowDialog(this);
-                        if (dlg.Saved)
-                        {
-                            AppendStatusLine("[LLM] API key saved to Credential Manager");
-                        }
-                    }
-                }
-                catch (Exception ex) { AppendDetailedStatus("LLM", "Save key dialog error", ex); }
-            };
-            _btnSignIn.Click += async (s, e) =>
-            {
-                try
-                {
-                    _btnSignIn.Enabled = false;
-                    GoogleOAuthConfig.RefreshCache();
-                    var oauthConfig = GoogleOAuthConfig.Load();
-                    if (oauthConfig == null || string.IsNullOrWhiteSpace(oauthConfig.ClientId))
-                    {
-                        AppendDetailedStatus("LLM", "Google OAuth client configuration not found. Place client_secret*.json in the add-in folder or set GOOGLE_OAUTH_CLIENT_ID.", null);
-                        MessageBox.Show(this, "Google OAuth client configuration not found. Copy your client_secret*.json into the add-in folder and try again.", "Sign in", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                        return;
-                    }
-                    AppendStatusLine("[LLM] Starting OAuth sign-in...");
-                    if (!string.IsNullOrWhiteSpace(oauthConfig.SourcePath))
-                    {
-                        AppendStatusLine("[LLM] Using OAuth client file: " + oauthConfig.SourcePath);
-                    }
-                    var configuredScopes = (oauthConfig.Scopes?.Count ?? 0) > 0 ? oauthConfig.Scopes : new[] { "https://www.googleapis.com/auth/cloud-platform" };
-                    var scopeArray = configuredScopes is string[] arr ? arr : new System.Collections.Generic.List<string>(configuredScopes).ToArray();
-                    string tokenJson = null;
-                    try
-                    {
-                        tokenJson = await Services.OAuthDesktopHelper.AuthorizeAsync(oauthConfig.ClientId, scopeArray);
-                    }
-                    catch (Exception ex)
-                    {
-                        AppendDetailedStatus("LLM", "OAuth flow failed", ex);
-                    }
-                    if (!string.IsNullOrWhiteSpace(tokenJson))
-                    {
-                        try
-                        {
-                            Services.TokenManager.SaveTokenJson(tokenJson);
-                            AppendStatusLine("[LLM] OAuth token saved to Credential Manager.");
-                        }
-                        catch (Exception ex)
-                        {
-                            AppendDetailedStatus("LLM", "Failed saving token", ex);
-                        }
-                    }
-                }
-                finally { _btnSignIn.Enabled = true; }
-            };
-            bar.Controls.Add(_btnStatusCopyAll);
-            bar.Controls.Add(_btnStatusClear);
-            bar.Controls.Add(_btnSetApiKey);
-            bar.Controls.Add(_btnSignIn);
-            bar.Controls.Add(_btnStatusExpand);
-
-            // Console-like box
-            _statusConsole = new RichTextBox
-            {
-                Dock = DockStyle.Fill,
-                ReadOnly = true,
-                BackColor = Color.FromArgb(30, 30, 30),
-                ForeColor = Color.Gainsboro,
-                Font = new Font("Consolas", 9f, FontStyle.Regular),
-                BorderStyle = BorderStyle.FixedSingle,
-                WordWrap = false,
-                HideSelection = false
-            };
-            var ctx = new ContextMenu();
-            ctx.MenuItems.Add(new MenuItem("Copy", (s, e) => { try { _statusConsole.Copy(); } catch { } }));
-            ctx.MenuItems.Add(new MenuItem("Copy All", (s, e) => { try { Clipboard.SetText(_statusConsole.Text); } catch { } }));
-            ctx.MenuItems.Add(new MenuItem("Select All", (s, e) => { try { _statusConsole.SelectAll(); } catch { } }));
-            _statusConsole.ContextMenu = ctx;
-
-            // Error row with copy
-            var errRow = new Panel { Dock = DockStyle.Fill };
-            _txtLastError = new TextBox { ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, Dock = DockStyle.Fill };
-            _btnCopyError = new Button { Text = "Copy Error", Dock = DockStyle.Right, Width = 90 };
-            _btnCopyError.Click += (s, e) =>
-            {
-                try
-                {
-                    var details = BuildErrorCopyText();
-                    if (!string.IsNullOrWhiteSpace(details)) Clipboard.SetText(details);
-                }
-                catch { }
-            };
-            _btnCopyRun = new Button { Text = "Copy Run", Dock = DockStyle.Right, Width = 90 };
-            _btnCopyRun.Click += (s, e) =>
-            {
-                try
-                {
-                    var details = BuildRunCopyText();
-                    if (!string.IsNullOrWhiteSpace(details)) Clipboard.SetText(details);
-                }
-                catch { }
-            };
-            errRow.Controls.Add(_txtLastError);
-            errRow.Controls.Add(_btnCopyRun);
-            errRow.Controls.Add(_btnCopyError);
-
-            panel.Controls.Add(bar, 0, 0);
-            panel.Controls.Add(_statusConsole, 0, 1);
-            panel.Controls.Add(errRow, 0, 2);
-            gb.Controls.Add(panel);
-            return gb;
         }
 
         // Initialize DB/logging and related stores at startup and append status lines
@@ -424,26 +275,6 @@ namespace AICAD.UI
             {
                 SetDbStatus("Init error", Color.Firebrick);
                 AppendDetailedStatus("DB:init", "exception", ex);
-            }
-        }
-
-        private void ToggleStatusExpand()
-        {
-            try
-            {
-                var parent = this.Parent as Control;
-                // We control by changing the RowStyles in the root layout
-                var root = this.Parent as TableLayoutPanel;
-                if (root == null && this.Controls.Count > 0) root = this.Controls[0] as TableLayoutPanel;
-            }
-            catch { }
-            _statusExpanded = !_statusExpanded;
-            _btnStatusExpand.Text = _statusExpanded ? "Collapse" : "Expand";
-            // Actual layout change could be handled by adjusting RowStyles; fallback below tweaks font size.
-            // Fallback: just change font size to simulate expand
-            if (_statusConsole != null)
-            {
-                _statusConsole.Font = new Font(_statusConsole.Font.FontFamily, _statusExpanded ? 10.5f : 9f);
             }
         }
 
@@ -549,10 +380,14 @@ namespace AICAD.UI
         private void SetLastError(string err)
         {
             _lastError = err;
-            if (_txtLastError == null) return;
-            _txtLastError.Text = string.IsNullOrWhiteSpace(err) ? "—" : err;
-            _txtLastError.ForeColor = string.IsNullOrWhiteSpace(err) ? Color.DimGray : Color.Firebrick;
-            _btnCopyError.Enabled = !string.IsNullOrWhiteSpace(err);
+            
+                // Update status window if it's open
+                if (_statusWindow != null && !_statusWindow.IsDisposed)
+                {
+                    _statusWindow.ErrorTextBox.Text = string.IsNullOrWhiteSpace(err) ? "—" : err;
+                    _statusWindow.ErrorTextBox.ForeColor = string.IsNullOrWhiteSpace(err) ? Color.DimGray : Color.Firebrick;
+                }
+            
             if (!string.IsNullOrWhiteSpace(err)) AppendStatusLine($"[Error] {err}");
         }
 
@@ -1251,17 +1086,52 @@ namespace AICAD.UI
         {
             try
             {
-                if (_statusConsole == null) return;
-                var ts = DateTime.Now.ToString("HH:mm:ss");
-                _statusConsole.SelectionStart = _statusConsole.TextLength;
-                _statusConsole.SelectionColor = Color.Gainsboro;
-                _statusConsole.AppendText($"{ts} {line}\n");
-                _statusConsole.SelectionStart = _statusConsole.TextLength;
-                _statusConsole.ScrollToCaret();
-                try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
+                    // Write to status window if it's open
+                    if (_statusWindow != null && !_statusWindow.IsDisposed)
+                    {
+                        var ts = DateTime.Now.ToString("HH:mm:ss");
+                        _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
+                        _statusWindow.StatusConsole.SelectionColor = Color.Gainsboro;
+                        _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
+                        _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
+                        _statusWindow.StatusConsole.ScrollToCaret();
+                        try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
+                        return;
+                    }
+
+                    // If no window, still mirror to temp log for diagnostics
+                    try { MirrorStatusToTempFile(DateTime.Now.ToString("HH:mm:ss") + " " + line); } catch { }
+                }
+                catch { }
             }
-            catch { }
-        }
+
+            private void StatusWindow_CopyErrorClicked(object sender, EventArgs e)
+            {
+                try
+                {
+                    var text = BuildErrorCopyText();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        Clipboard.SetText(text);
+                        AppendStatusLine("[UI] Error copied to clipboard");
+                    }
+                }
+                catch (Exception ex) { AppendDetailedStatus("UI", "Copy error failed", ex); }
+            }
+
+            private void StatusWindow_CopyRunClicked(object sender, EventArgs e)
+            {
+                try
+                {
+                    var text = BuildRunCopyText();
+                    if (!string.IsNullOrEmpty(text))
+                    {
+                        Clipboard.SetText(text);
+                        AppendStatusLine("[UI] Run copied to clipboard");
+                    }
+                }
+                catch (Exception ex) { AppendDetailedStatus("UI", "Copy run failed", ex); }
+            }
 
         // Mirror status console to a temp file for persistent debugging traces.
         private void MirrorStatusToTempFile(string line)

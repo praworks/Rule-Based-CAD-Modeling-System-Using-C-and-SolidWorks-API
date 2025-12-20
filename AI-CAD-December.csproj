@@ -115,6 +115,9 @@
     </Compile>
     <Compile Include="UI\CredentialDialog.cs" />
     <Compile Include="UI\SettingsDialog.cs" />
+      <Compile Include="UI\StatusWindow.cs">
+        <SubType>Form</SubType>
+      </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

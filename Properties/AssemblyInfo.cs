@@ -5,11 +5,11 @@ using System.Runtime.InteropServices;
 // General Information about an assembly is controlled through the following
 // set of attributes. Change these attribute values to modify the information
 // associated with an assembly.
-[assembly: AssemblyTitle("AI-CAD Nov")]
+[assembly: AssemblyTitle("AI-CAD-December")]
 [assembly: AssemblyDescription("AI-powered CAD add-in for SolidWorks")]
 [assembly: AssemblyConfiguration("")]
 [assembly: AssemblyCompany("")]
-[assembly: AssemblyProduct("AI-CAD Nov")]
+[assembly: AssemblyProduct("AI-CAD-December")]
 [assembly: AssemblyCopyright("Copyright ©  2025")]
 [assembly: AssemblyTrademark("")]
 [assembly: AssemblyCulture("")]

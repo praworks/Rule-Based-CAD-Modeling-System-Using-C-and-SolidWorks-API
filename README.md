@@ -1,18 +1,18 @@
-# SolidWorks Taskpane: AI-CAD
+# SolidWorks Taskpane: AI-CAD-December
 
 A SolidWorks taskpane add-in that turns natural language into simple 3D models.
 
 Type a prompt like "box 100x50x25 mm" or "cylinder Ø40 x 80 mm" and it creates a new part with the requested features.
 
 ## Build
-- Open `AI-CAD.sln` in Visual Studio (or build with MSBuild).
+- Open `AI-CAD-December.sln` in Visual Studio (or build with MSBuild).
 - Requires Visual Studio with .NET Framework 4.7.2 targeting pack and SolidWorks Interop assemblies (already referenced in `References/`).
 - Project targets x64 and embeds interop types.
 
 ## Register (Admin)
 1. Build Debug.
 2. Right-click `Register_Addin_Debug.bat` > Run as administrator.
-3. Start SolidWorks; the add-in should load and show a taskpane named "AI-CAD".
+3. Start SolidWorks; the add-in should load and show a taskpane named "AI-CAD-December".
 
 ## Unregister (Admin)
 - Run `Unregister_Addin_Debug.bat` as administrator.
@@ -22,7 +22,7 @@ Type a prompt like "box 100x50x25 mm" or "cylinder Ø40 x 80 mm" and it creates 
 
 ## Usage
 - Set environment variable `GEMINI_API_KEY` with your Google API key (User scope).
-- Open the "AI-CAD" taskpane.
+- Open the "AI-CAD-December" taskpane.
 - Pick a preset or type a prompt, e.g.:
 	- "Create a rectangular box 120 mm by 60 mm by 30 mm"
 	- "Create a cylinder 25 mm diameter and 70 mm height"

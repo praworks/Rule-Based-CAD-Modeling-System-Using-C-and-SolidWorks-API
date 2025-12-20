@@ -1,5 +1,3 @@
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD.csproj.AssemblyReference.cache
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD.csproj.CoreCompileInputs.cache
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\AI-CAD-December.dll
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\AI-CAD-December.pdb
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\AWSSDK.Core.dll
@@ -27,6 +25,8 @@ D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\System.Text.Encoding.CodePages.dll
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\System.Threading.Tasks.Extensions.dll
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\bin\Debug\ZstdSharp.dll
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD.csproj.Up2Date
+D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.csproj.AssemblyReference.cache
+D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.csproj.CoreCompileInputs.cache
+D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-D.3DF45E93.Up2Date
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.dll
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.pdb

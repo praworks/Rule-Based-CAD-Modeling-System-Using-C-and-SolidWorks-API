@@ -10,15 +10,14 @@ if not exist %REGASM64% (
 )
 if not exist %DLL_PATH% (
   echo Build output not found at %DLL_PATH%
-  echo Please build the project in Debug first.
   exit /b 1
 )
 
 %REGASM64% %DLL_PATH% /codebase
 if %ERRORLEVEL% NEQ 0 (
-  echo Registration failed. Try running this script as Administrator.
+  echo Register failed. Try running this script as Administrator.
   exit /b %ERRORLEVEL%
 )
 
-echo Registered add-in successfully.
+echo Registered AI-CAD-December add-in successfully.
 endlocal

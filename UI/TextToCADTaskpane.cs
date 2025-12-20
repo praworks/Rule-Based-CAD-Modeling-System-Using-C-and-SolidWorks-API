@@ -157,6 +157,21 @@ namespace AICAD.UI
             };
             ctlRow.Controls.Add(_btnHistory);
 
+            // Settings button for DB and API key management
+            var btnSettings = new Button { Text = "Settings", Width = 80, Height = 26 };
+            btnSettings.Click += (s, e) =>
+            {
+                try
+                {
+                    using (var dlg = new SettingsDialog())
+                    {
+                        dlg.ShowDialog(this);
+                    }
+                }
+                catch (Exception ex) { MessageBox.Show(this, ex.Message, "Settings", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+            };
+            ctlRow.Controls.Add(btnSettings);
+
             root.Controls.Add(presetRow, 0, 0);
             root.Controls.Add(_prompt, 0, 1);
             root.Controls.Add(_build, 0, 2);
@@ -164,9 +179,10 @@ namespace AICAD.UI
             root.Controls.Add(statusPanel, 0, 4);
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 80));
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-            root.RowCount = 7;
-            root.Controls.Add(feedbackPanel, 0, 5);
-            root.Controls.Add(ctlRow, 0, 6);
+            root.RowCount = 6;
+            // Feedback panel hidden for cleaner interface
+            // root.Controls.Add(feedbackPanel, 0, 5);
+            root.Controls.Add(ctlRow, 0, 5);
             Controls.Add(root);
 
             // Initial statuses

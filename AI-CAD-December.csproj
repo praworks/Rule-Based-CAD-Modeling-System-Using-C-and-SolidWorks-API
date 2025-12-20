@@ -113,16 +113,8 @@
     <Compile Include="UI\HistoryBrowser.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="UI\DBSettingsHost.cs" />
     <Compile Include="UI\CredentialDialog.cs" />
-    <Compile Include="UI\DBSettingsControl.xaml.cs">
-      <DependentUpon>DBSettingsControl.xaml</DependentUpon>
-    </Compile>
     <Compile Include="UI\SettingsDialog.cs" />
-    <Page Include="UI\DBSettingsControl.xaml">
-      <Generator>MSBuild:Compile</Generator>
-      <SubType>Designer</SubType>
-    </Page>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

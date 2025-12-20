@@ -3,6 +3,7 @@ setlocal
 REM Run as Administrator
 set REGASM64="C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
 set DLL_PATH="%~dp0bin\Debug\AI-CAD-December.dll"
+set CURRENT_GUID={D5B8E2F9-2F3E-4D44-907F-2B983D32AF37}
 
 if not exist %REGASM64% (
   echo Could not find RegAsm at %REGASM64%
@@ -19,5 +20,10 @@ if %ERRORLEVEL% NEQ 0 (
   exit /b %ERRORLEVEL%
 )
 
-echo Unregistered add-in successfully.
+REM Clean up registry entries
+reg delete "HKCR\CLSID\%CURRENT_GUID%" /f >nul 2>&1
+reg delete "HKLM\SOFTWARE\SolidWorks\Addins\%CURRENT_GUID%" /f >nul 2>&1
+reg delete "HKCU\Software\SolidWorks\AddInsStartup\%CURRENT_GUID%" /f >nul 2>&1
+
+echo Unregistered AI-CAD-December add-in successfully.
 endlocal

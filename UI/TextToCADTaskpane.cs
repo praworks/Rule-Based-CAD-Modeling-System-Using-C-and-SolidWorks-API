@@ -1,5 +1,6 @@
 using System;
 using System.Drawing;
+using System.IO;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
@@ -85,10 +86,11 @@ namespace AICAD.UI
                 Padding = new Padding(6, 2, 6, 2),
                 WrapContents = false
             };
-            _btnThumbUp = new Button { Text = "👍", Width = 36, Height = 24, Margin = new Padding(0, 0, 6, 0) };
-            _btnThumbDown = new Button { Text = "👎", Width = 36, Height = 24 };
+            _btnThumbUp = new Button { Text = "👍", Width = 40, Height = 28, Margin = new Padding(0, 0, 8, 0), Padding = new Padding(0) };
+            _btnThumbDown = new Button { Text = "👎", Width = 40, Height = 28, Padding = new Padding(0) };
             _btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
             _btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
+            TryApplyThumbIcons();
             thumbsRow.Controls.Add(_btnThumbUp);
             thumbsRow.Controls.Add(_btnThumbDown);
 
@@ -1161,6 +1163,74 @@ namespace AICAD.UI
             else
             {
                 _log.Text = text;
+            }
+        }
+
+        private void TryApplyThumbIcons()
+        {
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var upCandidates = new[]
+                {
+                    Path.Combine(baseDir, "Resources", "thumb_up.png"),
+                    Path.Combine(baseDir, "Resources", "thumb-up.png"),
+                    Path.Combine(baseDir, "thumb_up.png"),
+                    Path.Combine(baseDir, "thumb-up.png")
+                };
+                var downCandidates = new[]
+                {
+                    Path.Combine(baseDir, "Resources", "thumb_down.png"),
+                    Path.Combine(baseDir, "Resources", "thumb-down.png"),
+                    Path.Combine(baseDir, "thumb_down.png"),
+                    Path.Combine(baseDir, "thumb-down.png")
+                };
+                SetThumbIcon(_btnThumbUp, upCandidates);
+                SetThumbIcon(_btnThumbDown, downCandidates);
+            }
+            catch { }
+        }
+
+        private static void SetThumbIcon(Button btn, string[] candidates)
+        {
+            // First, scan the Resources folder for wildcard matches like thumb*up*.png or thumb*down*.png
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory;
+                var resDir = Path.Combine(baseDir, "Resources");
+                if (Directory.Exists(resDir))
+                {
+                    string pattern = btn.Text.Contains("👍") ? "thumb*up*.png" : "thumb*down*.png";
+                    var found = Directory.GetFiles(resDir, pattern, SearchOption.TopDirectoryOnly);
+                    if (found != null && found.Length > 0)
+                    {
+                        candidates = found.Concat(candidates).ToArray();
+                    }
+                }
+            }
+            catch { }
+
+            foreach (var p in candidates)
+            {
+                try
+                {
+                    if (File.Exists(p))
+                    {
+                        using (var img = Image.FromFile(p))
+                        {
+                            // Scale to fit nicely in a 28px tall button
+                            var scaled = new Bitmap(img, new Size(20, 20));
+                            btn.Image = scaled;
+                        }
+                        btn.Text = string.Empty;
+                        btn.ImageAlign = ContentAlignment.MiddleCenter;
+                        btn.FlatStyle = FlatStyle.Standard;
+                        btn.Width = Math.Max(btn.Width, 40);
+                        btn.Height = Math.Max(btn.Height, 28);
+                        return;
+                    }
+                }
+                catch { }
             }
         }
 

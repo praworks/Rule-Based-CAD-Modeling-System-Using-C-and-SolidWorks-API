@@ -38,7 +38,6 @@ namespace AICAD.UI
         private Label _lblDbStatus;
         private Label _lblSwStatus;
         private Label _lblTimes;
-        private TextToCADTaskpaneWpf _wpf;
 
         public TextToCADTaskpane(ISldWorks swApp)
         {
@@ -46,13 +45,9 @@ namespace AICAD.UI
             
             _swApp = swApp;
 
-            // WPF not hosted in WinForms designer mode
-            _wpf = null;
-
             // Set initial version
             var ver = GetAddinVersion();
             lblVersion.Text = ver;
-            if (_wpf != null) _wpf.VersionText = ver;
 
             // Wire up event handlers
             shapePreset.SelectedIndexChanged += ShapePreset_SelectedIndexChanged;
@@ -63,19 +58,6 @@ namespace AICAD.UI
             btnSettings.Click += BtnSettings_Click;
             btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
             btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
-
-            // Wire WPF events when available
-            if (_wpf != null)
-            {
-                _wpf.shapePreset.SelectionChanged += (s, e) => ShapePreset_SelectedIndexChanged(s, EventArgs.Empty);
-                _wpf.prompt.TextChanged += (s, e) => Prompt_TextChanged(s, EventArgs.Empty);
-                _wpf.build.Click += async (s, e) => await BuildFromPromptAsync();
-                _wpf.btnHistory.Click += BtnHistory_Click;
-                _wpf.btnStatus.Click += BtnStatus_Click;
-                _wpf.btnSettings.Click += BtnSettings_Click;
-                _wpf.btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
-                _wpf.btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
-            }
 
             TryApplyThumbIcons();
 
@@ -103,7 +85,7 @@ namespace AICAD.UI
 
         private void ShapePreset_SelectedIndexChanged(object sender, EventArgs e)
         {
-            var idx = _wpf != null ? _wpf.shapePreset.SelectedIndex : shapePreset.SelectedIndex;
+            var idx = shapePreset.SelectedIndex;
             switch (idx)
             {
                 case 1: SetPromptText("Create a rectangular box 100 mm length, 50 mm width, 25 mm height"); break;
@@ -118,16 +100,9 @@ namespace AICAD.UI
             try { SetModified(true); } catch { }
         }
 
-        private string GetPromptText()
-        {
-            try { return _wpf != null ? _wpf.PromptText : prompt.Text; } catch { return prompt.Text; }
-        }
+        private string GetPromptText() => prompt.Text;
 
-        private void SetPromptText(string text)
-        {
-            try { prompt.Text = text ?? string.Empty; } catch { }
-            try { if (_wpf != null) _wpf.PromptText = text ?? string.Empty; } catch { }
-        }
+        private void SetPromptText(string text) => prompt.Text = text ?? string.Empty;
 
         private void BtnHistory_Click(object sender, EventArgs e)
         {
@@ -303,11 +278,6 @@ namespace AICAD.UI
             {
                 lblRealTimeStatus.Text = text ?? string.Empty;
                 lblRealTimeStatus.ForeColor = color;
-            }
-            if (_wpf != null && _wpf.lblRealTimeStatus != null)
-            {
-                _wpf.lblRealTimeStatus.Content = text ?? string.Empty;
-                _wpf.lblRealTimeStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(color.A, color.R, color.G, color.B));
             }
             AppendStatusLine($"[Status] {text}");
         }

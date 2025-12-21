@@ -90,9 +90,13 @@
 
         </StackPanel>
 
-        <Label x:Name="lblRealTimeStatus" Grid.Row="2" 
-               Padding="2,0,0,2" Foreground="DimGray" 
-               Content="Ready" FontSize="11" HorizontalAlignment="Left"/>
+         <Label x:Name="lblRealTimeStatus" Grid.Row="2" 
+             Padding="2,0,0,2" Foreground="DimGray" 
+             Content="Ready" FontSize="11" HorizontalAlignment="Left"/>
+         <Label x:Name="lblModified" Grid.Row="2"
+             Padding="0,0,2,2" Foreground="Firebrick"
+             Content="Modified" FontSize="11" HorizontalAlignment="Right"
+             Visibility="Collapsed"/>
 
         <Grid Grid.Row="3" Margin="0,0,0,10">
             <TextBox x:Name="prompt" 
@@ -133,6 +137,7 @@
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
                 <Button x:Name="btnHistory" Content="History" Padding="8,2" Margin="5,0,0,0"/>
+                <Button x:Name="btnStatus" Content="Status" Padding="8,2" Margin="5,0,0,0"/>
                 <Button x:Name="btnSettings" Content="⚙️" ToolTip="Settings" Padding="5,2" Margin="5,0,0,0"/>
             </StackPanel>
         </Grid>

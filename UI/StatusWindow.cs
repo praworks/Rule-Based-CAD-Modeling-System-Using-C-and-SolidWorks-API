@@ -106,11 +106,11 @@ namespace AICAD.UI
                 HideSelection = false
             };
             
-            var ctx = new ContextMenu();
-            ctx.MenuItems.Add(new MenuItem("Copy", (s, e) => { try { StatusConsole.Copy(); } catch { } }));
-            ctx.MenuItems.Add(new MenuItem("Copy All", (s, e) => { try { Clipboard.SetText(StatusConsole.Text); } catch { } }));
-            ctx.MenuItems.Add(new MenuItem("Select All", (s, e) => { try { StatusConsole.SelectAll(); } catch { } }));
-            StatusConsole.ContextMenu = ctx;
+            var ctx = new ContextMenuStrip();
+            ctx.Items.Add(new ToolStripMenuItem("Copy", null, (s, e) => { try { StatusConsole.Copy(); } catch { } }));
+            ctx.Items.Add(new ToolStripMenuItem("Copy All", null, (s, e) => { try { Clipboard.SetText(StatusConsole.Text); } catch { } }));
+            ctx.Items.Add(new ToolStripMenuItem("Select All", null, (s, e) => { try { StatusConsole.SelectAll(); } catch { } }));
+            StatusConsole.ContextMenuStrip = ctx;
 
             // Error row
             var errRow = new FlowLayoutPanel 

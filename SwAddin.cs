@@ -17,7 +17,7 @@ namespace AICAD
         private ISldWorks _app;
         private int _addinId;
     private TaskpaneView _textToCadTaskpaneView;
-    private UI.TextToCADTaskpane _textToCadControl;
+    private UI.TextToCADTaskpaneWrapper _textToCadControl;
 
         public bool ConnectToSW(object ThisSW, int Cookie)
         {
@@ -28,12 +28,12 @@ namespace AICAD
             try { AddinStatusLogger.Log("AICadAddin", $"ConnectToSW called cookie={Cookie}"); } catch { }
             try
             {
-                // Create AI-CAD-December Taskpane (main)
+                // Create AI-CAD-December Taskpane (main) using WPF
                 var iconPath = TryGetTaskpaneIconPath();
                 _textToCadTaskpaneView = _app.CreateTaskpaneView2(iconPath, "AI-CAD-December");
-                _textToCadControl = new UI.TextToCADTaskpane(_app);
+                _textToCadControl = new UI.TextToCADTaskpaneWrapper(_app);
                 _textToCadTaskpaneView.DisplayWindowFromHandlex64(_textToCadControl.Handle.ToInt64());
-                try { AddinStatusLogger.Log("AICadAddin", "Created AI-CAD-December taskpane"); } catch { }
+                try { AddinStatusLogger.Log("AICadAddin", "Created AI-CAD-December taskpane with WPF design"); } catch { }
             }
             catch (Exception ex)
             {

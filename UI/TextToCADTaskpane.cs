@@ -14,21 +14,15 @@ using Newtonsoft.Json.Linq;
 
 namespace AICAD.UI
 {
-    public class TextToCADTaskpane : UserControl
+    public partial class TextToCADTaskpane : UserControl
     {
         private readonly ISldWorks _swApp;
-    private Label _lblModified;
-    private Label _lblVersion;
-    private bool _isModified = false;
-        private readonly Label _log;
-        private readonly TextBox _prompt;
-        private readonly Button _build;
-        private readonly ComboBox _shapePreset;
-    private GeminiClient _client;
-    private FileDbLogger _fileLogger;
-    private MongoLogger _mongoLogger;
+        private bool _isModified = false;
+        private GeminiClient _client;
+        private FileDbLogger _fileLogger;
+        private MongoLogger _mongoLogger;
         private IGoodFeedbackStore _goodStore;
-    private StatusWindow _statusWindow;
+        private StatusWindow _statusWindow;
         private TimeSpan _lastLlm = TimeSpan.Zero;
         private TimeSpan _lastTotal = TimeSpan.Zero;
         private string _lastError;
@@ -37,212 +31,53 @@ namespace AICAD.UI
         private string _lastModel;
         private string _lastDbStatus;
         private bool? _lastDbLogged;
+        private string _lastRunId;
+        private IStepStore _stepStore;
+        private TextBox _txtFeedback;
         private Label _lblLlmStatus;
         private Label _lblDbStatus;
         private Label _lblSwStatus;
         private Label _lblTimes;
-        private Button _btnThumbUp;
-        private Button _btnThumbDown;
-        private TextBox _txtFeedback;
-        private string _lastRunId;
-    private IStepStore _stepStore;
-    private Button _btnHistory;
-    private Label _lblRealTimeStatus;
+        private TextToCADTaskpaneWpf _wpf;
 
         public TextToCADTaskpane(ISldWorks swApp)
         {
+            InitializeComponent();
+            
             _swApp = swApp;
-            Dock = DockStyle.Fill;
-            // Root: two rows. Row 0 holds all content; Row 1 pins buttons to bottom.
-            var root = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 2,
-                Padding = new Padding(6)
-            };
-            root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // content
-            root.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // controls (buttons at bottom)
 
-            // Content: presets, prompt, build, status, log
-            var content = new TableLayoutPanel
+            // WPF not hosted in WinForms designer mode
+            _wpf = null;
+
+            // Set initial version
+            var ver = GetAddinVersion();
+            lblVersion.Text = ver;
+            if (_wpf != null) _wpf.VersionText = ver;
+
+            // Wire up event handlers
+            shapePreset.SelectedIndexChanged += ShapePreset_SelectedIndexChanged;
+            prompt.TextChanged += Prompt_TextChanged;
+            build.Click += async (s, e) => await BuildFromPromptAsync();
+            btnHistory.Click += BtnHistory_Click;
+            btnStatus.Click += BtnStatus_Click;
+            btnSettings.Click += BtnSettings_Click;
+            btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
+            btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
+
+            // Wire WPF events when available
+            if (_wpf != null)
             {
-                Dock = DockStyle.Fill,
-                ColumnCount = 1,
-                RowCount = 7,
-                Padding = new Padding(0)
-            };
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));  // presets
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 60));   // prompt
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 32));   // build
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));   // status label
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));   // log strip
-            content.RowStyles.Add(new RowStyle(SizeType.Absolute, 28));   // thumbs row
-            content.RowStyles.Add(new RowStyle(SizeType.Percent, 100));   // spacer to absorb extra height
-            var thumbsRow = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.LeftToRight,
-                Height = 28,
-                Padding = new Padding(6, 2, 6, 2),
-                WrapContents = false
-            };
-            _btnThumbUp = new Button { Text = "👍", Width = 40, Height = 28, Margin = new Padding(0, 0, 8, 0), Padding = new Padding(0) };
-            _btnThumbDown = new Button { Text = "👎", Width = 40, Height = 28, Padding = new Padding(0) };
-            _btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
-            _btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
+                _wpf.shapePreset.SelectionChanged += (s, e) => ShapePreset_SelectedIndexChanged(s, EventArgs.Empty);
+                _wpf.prompt.TextChanged += (s, e) => Prompt_TextChanged(s, EventArgs.Empty);
+                _wpf.build.Click += async (s, e) => await BuildFromPromptAsync();
+                _wpf.btnHistory.Click += BtnHistory_Click;
+                _wpf.btnStatus.Click += BtnStatus_Click;
+                _wpf.btnSettings.Click += BtnSettings_Click;
+                _wpf.btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
+                _wpf.btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
+            }
+
             TryApplyThumbIcons();
-            thumbsRow.Controls.Add(_btnThumbUp);
-            thumbsRow.Controls.Add(_btnThumbDown);
-
-            // Presets
-            var presetRow = new Panel { Dock = DockStyle.Fill, Height = 28 };
-            var label = new Label { Text = "Preset:", AutoSize = true, Dock = DockStyle.Left, Padding = new Padding(0, 6, 6, 0) };
-            _shapePreset = new ComboBox { Dock = DockStyle.Left, Width = 220, DropDownStyle = ComboBoxStyle.DropDownList };
-            _shapePreset.Items.AddRange(new object[]
-            {
-                "— none —",
-                "Box 100x50x25 mm",
-                "Cylinder Ø40 x 80 mm",
-                "Box 10x10x10 mm"
-            });
-            _shapePreset.SelectedIndex = 0;
-            _shapePreset.SelectedIndexChanged += (s, e) =>
-            {
-                switch (_shapePreset.SelectedIndex)
-                {
-                    case 1: _prompt.Text = "Create a rectangular box 100 mm length, 50 mm width, 25 mm height"; break;
-                    case 2: _prompt.Text = "Create a cylinder 40 mm diameter and 80 mm height"; break;
-                    case 3: _prompt.Text = "Create a cube 10 mm"; break;
-                    default: _prompt.Clear(); break;
-                }
-            };
-            presetRow.Controls.Add(_shapePreset);
-            presetRow.Controls.Add(label);
-
-            _lblModified = new Label
-            {
-                Text = "Unsaved changes",
-                AutoSize = true,
-                Dock = DockStyle.Right,
-                ForeColor = Color.OrangeRed,
-                Visible = false,
-                Padding = new Padding(0, 6, 6, 0)
-            };
-            _lblVersion = new Label
-            {
-                Text = GetAddinVersion(),
-                AutoSize = true,
-                Dock = DockStyle.Right,
-                ForeColor = Color.DimGray,
-                Padding = new Padding(0, 6, 6, 0)
-            };
-            presetRow.Controls.Add(_lblVersion);
-            presetRow.Controls.Add(_lblModified);
-
-            _prompt = new TextBox { Dock = DockStyle.Fill, Multiline = true, Height = 60 };
-            _prompt.TextChanged += (s, e) => { try { SetModified(true); } catch { } };
-
-            _build = new Button { Text = "Build Model", Dock = DockStyle.Fill, Height = 30 };
-            _build.Click += async (s, e) => await BuildFromPromptAsync();
-
-            var ctlRow = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.RightToLeft,
-                Height = 32,
-                Padding = new Padding(0, 3, 0, 0),
-                WrapContents = false
-            };
-
-            _btnHistory = new Button { Text = "History", Width = 80, Height = 26 };
-            _btnHistory.Click += (s, e) =>
-            {
-                try
-                {
-                    if (_stepStore == null)
-                    {
-                        MessageBox.Show(this, "No step store available", "History", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        return;
-                    }
-                    using (var dlg = new HistoryBrowser(_stepStore)) dlg.ShowDialog(this);
-                }
-                catch (Exception ex) { MessageBox.Show(this, ex.Message, "History", MessageBoxButtons.OK, MessageBoxIcon.Error); }
-            };
-
-            var statusBtn = new Button { Text = "Status", Width = 80, Height = 26 };
-            statusBtn.Click += (s, e) =>
-            {
-                try
-                {
-                    if (_statusWindow == null || _statusWindow.IsDisposed)
-                    {
-                        _statusWindow = new StatusWindow();
-                        _statusWindow.CopyErrorClicked += StatusWindow_CopyErrorClicked;
-                        _statusWindow.CopyRunClicked += StatusWindow_CopyRunClicked;
-                    }
-                    _statusWindow.Show();
-                    _statusWindow.BringToFront();
-                }
-                catch (Exception ex) { AppendDetailedStatus("UI", "Status window error", ex); }
-            };
-
-            var settingsBtn = new Button { Text = "Settings", Width = 80, Height = 26 };
-            settingsBtn.Click += (s, e) =>
-            {
-                try
-                {
-                    using (var dlg = new global::AICAD.UI.SettingsDialog())
-                    {
-                        dlg.ShowDialog(this);
-                    }
-                }
-                catch (Exception ex) { AppendDetailedStatus("UI", "Settings dialog error", ex); }
-            };
-
-            ctlRow.Controls.Add(_btnHistory);
-            ctlRow.Controls.Add(statusBtn);
-            ctlRow.Controls.Add(settingsBtn);
-
-            _lblRealTimeStatus = new Label
-            {
-                Text = "Ready",
-                AutoSize = false,
-                Dock = DockStyle.Fill,
-                Height = 30,
-                ForeColor = Color.DimGray,
-                Padding = new Padding(6, 4, 6, 4),
-                TextAlign = ContentAlignment.MiddleLeft
-            };
-
-            _log = new Label
-            {
-                Dock = DockStyle.Fill,
-                Height = 30,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(6, 7, 6, 7),
-                BackColor = Color.WhiteSmoke,
-                ForeColor = Color.DimGray,
-                BorderStyle = BorderStyle.FixedSingle,
-                MinimumSize = new Size(0, 30),
-                MaximumSize = new Size(0, 30)
-            };
-
-            // Build content layout (top to bottom)
-            content.Controls.Add(presetRow, 0, 0);
-            content.Controls.Add(_prompt, 0, 1);
-            content.Controls.Add(_build, 0, 2);
-            content.Controls.Add(_lblRealTimeStatus, 0, 3);
-            content.Controls.Add(_log, 0, 4);
-            content.Controls.Add(thumbsRow, 0, 5);
-            // Spacer keeps log from stretching when the pane is tall.
-            content.Controls.Add(new Panel { Dock = DockStyle.Fill }, 0, 6);
-
-            // Root: content + bottom buttons
-            root.Controls.Add(content, 0, 0);
-            root.Controls.Add(ctlRow, 0, 1);
-
-            Controls.Add(root);
 
             try
             {
@@ -264,6 +99,76 @@ namespace AICAD.UI
             SetLastError(null);
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
             try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
+        }
+
+        private void ShapePreset_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            var idx = _wpf != null ? _wpf.shapePreset.SelectedIndex : shapePreset.SelectedIndex;
+            switch (idx)
+            {
+                case 1: SetPromptText("Create a rectangular box 100 mm length, 50 mm width, 25 mm height"); break;
+                case 2: SetPromptText("Create a cylinder 40 mm diameter and 80 mm height"); break;
+                case 3: SetPromptText("Create a cube 10 mm"); break;
+                default: SetPromptText(string.Empty); break;
+            }
+        }
+
+        private void Prompt_TextChanged(object sender, EventArgs e)
+        {
+            try { SetModified(true); } catch { }
+        }
+
+        private string GetPromptText()
+        {
+            try { return _wpf != null ? _wpf.PromptText : prompt.Text; } catch { return prompt.Text; }
+        }
+
+        private void SetPromptText(string text)
+        {
+            try { prompt.Text = text ?? string.Empty; } catch { }
+            try { if (_wpf != null) _wpf.PromptText = text ?? string.Empty; } catch { }
+        }
+
+        private void BtnHistory_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_stepStore == null)
+                {
+                    MessageBox.Show(this, "No step store available", "History", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    return;
+                }
+                using (var dlg = new HistoryBrowser(_stepStore)) dlg.ShowDialog(this);
+            }
+            catch (Exception ex) { MessageBox.Show(this, ex.Message, "History", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        }
+
+        private void BtnStatus_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                if (_statusWindow == null || _statusWindow.IsDisposed)
+                {
+                    _statusWindow = new StatusWindow();
+                    _statusWindow.CopyErrorClicked += StatusWindow_CopyErrorClicked;
+                    _statusWindow.CopyRunClicked += StatusWindow_CopyRunClicked;
+                }
+                _statusWindow.Show();
+                _statusWindow.BringToFront();
+            }
+            catch (Exception ex) { AppendDetailedStatus("UI", "Status window error", ex); }
+        }
+
+        private void BtnSettings_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                using (var dlg = new global::AICAD.UI.SettingsDialog())
+                {
+                    dlg.ShowDialog(this);
+                }
+            }
+            catch (Exception ex) { AppendDetailedStatus("UI", "Settings dialog error", ex); }
         }
 
         // Initialize DB/logging and related stores at startup and append status lines
@@ -378,15 +283,10 @@ namespace AICAD.UI
             // Spacer row to keep empty space below the comment box
             tl.RowStyles.Add(new RowStyle(SizeType.Absolute, 10));
 
-            _btnThumbUp = new Button { Text = "👍", Dock = DockStyle.Fill };
-            _btnThumbDown = new Button { Text = "👎", Dock = DockStyle.Fill };
             _txtFeedback = new TextBox { Dock = DockStyle.Fill };
 
-            _btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
-            _btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
-
-            tl.Controls.Add(_btnThumbUp, 0, 0);
-            tl.Controls.Add(_btnThumbDown, 2, 0);
+            tl.Controls.Add(btnThumbUp, 0, 0);
+            tl.Controls.Add(btnThumbDown, 2, 0);
             tl.SetColumnSpan(_txtFeedback, 3);
             tl.Controls.Add(_txtFeedback, 0, 1);
             // Add an empty spacer row after the comment input
@@ -399,15 +299,25 @@ namespace AICAD.UI
 
         private void SetRealTimeStatus(string text, Color color)
         {
-            if (_lblRealTimeStatus == null) return;
-            _lblRealTimeStatus.Text = text ?? string.Empty;
-            _lblRealTimeStatus.ForeColor = color;
+            if (lblRealTimeStatus != null)
+            {
+                lblRealTimeStatus.Text = text ?? string.Empty;
+                lblRealTimeStatus.ForeColor = color;
+            }
+            if (_wpf != null && _wpf.lblRealTimeStatus != null)
+            {
+                _wpf.lblRealTimeStatus.Content = text ?? string.Empty;
+                _wpf.lblRealTimeStatus.Foreground = new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromArgb(color.A, color.R, color.G, color.B));
+            }
             AppendStatusLine($"[Status] {text}");
         }
 
         private void SetLlmStatus(string text, Color color)
         {
-            if (_lblLlmStatus == null) return;
+            if (_lblLlmStatus == null)
+            {
+                _lblLlmStatus = new Label { AutoSize = true, Dock = DockStyle.Left, Padding = new Padding(6, 4, 6, 4) };
+            }
             _lblLlmStatus.Text = text ?? string.Empty;
             _lblLlmStatus.ForeColor = color;
             AppendStatusLine($"[LLM] {text}");
@@ -415,7 +325,10 @@ namespace AICAD.UI
 
         private void SetDbStatus(string text, Color color)
         {
-            if (_lblDbStatus == null) return;
+            if (_lblDbStatus == null)
+            {
+                _lblDbStatus = new Label { AutoSize = true, Dock = DockStyle.Left, Padding = new Padding(6, 4, 6, 4) };
+            }
             _lblDbStatus.Text = text ?? string.Empty;
             _lblDbStatus.ForeColor = color;
             _lastDbStatus = text;
@@ -424,7 +337,10 @@ namespace AICAD.UI
 
         private void SetSwStatus(string text, Color color)
         {
-            if (_lblSwStatus == null) return;
+            if (_lblSwStatus == null)
+            {
+                _lblSwStatus = new Label { AutoSize = true, Dock = DockStyle.Left, Padding = new Padding(6, 4, 6, 4) };
+            }
             _lblSwStatus.Text = text ?? string.Empty;
             _lblSwStatus.ForeColor = color;
             AppendStatusLine($"[SW] {text}");
@@ -432,7 +348,10 @@ namespace AICAD.UI
 
         private void SetTimes(TimeSpan? llm, TimeSpan? total)
         {
-            if (_lblTimes == null) return;
+            if (_lblTimes == null)
+            {
+                _lblTimes = new Label { AutoSize = true, Dock = DockStyle.Left, Padding = new Padding(6, 4, 6, 4) };
+            }
             if (llm.HasValue || total.HasValue)
             {
                 var parts = new System.Collections.Generic.List<string>();
@@ -560,7 +479,7 @@ namespace AICAD.UI
 
         private async Task BuildFromPromptAsync()
         {
-            var text = (_prompt.Text ?? string.Empty).Trim();
+            var text = (GetPromptText() ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(text))
             {
                 Log("Enter a prompt describing a simple box or cylinder in mm.");
@@ -574,7 +493,7 @@ namespace AICAD.UI
             StepExecutionResult exec = null;
             try
             {
-                _build.Enabled = false;
+                build.Enabled = false;
                 _lastPrompt = text;
                 Log("> " + text);
                 SetRealTimeStatus("Communicating with LLM…", Color.DarkOrange);
@@ -812,16 +731,16 @@ namespace AICAD.UI
                     SetDbStatus("Log error (exception)", Color.Firebrick);
                     SetRealTimeStatus("Error logging", Color.Firebrick);
                 }
-                _build.Enabled = true;
+                build.Enabled = true;
             }
         }
 
         private void SetModified(bool modified)
         {
             _isModified = modified;
-            if (_lblModified != null)
+            if (lblModified != null)
             {
-                _lblModified.Visible = modified;
+                lblModified.Visible = modified;
             }
         }
 
@@ -1157,13 +1076,13 @@ namespace AICAD.UI
 
         private void Log(string text)
         {
-            if (_log.InvokeRequired)
+            if (log.InvokeRequired)
             {
-                _log.Invoke(new Action(() => _log.Text = text));
+                log.Invoke(new Action(() => log.Text = text));
             }
             else
             {
-                _log.Text = text;
+                log.Text = text;
             }
         }
 
@@ -1186,8 +1105,8 @@ namespace AICAD.UI
                     Path.Combine(baseDir, "thumb_down.png"),
                     Path.Combine(baseDir, "thumb-down.png")
                 };
-                SetThumbIcon(_btnThumbUp, upCandidates);
-                SetThumbIcon(_btnThumbDown, downCandidates);
+                SetThumbIcon(btnThumbUp, upCandidates);
+                SetThumbIcon(btnThumbDown, downCandidates);
             }
             catch { }
         }
@@ -1330,15 +1249,6 @@ namespace AICAD.UI
                 }
             }
             return arr;
-        }
-
-        protected override void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                _client?.Dispose();
-            }
-            base.Dispose(disposing);
         }
     }
 

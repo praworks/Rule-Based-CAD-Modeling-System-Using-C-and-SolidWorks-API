@@ -1,0 +1,72 @@
+<UserControl x:Class="AICAD.UI.TextToCADTaskpaneWpf"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
+             mc:Ignorable="d"
+             d:DesignWidth="472" d:DesignHeight="564">
+    <Grid Margin="0">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="32"/>
+        </Grid.RowDefinitions>
+
+        <!-- Content area -->
+        <Grid Grid.Row="0" Margin="6">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="28"/>
+                <RowDefinition Height="60"/>
+                <RowDefinition Height="32"/>
+                <RowDefinition Height="30"/>
+                <RowDefinition Height="30"/>
+                <RowDefinition Height="93"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Preset row -->
+            <Grid Grid.Row="0" VerticalAlignment="Center">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="220"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Label x:Name="presetLabel" Grid.Column="0" Padding="0,6,6,0" Content="Preset:" VerticalAlignment="Center"/>
+                <ComboBox x:Name="shapePreset" Grid.Column="1" VerticalAlignment="Center" SelectedIndex="0">
+                    <ComboBoxItem>— none —</ComboBoxItem>
+                    <ComboBoxItem>Box 100x50x25 mm</ComboBoxItem>
+                    <ComboBoxItem>Cylinder Ø40 x 80 mm</ComboBoxItem>
+                    <ComboBoxItem>Box 10x10x10 mm</ComboBoxItem>
+                </ComboBox>
+                <Label x:Name="lblVersion" Grid.Column="3" Padding="0,6,6,0" Foreground="DimGray" Content="v?" VerticalAlignment="Center"/>
+                <Label x:Name="lblModified" Grid.Column="4" Padding="0,6,6,0" Foreground="OrangeRed" Content="Unsaved changes" VerticalAlignment="Center" Visibility="Collapsed"/>
+            </Grid>
+
+            <!-- Prompt input -->
+            <TextBox x:Name="prompt" Grid.Row="1" AcceptsReturn="True" VerticalScrollBarVisibility="Auto"/>
+
+            <!-- Build button -->
+            <Button x:Name="build" Grid.Row="2" Content="Build Model"/>
+
+            <!-- Real-time status -->
+            <Label x:Name="lblRealTimeStatus" Grid.Row="3" Padding="6,4,6,4" Foreground="DimGray" Content="Ready" VerticalAlignment="Center"/>
+
+            <!-- Spacer row (kept for layout parity) -->
+            <Label Grid.Row="4"/>
+
+            <!-- Thumbs row / feedback -->
+            <StackPanel Grid.Row="5" Orientation="Horizontal" Margin="6,2,6,2">
+                <Button x:Name="btnThumbUp" Content="👍" Width="30" Height="30" Margin="0,0,8,0"/>
+                <Button x:Name="btnThumbDown" Content="👎" Width="30" Height="30"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Bottom row -->
+        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Margin="6,0,6,3">
+            <Button x:Name="btnHistory" Content="History" Width="80" Height="20" Margin="8,6,0,0"/>
+            <Button x:Name="btnStatus" Content="Status" Width="80" Height="20" Margin="8,6,0,0"/>
+            <Button x:Name="btnSettings" Content="Settings" Width="80" Height="20" Margin="8,6,0,0"/>
+        </StackPanel>
+    </Grid>
+</UserControl>

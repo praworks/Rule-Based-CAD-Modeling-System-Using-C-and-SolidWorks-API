@@ -110,14 +110,21 @@
     <Compile Include="UI\TextToCADTaskpane.cs">
       <SubType>UserControl</SubType>
     </Compile>
+    <Compile Include="UI\TextToCADTaskpane.Designer.cs">
+      <DependentUpon>TextToCADTaskpane.cs</DependentUpon>
+    </Compile>
     <Compile Include="UI\HistoryBrowser.cs">
       <SubType>Form</SubType>
     </Compile>
-    <Compile Include="UI\CredentialDialog.cs" />
-    <Compile Include="UI\SettingsDialog.cs" />
-      <Compile Include="UI\StatusWindow.cs">
-        <SubType>Form</SubType>
-      </Compile>
+    <Compile Include="UI\CredentialDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\SettingsDialog.cs">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="UI\StatusWindow.cs">
+      <SubType>Form</SubType>
+    </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -145,6 +152,20 @@
     <Reference Include="System.Data.SQLite">
       <HintPath>bin\Debug\System.Data.SQLite.dll</HintPath>
     </Reference>
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="UI\TextToCADTaskpane.resx">
+      <DependentUpon>TextToCADTaskpane.cs</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <Page Include="UI\TextToCADTaskpaneWpf.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Compile Include="UI\TextToCADTaskpaneWpf.xaml.cs">
+      <DependentUpon>TextToCADTaskpaneWpf.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -30,9 +30,3 @@ D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-D.3DF45E93.Up2Date
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.dll
 D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.pdb
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AICAD.UI.TextToCADTaskpane.resources
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.csproj.GenerateResource.cache
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\UI\TextToCADTaskpaneWpf.baml
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\UI\TextToCADTaskpaneWpf.g.cs
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December_MarkupCompile.cache
-D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\build_obj\Debug\AI-CAD-December.g.resources

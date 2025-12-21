@@ -146,6 +146,28 @@ namespace AICAD.UI
         {
             try
             {
+                // Show NameEasy settings dialog
+                var currentDbPath = SettingsManager.GetDatabasePath();
+                using (var nameDlg = new global::AICAD.UI.NameEasySettingsDialog(currentDbPath))
+                {
+                    var result = nameDlg.ShowDialog();
+                    if (result == System.Windows.Forms.DialogResult.OK)
+                    {
+                        // Prompt to restart SolidWorks
+                        var restart = System.Windows.Forms.MessageBox.Show(
+                            "Database path updated. Restart SolidWorks for changes to take effect?",
+                            "Restart Required",
+                            System.Windows.Forms.MessageBoxButtons.YesNo,
+                            System.Windows.Forms.MessageBoxIcon.Question);
+                        
+                        if (restart == System.Windows.Forms.DialogResult.Yes)
+                        {
+                            _swApp?.ExitApp();
+                        }
+                    }
+                }
+
+                // Show regular settings dialog
                 using (var dlg = new global::AICAD.UI.SettingsDialog())
                 {
                     dlg.ShowDialog();
@@ -324,44 +346,6 @@ namespace AICAD.UI
                                      ?? "gemini-1.0-pro";
                 _client = new GeminiClient(key, preferredModel);
                 AppendStatusLine("[LLM] Gemini client constructed with hardcoded API key.");
-                
-                var baseDir = @"D:\SolidWorks API\9. SolidWorks Taskpane Text To CAD";
-                _fileLogger = new FileDbLogger(baseDir);
-
-                var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI") ?? string.Empty;
-                var mongoDb = System.Environment.GetEnvironmentVariable("MONGODB_DB") ?? "TaskPaneAddin";
-                
-                if (!string.IsNullOrWhiteSpace(mongoUri))
-                {
-                    try
-                    {
-                        _mongoLogger = new MongoLogger(mongoUri, mongoDb, "SW");
-                        _goodStore = new MongoFeedbackStore(mongoUri, mongoDb, "good_feedback");
-                        _stepStore = new MongoStepStore(mongoUri, mongoDb);
-                        AppendStatusLine("[DB] MongoDB stores initialized.");
-                    }
-                    catch (Exception ex) { AppendDetailedStatus("DB", "Mongo store initialization failed", ex); }
-                }
-
-                if (_goodStore == null)
-                {
-                    try { _goodStore = new SqliteFeedbackStore(baseDir); }
-                    catch { _goodStore = new FileGoodFeedbackStore(baseDir); }
-                }
-                if (_stepStore == null)
-                {
-                    try { _stepStore = new SqliteStepStore(baseDir); }
-                    catch { }
-                }
-
-                if (_mongoLogger != null && _mongoLogger.IsAvailable)
-                {
-                    SetDbStatus("MongoDB ready", Colors.DarkGreen);
-                }
-                else
-                {
-                    SetDbStatus("File/SQLite ready", Colors.DarkGreen);
-                }
             }
             return _client;
         }
@@ -416,7 +400,11 @@ namespace AICAD.UI
                     "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
                     "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + fewshot + "\nNow generate plan for: ";
                 var client = GetClient();
-                _lastModel = client?.Model;
+                if (client == null)
+                {
+                    throw new InvalidOperationException("Gemini client could not be initialized. Check API key and settings.");
+                }
+                _lastModel = client.Model;
                 SetRealTimeStatus("Applying few-shot examples…", Colors.DarkOrange);
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
@@ -445,7 +433,8 @@ namespace AICAD.UI
                         break;
                     }
 
-                    exec = Services.StepExecutor.Execute(planDoc, _swApp);
+                    // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
+                    exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp));
                     if (exec.Success) break;
 
                     var errDoc = new JObject
@@ -461,7 +450,8 @@ namespace AICAD.UI
                     {
                         if (exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
                         {
-                            _swApp.CloseDoc(exec.ModelTitle);
+                            // Close document on UI thread
+                            Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle));
                         }
                     }
                     catch { }
@@ -494,7 +484,8 @@ namespace AICAD.UI
                     {
                         if (exec != null && exec.CreatedNewPart && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
                         {
-                            _swApp.CloseDoc(exec.ModelTitle);
+                            // Close document on UI thread
+                            Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle));
                         }
                     }
                     catch { }
@@ -736,27 +727,110 @@ namespace AICAD.UI
 
                 var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
                 var typeDesc = typeDescriptionTextBox.Text ?? string.Empty;
-                var weight = weightTextBox.Text ?? string.Empty;
 
-                if (!TryApplyPropertiesToActiveModel(partName, material, typeDesc, weight, out var status))
+                var doc = _swApp?.ActiveDoc as IModelDoc2;
+                if (doc == null)
                 {
-                    SetRealTimeStatus(status, Colors.Firebrick);
+                    SetRealTimeStatus("No active document", Colors.Firebrick);
                     return;
                 }
 
-                var model = _swApp?.IActiveDoc2;
-                _swApp?.RunCommand((int)swCommands_e.swCommands_SaveAs, "");
-                Win32SaveAsAutofill.TrySetSaveAsFileName(partName + ".SLDPRT");
+                // Use SaveFileDialog
+                var sfd = new System.Windows.Forms.SaveFileDialog
+                {
+                    Title = "Save Part As",
+                    FileName = partName + ".SLDPRT",
+                    Filter = "Part files (*.sldprt)|*.sldprt",
+                    DefaultExt = "sldprt"
+                };
 
-                var savedPath = model?.GetPathName();
-                _seriesManager.CommitSequence(seriesId, _nextSequence, partName, savedPath);
-                SetRealTimeStatus($"Prepared Save As for {partName}", Colors.DarkGreen);
+                if (sfd.ShowDialog() != System.Windows.Forms.DialogResult.OK)
+                {
+                    SetRealTimeStatus("Save cancelled", Colors.DarkOrange);
+                    return;
+                }
+
+                var fullPath = sfd.FileName;
+
+                // Save using SaveAs4
+                int errors = 0;
+                int warnings = 0;
+                bool saved = doc.Extension.SaveAs(fullPath, (int)swSaveAsVersion_e.swSaveAsCurrentVersion, 
+                    (int)swSaveAsOptions_e.swSaveAsOptions_Silent, null, ref errors, ref warnings);
+
+                if (!saved || errors != 0)
+                {
+                    SetRealTimeStatus($"Save failed (errors={errors}, warnings={warnings})", Colors.Firebrick);
+                    return;
+                }
+
+                // Set properties after successful save
+                SetPartPropertiesOnDocument(doc, material, typeDesc, partName);
+
+                // Commit sequence
+                _seriesManager.CommitSequence(seriesId, _nextSequence, partName, fullPath);
+                SetRealTimeStatus($"Saved as {partName}", Colors.DarkGreen);
                 UpdatePreview();
+
+                // Rebuild to apply material
+                doc.ForceRebuild3(false);
             }
             catch (Exception ex)
             {
                 AppendDetailedStatus("SaveWithName", "Failed", ex);
                 SetRealTimeStatus("Error saving", Colors.Firebrick);
+            }
+        }
+
+        private void SetPartPropertiesOnDocument(IModelDoc2 doc, string material, string description, string partName)
+        {
+            try
+            {
+                var custPropMgr = doc.Extension.CustomPropertyManager[""];
+                if (custPropMgr != null)
+                {
+                    if (!string.IsNullOrEmpty(material))
+                    {
+                        custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material: {material}"); } catch { }
+
+                        // Apply material to part model
+                        try
+                        {
+                            var partDoc = doc as PartDoc;
+                            if (partDoc != null)
+                            {
+                                string database = "solidworks materials.sldmat";
+                                partDoc.SetMaterialPropertyName2("", database, material);
+                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {material}"); } catch { }
+                            }
+                        }
+                        catch (Exception matEx)
+                        {
+                            try { AddinStatusLogger.Error("TaskpaneWpf", "Material application to model failed", matEx); } catch { }
+                        }
+                    }
+
+                    if (!string.IsNullOrEmpty(description))
+                    {
+                        custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    }
+
+                    string filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
+                    if (!string.IsNullOrEmpty(filename))
+                    {
+                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, $"\"SW-Mass@{filename}.SLDPRT\"", (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    }
+
+                    if (!string.IsNullOrEmpty(partName))
+                    {
+                        custPropMgr.Add3("PartNo", (int)swCustomInfoType_e.swCustomInfoText, partName, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { AddinStatusLogger.Error("TaskpaneWpf", "Error setting custom properties", ex); } catch { }
             }
         }
 
@@ -767,21 +841,66 @@ namespace AICAD.UI
                 var partName = previewTextBox.Text?.Trim();
                 var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
                 var typeDesc = typeDescriptionTextBox.Text ?? string.Empty;
-                var weight = weightTextBox.Text ?? string.Empty;
 
-                if (TryApplyPropertiesToActiveModel(partName, material, typeDesc, weight, out var status))
+                var doc = _swApp?.ActiveDoc as IModelDoc2;
+                if (doc == null)
                 {
-                    SetRealTimeStatus("Properties applied", Colors.DarkGreen);
+                    SetRealTimeStatus("No active document", Colors.Firebrick);
+                    return;
                 }
-                else
-                {
-                    SetRealTimeStatus(status, Colors.Firebrick);
-                }
+
+                SetPartPropertiesOnDocument(doc, material, typeDesc, partName);
+                doc.ForceRebuild3(false);
+                SetRealTimeStatus("Properties applied", Colors.DarkGreen);
             }
             catch (Exception ex)
             {
                 AppendDetailedStatus("ApplyProps", "Failed", ex);
                 SetRealTimeStatus("Error applying properties", Colors.Firebrick);
+            }
+        }
+
+        public void LoadFromProperties(string material, string description, string mass, string partNo)
+        {
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    // Load material - match from list or set as text
+                    if (!string.IsNullOrEmpty(material))
+                    {
+                        var items = materialComboBox.Items.Cast<ComboBoxItem>();
+                        var match = items.FirstOrDefault(i => i.Content?.ToString()?.Equals(material, StringComparison.OrdinalIgnoreCase) == true);
+                        if (match != null)
+                        {
+                            materialComboBox.SelectedItem = match;
+                        }
+                        else
+                        {
+                            // Material not in list, set as custom text (editable combobox)
+                            materialComboBox.Text = material;
+                        }
+                    }
+                    else
+                    {
+                        materialComboBox.SelectedIndex = 0; // Default to first material
+                    }
+
+                    // Load description
+                    typeDescriptionTextBox.Text = description ?? string.Empty;
+
+                    // Load weight (mass) - ensure it updates even if empty
+                    weightTextBox.Text = mass ?? "0.000";
+
+                    // Don't overwrite preview with partNo - preview is for generated names
+                    // If we want to show existing partNo somewhere, add a separate field
+                    
+                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Loaded properties: Mat={material}, Desc={description}, Mass={mass}"); } catch { }
+                });
+            }
+            catch (Exception ex)
+            {
+                try { AddinStatusLogger.Error("TaskpaneWpf", "LoadFromProperties failed", ex); } catch { }
             }
         }
 

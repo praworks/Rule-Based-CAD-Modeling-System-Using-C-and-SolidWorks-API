@@ -45,10 +45,29 @@
                 <StackPanel>
                     <Label Content="Material" Foreground="#005A9E" FontWeight="SemiBold" Padding="0,0,0,2"/>
                     <Label Content="Select Material:" FontSize="10" Foreground="Gray" Padding="0"/>
-                    <ComboBox x:Name="materialComboBox" Margin="0,2,0,0" SelectedIndex="0">
+                    <ComboBox x:Name="materialComboBox" Margin="0,2,0,0" SelectedIndex="0" IsEditable="True">
+                        <ComboBoxItem>Steel, Mild</ComboBoxItem>
+                        <ComboBoxItem>Aluminum 1060 Alloy</ComboBoxItem>
+                        <ComboBoxItem>Stainless Steel</ComboBoxItem>
+                        <ComboBoxItem>Brass</ComboBoxItem>
+                        <ComboBoxItem>Copper</ComboBoxItem>
+                        <ComboBoxItem>Bronze</ComboBoxItem>
+                        <ComboBoxItem>Titanium</ComboBoxItem>
+                        <ComboBoxItem>ABS PC</ComboBoxItem>
+                        <ComboBoxItem>Polycarbonate</ComboBoxItem>
+                        <ComboBoxItem>Polypropylene</ComboBoxItem>
+                        <ComboBoxItem>PVC Rigid</ComboBoxItem>
+                        <ComboBoxItem>Nylon 6/10</ComboBoxItem>
+                        <ComboBoxItem>Cast Alloy Steel</ComboBoxItem>
+                        <ComboBoxItem>Plain Carbon Steel</ComboBoxItem>
+                        <ComboBoxItem>Alloy Steel</ComboBoxItem>
                         <ComboBoxItem>Aluminum 6061</ComboBoxItem>
-                        <ComboBoxItem>Steel 1020</ComboBoxItem>
-                        <ComboBoxItem>ABS Plastic</ComboBoxItem>
+                        <ComboBoxItem>Aluminum 2014</ComboBoxItem>
+                        <ComboBoxItem>Aluminum 5052</ComboBoxItem>
+                        <ComboBoxItem>Aluminum 7075</ComboBoxItem>
+                        <ComboBoxItem>304 Stainless</ComboBoxItem>
+                        <ComboBoxItem>316 Stainless</ComboBoxItem>
+                        <ComboBoxItem>Custom</ComboBoxItem>
                     </ComboBox>
                 </StackPanel>
             </Border>
@@ -57,7 +76,7 @@
                 <StackPanel>
                     <Label Content="Type Description" Foreground="#005A9E" FontWeight="SemiBold" Padding="0,0,0,2"/>
                     <Label Content="Description:" FontSize="10" Foreground="Gray" Padding="0"/>
-                    <TextBox x:Name="typeDescriptionTextBox" Margin="0,2,0,0" Height="24"/>
+                    <TextBox x:Name="typeDescriptionTextBox" Margin="0,2,0,0" Height="24" IsReadOnly="False" IsEnabled="True"/>
                 </StackPanel>
             </Border>
 
@@ -90,10 +109,10 @@
 
         </StackPanel>
 
-         <Label x:Name="lblRealTimeStatus" Grid.Row="2" 
+        <Label x:Name="lblRealTimeStatus" Grid.Row="2" 
              Padding="2,0,0,2" Foreground="DimGray" 
              Content="Ready" FontSize="11" HorizontalAlignment="Left"/>
-         <Label x:Name="lblModified" Grid.Row="2"
+        <Label x:Name="lblModified" Grid.Row="2"
              Padding="0,0,2,2" Foreground="Firebrick"
              Content="Modified" FontSize="11" HorizontalAlignment="Right"
              Visibility="Collapsed"/>
@@ -102,8 +121,8 @@
             <TextBox x:Name="prompt" 
                      AcceptsReturn="True" TextWrapping="Wrap" 
                      VerticalScrollBarVisibility="Auto" Padding="8,8,105,8" 
-                     Text="Enter prompt..." VerticalAlignment="Stretch"
-                     BorderBrush="#FFCCCCCC"/>
+                     Text="Enter prompt..."
+                     BorderBrush="#FFCCCCCC" Margin="0,64,0,0" Height="125"/>
             <Button x:Name="build" Content="Build 🚀" 
                     HorizontalAlignment="Right" VerticalAlignment="Bottom" 
                     Margin="0,0,10,10" Height="30" Width="85"

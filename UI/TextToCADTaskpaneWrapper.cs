@@ -14,6 +14,8 @@ namespace AICAD.UI
         private ElementHost _elementHost;
         private TextToCADTaskpaneWpf _wpfControl;
 
+        public TextToCADTaskpaneWpf WpfControl => _wpfControl;
+
         public TextToCADTaskpaneWrapper(ISldWorks swApp)
         {
             InitializeComponent(swApp);

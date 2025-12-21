@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.Serialization;
@@ -10,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Media;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
+using SolidWorks.Interop.swcommands;
 using AICAD.Services;
 using Newtonsoft.Json.Linq;
 
@@ -34,6 +36,9 @@ namespace AICAD.UI
         private bool? _lastDbLogged;
         private string _lastRunId;
         private IStepStore _stepStore;
+        private SeriesManager _seriesManager;
+        private string _selectedSeries;
+        private int _nextSequence;
 
         public TextToCADTaskpaneWpf(ISldWorks swApp)
         {
@@ -49,10 +54,19 @@ namespace AICAD.UI
             prompt.TextChanged += Prompt_TextChanged;
             build.Click += async (s, e) => await BuildFromPromptAsync();
             btnHistory.Click += BtnHistory_Click;
-            btnStatus.Click += BtnStatus_Click;
+            // Use FindName to avoid field resolution issues during compile
+            var btnStatusBtn = FindName("btnStatus") as Button;
+            if (btnStatusBtn != null)
+            {
+                btnStatusBtn.Click += BtnStatus_Click;
+            }
             btnSettings.Click += BtnSettings_Click;
             btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
             btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
+            addSeriesButton.Click += AddSeriesButton_Click;
+            seriesComboBox.SelectionChanged += SeriesComboBox_SelectionChanged;
+            saveWithNameButton.Click += SaveWithNameButton_Click;
+            applyPropertiesButton.Click += ApplyPropertiesButton_Click;
 
             try
             {
@@ -74,6 +88,7 @@ namespace AICAD.UI
             SetLastError(null);
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
             try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
+            try { InitNameEasy(); } catch (Exception ex) { AppendDetailedStatus("NameEasy", "init failed", ex); }
         }
 
         private void ShapePreset_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -600,10 +615,284 @@ namespace AICAD.UI
         private void SetModified(bool modified)
         {
             _isModified = modified;
-            if (lblModified != null)
+            var modifiedLabel = FindName("lblModified") as Label;
+            if (modifiedLabel != null)
             {
-                lblModified.Visibility = modified ? Visibility.Visible : Visibility.Collapsed;
+                modifiedLabel.Visibility = modified ? Visibility.Visible : Visibility.Collapsed;
             }
+        }
+
+        private void InitNameEasy()
+        {
+            _seriesManager = new SeriesManager();
+            LoadSeriesFromDatabase();
+            UpdatePreview();
+        }
+
+        private void LoadSeriesFromDatabase()
+        {
+            var series = _seriesManager?.GetAllSeries() ?? new List<string>();
+            seriesComboBox.Items.Clear();
+            foreach (var id in series)
+            {
+                seriesComboBox.Items.Add(id);
+            }
+
+            if (seriesComboBox.Items.Count > 0)
+            {
+                seriesComboBox.SelectedIndex = 0;
+            }
+            else
+            {
+                seriesComboBox.Items.Add("ASM");
+                seriesComboBox.SelectedIndex = 0;
+            }
+        }
+
+        private void SeriesComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            UpdatePreview();
+        }
+
+        private void UpdatePreview()
+        {
+            try
+            {
+                _selectedSeries = seriesComboBox.SelectedItem?.ToString();
+                if (string.IsNullOrWhiteSpace(_selectedSeries) || _seriesManager == null)
+                {
+                    nextSequenceLabel.Content = "Next Sequence: --";
+                    previewTextBox.Text = string.Empty;
+                    saveWithNameButton.IsEnabled = false;
+                    applyPropertiesButton.IsEnabled = false;
+                    return;
+                }
+
+                _seriesManager.AddSeries(_selectedSeries, "Auto-added", "0000");
+                _nextSequence = _seriesManager.GetNextSequence(_selectedSeries);
+                var partName = _seriesManager.GeneratePartName(_selectedSeries, _nextSequence);
+                nextSequenceLabel.Content = $"Next Sequence: {_nextSequence:0000}";
+                previewTextBox.Text = partName;
+                saveWithNameButton.IsEnabled = true;
+                applyPropertiesButton.IsEnabled = true;
+            }
+            catch (Exception ex)
+            {
+                saveWithNameButton.IsEnabled = false;
+                applyPropertiesButton.IsEnabled = false;
+                nextSequenceLabel.Content = "Next Sequence: --";
+                previewTextBox.Text = string.Empty;
+                AddinLogger.Error("Naming", "Failed to update preview", ex);
+            }
+        }
+
+        private void AddSeriesButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_seriesManager == null) return;
+                if (!ShowAddSeriesDialog(out var seriesId, out var description, out var format)) return;
+
+                if (_seriesManager.AddSeries(seriesId, description, format))
+                {
+                    LoadSeriesFromDatabase();
+                    seriesComboBox.SelectedItem = seriesId;
+                    SetRealTimeStatus($"Added series {seriesId}", Colors.DarkGreen);
+                }
+                else
+                {
+                    SetRealTimeStatus($"Series {seriesId} already exists", Colors.DarkOrange);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("Series", "Add series failed", ex);
+            }
+        }
+
+        private void SaveWithNameButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_seriesManager == null)
+                {
+                    SetRealTimeStatus("Series manager not ready", Colors.Firebrick);
+                    return;
+                }
+
+                var seriesId = _selectedSeries;
+                if (string.IsNullOrWhiteSpace(seriesId))
+                {
+                    SetRealTimeStatus("Select a series first", Colors.Firebrick);
+                    return;
+                }
+
+                var partName = previewTextBox.Text?.Trim();
+                if (string.IsNullOrWhiteSpace(partName))
+                {
+                    SetRealTimeStatus("No part name", Colors.Firebrick);
+                    return;
+                }
+
+                var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
+                var typeDesc = typeDescriptionTextBox.Text ?? string.Empty;
+                var weight = weightTextBox.Text ?? string.Empty;
+
+                if (!TryApplyPropertiesToActiveModel(partName, material, typeDesc, weight, out var status))
+                {
+                    SetRealTimeStatus(status, Colors.Firebrick);
+                    return;
+                }
+
+                var model = _swApp?.IActiveDoc2;
+                _swApp?.RunCommand((int)swCommands_e.swCommands_SaveAs, "");
+                Win32SaveAsAutofill.TrySetSaveAsFileName(partName + ".SLDPRT");
+
+                var savedPath = model?.GetPathName();
+                _seriesManager.CommitSequence(seriesId, _nextSequence, partName, savedPath);
+                SetRealTimeStatus($"Prepared Save As for {partName}", Colors.DarkGreen);
+                UpdatePreview();
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("SaveWithName", "Failed", ex);
+                SetRealTimeStatus("Error saving", Colors.Firebrick);
+            }
+        }
+
+        private void ApplyPropertiesButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var partName = previewTextBox.Text?.Trim();
+                var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
+                var typeDesc = typeDescriptionTextBox.Text ?? string.Empty;
+                var weight = weightTextBox.Text ?? string.Empty;
+
+                if (TryApplyPropertiesToActiveModel(partName, material, typeDesc, weight, out var status))
+                {
+                    SetRealTimeStatus("Properties applied", Colors.DarkGreen);
+                }
+                else
+                {
+                    SetRealTimeStatus(status, Colors.Firebrick);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("ApplyProps", "Failed", ex);
+                SetRealTimeStatus("Error applying properties", Colors.Firebrick);
+            }
+        }
+
+        private bool TryApplyPropertiesToActiveModel(string partName, string material, string description, string weight, out string status)
+        {
+            status = string.Empty;
+            try
+            {
+                var model = _swApp?.IActiveDoc2;
+                if (model == null)
+                {
+                    status = "No active document";
+                    return false;
+                }
+
+                var props = model.Extension?.get_CustomPropertyManager("");
+                if (props == null)
+                {
+                    status = "No property manager";
+                    return false;
+                }
+
+                void SetProp(string name, string value)
+                {
+                    props.Add3(name, (int)swCustomInfoType_e.swCustomInfoText, value ?? string.Empty, (int)swCustomPropertyAddOption_e.swCustomPropertyReplaceValue);
+                }
+
+                if (!string.IsNullOrWhiteSpace(partName)) SetProp("Part Number", partName);
+                SetProp("Material", material ?? string.Empty);
+                SetProp("Description", description ?? string.Empty);
+                if (!string.IsNullOrWhiteSpace(weight)) SetProp("Weight", weight);
+
+                model.ForceRebuild3(false);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = ex.Message;
+                return false;
+            }
+        }
+
+        private bool ShowAddSeriesDialog(out string seriesId, out string description, out string format)
+        {
+            seriesId = string.Empty;
+            description = string.Empty;
+            format = "0000";
+
+            var dialog = new Window
+            {
+                Title = "Add Series",
+                Width = 340,
+                Height = 220,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                ResizeMode = ResizeMode.NoResize,
+                Owner = Window.GetWindow(this)
+            };
+
+            var panel = new StackPanel { Margin = new Thickness(10) };
+            var idLabel = new TextBlock { Text = "Series ID (e.g., ASM)", FontWeight = FontWeights.Bold };
+            var idBox = new TextBox { Margin = new Thickness(0, 4, 0, 10) };
+            var descLabel = new TextBlock { Text = "Description" };
+            var descBox = new TextBox { Margin = new Thickness(0, 4, 0, 10) };
+            var fmtLabel = new TextBlock { Text = "Sequence format (e.g., 0000)" };
+            var fmtBox = new TextBox { Text = "0000", Margin = new Thickness(0, 4, 0, 12) };
+
+            panel.Children.Add(idLabel);
+            panel.Children.Add(idBox);
+            panel.Children.Add(descLabel);
+            panel.Children.Add(descBox);
+            panel.Children.Add(fmtLabel);
+            panel.Children.Add(fmtBox);
+
+            var buttonPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
+            var ok = new Button { Content = "OK", Width = 70, Margin = new Thickness(0, 0, 6, 0) };
+            var cancel = new Button { Content = "Cancel", Width = 70 };
+            buttonPanel.Children.Add(ok);
+            buttonPanel.Children.Add(cancel);
+            panel.Children.Add(buttonPanel);
+
+            dialog.Content = panel;
+
+            string pendingSeries = null;
+            string pendingDesc = null;
+            string pendingFmt = null;
+
+            ok.Click += (_, __) =>
+            {
+                var id = idBox.Text.Trim();
+                if (string.IsNullOrWhiteSpace(id))
+                {
+                    MessageBox.Show(dialog, "Please enter a series ID.", "NameEasy", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                pendingSeries = id;
+                pendingDesc = descBox.Text.Trim();
+                pendingFmt = string.IsNullOrWhiteSpace(fmtBox.Text) ? "0000" : fmtBox.Text.Trim();
+                dialog.DialogResult = true;
+                dialog.Close();
+            };
+            cancel.Click += (_, __) => { dialog.DialogResult = false; dialog.Close(); };
+
+            var result = dialog.ShowDialog() == true;
+            if (result)
+            {
+                seriesId = pendingSeries ?? string.Empty;
+                description = pendingDesc ?? string.Empty;
+                format = pendingFmt ?? "0000";
+            }
+
+            return result;
         }
 
         private string GetAddinVersion()

@@ -46,7 +46,8 @@ namespace AICAD.Services
                     model = (IModelDoc2)swApp.ActiveDoc;
                     if (model == null)
                     {
-                        model = (IModelDoc2)swApp.NewDocument("", (int)swDwgPaperSizes_e.swDwgPaperA4size, 0, 0) ?? (IModelDoc2)swApp.NewPart();
+                        // Create a brand-new PART document; avoid NewDocument with unspecified template which can crash
+                        model = (IModelDoc2)swApp.NewPart();
                         if (model == null)
                         {
                             result.Log.Add(new JObject { ["step"] = 0, ["op"] = "new_part", ["success"] = false, ["error"] = "Failed to create new part (check default template)" });
@@ -56,12 +57,6 @@ namespace AICAD.Services
                         result.CreatedNewPart = true;
                         result.ModelTitle = model.GetTitle();
                         result.Log.Add(new JObject { ["step"] = 0, ["op"] = "new_part", ["success"] = true });
-                    }
-                    if (model == null)
-                    {
-                        result.Log.Add(new JObject { ["step"] = 0, ["op"] = "new_part", ["success"] = false, ["error"] = "Failed to create new part (check default template)" });
-                        result.Success = false;
-                        return result;
                     }
                     int actErr = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr);
                     sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
@@ -78,7 +73,8 @@ namespace AICAD.Services
                         switch (op)
                         {
                             case "new_part":
-                                model = (IModelDoc2)swApp.NewDocument("", (int)swDwgPaperSizes_e.swDwgPaperA4size, 0, 0) ?? (IModelDoc2)swApp.NewPart();
+                                // Create a new PART document explicitly to avoid template-related crashes
+                                model = (IModelDoc2)swApp.NewPart();
                                 if (model == null) throw new Exception("Failed to create new part (check default template)");
                                 {
                                     int actErr = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr);

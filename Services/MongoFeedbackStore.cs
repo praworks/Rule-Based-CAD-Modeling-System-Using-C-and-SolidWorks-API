@@ -104,7 +104,7 @@ namespace AICAD.Services
                         foreach (var doc in cursor.ToEnumerable())
                         {
                             var prompt = doc.GetValue("prompt", string.Empty).AsString;
-                            var plan = doc.GetValue("plan", "{}").ToString();
+                            var plan = AICAD.Services.JsonUtils.SerializeCompact(doc.GetValue("plan", "{}"));
                             shots.Add("\\nInput: " + prompt + "\\nOutput:" + plan);
                         }
                 }

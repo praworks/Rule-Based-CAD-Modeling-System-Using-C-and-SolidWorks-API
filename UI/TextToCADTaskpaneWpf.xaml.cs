@@ -1255,7 +1255,7 @@ namespace AICAD.UI
                 {
                     try
                     {
-                        var bdoc = MongoDB.Bson.Serialization.BsonSerializer.Deserialize<MongoDB.Bson.BsonDocument>(fb.ToString());
+                        var bdoc = MongoDB.Bson.Serialization.BsonSerializer.Deserialize<MongoDB.Bson.BsonDocument>(AICAD.Services.JsonUtils.SerializeCompact(fb));
                         ok = await _mongoLogger.InsertAsync("Feedback", bdoc);
                     }
                     catch { ok = false; }

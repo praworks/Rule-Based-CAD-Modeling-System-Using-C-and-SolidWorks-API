@@ -93,7 +93,7 @@ namespace AICAD.Services
                                     { "run_key", runKey ?? string.Empty },
                                     { "step_index", i },
                                     { "op", op },
-                                    { "params_json", sCopy.ToString(Newtonsoft.Json.Formatting.None) },
+                                    { "params_json", AICAD.Services.JsonUtils.SerializeCompact(sCopy) },
                                     { "success", succ },
                                     { "error", err }
                                 };

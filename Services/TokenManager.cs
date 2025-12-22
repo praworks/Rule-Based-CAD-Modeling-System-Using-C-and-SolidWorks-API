@@ -62,7 +62,7 @@ namespace AICAD.Services
                 {
                     j["obtained_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 }
-                CredentialManager.WriteGenericSecret(CredentialTarget, j.ToString(Newtonsoft.Json.Formatting.None));
+                    CredentialManager.WriteGenericSecret(CredentialTarget, AICAD.Services.JsonUtils.SerializeCompact(j));
             }
             catch { }
         }
@@ -89,7 +89,7 @@ namespace AICAD.Services
                     if (!resp.IsSuccessStatusCode) return null;
                     var j = JObject.Parse(text);
                     j["obtained_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                    return j.ToString(Newtonsoft.Json.Formatting.None);
+                    return AICAD.Services.JsonUtils.SerializeCompact(j);
                 }
             }
             catch

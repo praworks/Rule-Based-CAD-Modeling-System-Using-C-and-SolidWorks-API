@@ -52,7 +52,7 @@ namespace AICAD.Services
         {
             try
             {
-                var line = doc.ToString(Newtonsoft.Json.Formatting.None) + Environment.NewLine;
+                var line = AICAD.Services.JsonUtils.SerializeCompact(doc) + Environment.NewLine;
                 using (var fs = new FileStream(_dbFilePath, FileMode.Append, FileAccess.Write, FileShare.Read))
                 using (var sw = new StreamWriter(fs, Encoding.UTF8))
                 {

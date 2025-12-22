@@ -567,7 +567,7 @@ namespace AICAD.UI
                     };
                     var corrective =
                         "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
-                        errDoc.ToString(Newtonsoft.Json.Formatting.None) +
+                        AICAD.Services.JsonUtils.SerializeCompact(errDoc) +
                         "\nRemember: output only JSON with steps; use Front Plane and mm units.";
                     // If we created a model this attempt and failed, close it before retry
                     try

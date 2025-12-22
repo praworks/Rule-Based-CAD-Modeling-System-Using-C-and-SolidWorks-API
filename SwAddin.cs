@@ -6,6 +6,7 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swpublished;
 using AICAD.Services;
+using System.Threading.Tasks;
 
 namespace AICAD
 {
@@ -30,7 +31,13 @@ namespace AICAD
             _addinId = Cookie;
             _app.SetAddinCallbackInfo2(0, this, _addinId);
 
+            // 1. Hook up the Assembly Resolver FIRST
+            AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
             try { AddinStatusLogger.Log("AICadAddin", $"ConnectToSW called cookie={Cookie}"); } catch { }
+
+            // Install global exception handlers to capture unhandled managed exceptions and task errors
+            InstallGlobalExceptionHandlers();
+
             try
             {
                 // Initialize NameEasy series manager
@@ -112,6 +119,136 @@ namespace AICAD
                 try { AddinStatusLogger.Error("AICadAddin", "Failed to detach event handlers", ex); } catch { }
             }
         }
+
+        // Install robust global exception handlers to capture crashes and unobserved task exceptions
+        private void InstallGlobalExceptionHandlers()
+        {
+            try
+            {
+                AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
+                {
+                    try
+                    {
+                        var ex = e.ExceptionObject as Exception;
+                        AddinStatusLogger.Error("UnhandledException", "AppDomain.UnhandledException", ex ?? new Exception(e.ExceptionObject?.ToString()));
+                        MirrorStatusToTempFile("UnhandledException: " + (ex?.ToString() ?? e.ExceptionObject?.ToString()));
+                        TryWriteMiniDump(ex ?? new Exception(e.ExceptionObject?.ToString()));
+                    }
+                    catch { }
+                };
+
+                TaskScheduler.UnobservedTaskException += (sender, e) =>
+                {
+                    try
+                    {
+                        AddinStatusLogger.Error("UnobservedTaskException", "TaskScheduler.UnobservedTaskException", e.Exception);
+                        e.SetObserved();
+                        MirrorStatusToTempFile("UnobservedTaskException: " + e.Exception?.ToString());
+                        TryWriteMiniDump(e.Exception);
+                    }
+                    catch { }
+                };
+
+                try
+                {
+                    var app = System.Windows.Application.Current;
+                    if (app != null)
+                    {
+                        app.DispatcherUnhandledException += (sender, e) =>
+                        {
+                            try
+                            {
+                                AddinStatusLogger.Error("DispatcherUnhandledException", "WPF Dispatcher unhandled", e.Exception);
+                                MirrorStatusToTempFile("DispatcherUnhandledException: " + e.Exception?.ToString());
+                                TryWriteMiniDump(e.Exception);
+                            }
+                            catch { }
+                            // keep default host behavior
+                        };
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    System.Windows.Forms.Application.ThreadException += (sender, e) =>
+                    {
+                        try
+                        {
+                            AddinStatusLogger.Error("ThreadException", "WinForms thread exception", e.Exception);
+                            MirrorStatusToTempFile("ThreadException: " + e.Exception?.ToString());
+                            TryWriteMiniDump(e.Exception);
+                        }
+                        catch { }
+                    };
+                }
+                catch { }
+
+                try
+                {
+                    var firstChance = System.Environment.GetEnvironmentVariable("AICAD_LOG_FIRST_CHANCE");
+                    if (!string.IsNullOrEmpty(firstChance) && firstChance == "1")
+                    {
+                        AppDomain.CurrentDomain.FirstChanceException += (s, e) =>
+                        {
+                            try { AddinStatusLogger.Log("FirstChance", e.Exception.ToString().Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)[0]); } catch { }
+                        };
+                    }
+                }
+                catch { }
+            }
+            catch (Exception ex)
+            {
+                try { AddinStatusLogger.Error("InstallHandlers", "Failed to install global handlers", ex); } catch { }
+            }
+        }
+
+        private void MirrorStatusToTempFile(string line)
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Unhandled.log");
+                System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
+            }
+            catch { }
+        }
+
+        // If enabled (AICAD_DUMP_ON_UNHANDLED=1), create a minidump of this process to %TEMP%
+        private void TryWriteMiniDump(Exception ex)
+        {
+            try
+            {
+                var enable = System.Environment.GetEnvironmentVariable("AICAD_DUMP_ON_UNHANDLED");
+                // Default to enabled unless explicitly set to a non-"1" value
+                if (!string.IsNullOrEmpty(enable) && enable != "1") return;
+
+                var fname = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"AICAD_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}.dmp");
+                using (var fs = System.IO.File.Create(fname))
+                {
+                    var proc = System.Diagnostics.Process.GetCurrentProcess();
+                    bool ok = MiniDumpWriteDump(proc.Handle, (uint)proc.Id, fs.SafeFileHandle.DangerousGetHandle(), MiniDumpType.MiniDumpWithFullMemory, IntPtr.Zero, IntPtr.Zero, IntPtr.Zero);
+                    if (ok)
+                    {
+                        try { AddinStatusLogger.Log("MiniDump", $"Wrote dump to {fname}"); } catch { }
+                    }
+                    else
+                    {
+                        try { AddinStatusLogger.Log("MiniDump", $"Failed to write dump, last err={System.Runtime.InteropServices.Marshal.GetLastWin32Error()}"); } catch { }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        [Flags]
+        private enum MiniDumpType : uint
+        {
+            MiniDumpNormal = 0x00000000,
+            MiniDumpWithFullMemory = 0x00000002,
+        }
+
+        [System.Runtime.InteropServices.DllImport("Dbghelp.dll", SetLastError = true)]
+        private static extern bool MiniDumpWriteDump(IntPtr hProcess, uint processId, IntPtr hFile, MiniDumpType dumpType, IntPtr expParam, IntPtr userStreamParam, IntPtr callbackParam);
 
         private void HookDocRegenForActiveDocument()
         {
@@ -452,6 +589,22 @@ namespace AICAD
             {
                 // Ignore errors during unregister
             }
+        }
+        // Assembly resolver for dependent DLLs
+        private System.Reflection.Assembly OnAssemblyResolve(object sender, ResolveEventArgs args)
+        {
+            try
+            {
+                var assemblyName = new System.Reflection.AssemblyName(args.Name).Name;
+                var folderPath = System.IO.Path.GetDirectoryName(this.GetType().Assembly.Location);
+                var assemblyPath = System.IO.Path.Combine(folderPath, assemblyName + ".dll");
+                if (System.IO.File.Exists(assemblyPath))
+                {
+                    return System.Reflection.Assembly.LoadFrom(assemblyPath);
+                }
+            }
+            catch { }
+            return null;
         }
     }
 }

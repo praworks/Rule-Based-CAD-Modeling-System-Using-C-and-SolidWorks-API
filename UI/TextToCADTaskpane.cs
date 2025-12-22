@@ -80,7 +80,33 @@ namespace AICAD.UI
             SetTimes(null, null);
             SetLastError(null);
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
-            try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
+            // REMOVE InitDbAndStores from constructor. Use async Load event instead.
+            this.Load += TextToCADTaskpane_Load;
+        }
+
+        // Add async Load event handler for background DB init
+        private async void TextToCADTaskpane_Load(object sender, EventArgs e)
+        {
+            // Run initialization on a background thread to prevent freezing SW
+            await Task.Run(() =>
+            {
+                try
+                {
+                    InitDbAndStores();
+                }
+                catch (Exception ex)
+                {
+                    // Marshal error back to UI thread
+                    if (this.InvokeRequired)
+                    {
+                        this.Invoke(new Action(() => AppendDetailedStatus("DB:init", "Async init failed", ex)));
+                    }
+                    else
+                    {
+                        AppendDetailedStatus("DB:init", "Async init failed", ex);
+                    }
+                }
+            });
         }
 
         private void ShapePreset_SelectedIndexChanged(object sender, EventArgs e)
@@ -151,7 +177,7 @@ namespace AICAD.UI
         {
             try
             {
-                var baseDir = @"D:\SolidWorks API\7. SolidWorks Taskpane Text To CAD"; // workspace folder
+                var baseDir = @"D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API"; // workspace folder
                 _fileLogger = new FileDbLogger(baseDir);
 
                 var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI")
@@ -1126,32 +1152,37 @@ namespace AICAD.UI
 
         private void AppendStatusLine(string line)
         {
+            // Ensure we are on the UI thread before touching controls
+            if (this.InvokeRequired)
+            {
+                this.BeginInvoke(new Action<string>(AppendStatusLine), line);
+                return;
+            }
             try
             {
-                    // Write to status window if it's open
-                    if (_statusWindow != null && !_statusWindow.IsDisposed)
-                    {
-                        var ts = DateTime.Now.ToString("HH:mm:ss");
-                        _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                        _statusWindow.StatusConsole.SelectionColor = Color.Gainsboro;
-                        _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
-                        _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                        _statusWindow.StatusConsole.ScrollToCaret();
-                        try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
-                        return;
-                    }
-
-                    // If no window, still mirror to temp log for diagnostics
-                    try { MirrorStatusToTempFile(DateTime.Now.ToString("HH:mm:ss") + " " + line); } catch { }
-                }
-                catch { }
-            }
-
-            private void StatusWindow_CopyErrorClicked(object sender, EventArgs e)
-            {
-                try
+                // Write to status window if it's open
+                if (_statusWindow != null && !_statusWindow.IsDisposed)
                 {
-                    var text = BuildErrorCopyText();
+                    var ts = DateTime.Now.ToString("HH:mm:ss");
+                    _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
+                    _statusWindow.StatusConsole.SelectionColor = Color.Gainsboro;
+                    _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
+                    _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
+                    _statusWindow.StatusConsole.ScrollToCaret();
+                    try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
+                    return;
+                }
+                // If no window, still mirror to temp log for diagnostics
+                try { MirrorStatusToTempFile(DateTime.Now.ToString("HH:mm:ss") + " " + line); } catch { }
+            }
+            catch { }
+        }
+
+        private void StatusWindow_CopyErrorClicked(object sender, EventArgs e)
+        {
+            try
+            {
+                var text = BuildErrorCopyText();
                     if (!string.IsNullOrEmpty(text))
                     {
                         Clipboard.SetText(text);

@@ -45,6 +45,49 @@ namespace AICAD.UI
             InitializeComponent();
             _swApp = swApp;
 
+            // Make sure TextBoxes are focusable and accept keyboard input when the host is clicked
+            try
+            {
+                this.Loaded += (s, e) => { try { prompt.Focusable = true; typeDescriptionTextBox.Focusable = true; this.Focusable = true; } catch { } };
+                // If user clicks anywhere in the WPF control, try to move focus into the prompt (handles tricky host focus capture)
+                this.PreviewMouseDown += (s, e) =>
+                {
+                    try
+                    {
+                        var src = e.OriginalSource as System.Windows.DependencyObject;
+                        // If the click target (or any ancestor) is the prompt textbox, focus it
+                        if (FindAncestor<System.Windows.Controls.TextBox>(src) == prompt)
+                        {
+                            FocusPrompt();
+                            e.Handled = false;
+                            return;
+                        }
+
+                        // Otherwise, if the click is inside the lower prompt area, give focus as well
+                        var promptContainer = prompt;
+                        if (promptContainer != null)
+                        {
+                            var pt = e.GetPosition(promptContainer);
+                            if (pt.X >= 0 && pt.X <= promptContainer.ActualWidth && pt.Y >= 0 && pt.Y <= promptContainer.ActualHeight)
+                            {
+                                FocusPrompt();
+                                e.Handled = false;
+                            }
+                        }
+                    }
+                    catch { }
+                };
+
+                // Log key events inside the WPF TextBox to help diagnose whether key messages reach WPF
+                try
+                {
+                    prompt.PreviewKeyDown += (s, e) => { try { AppendKeyLog($"Prompt.PreviewKeyDown: Key={e.Key}, IsRepeat={e.IsRepeat}"); } catch { } };
+                    prompt.KeyDown += (s, e) => { try { AppendKeyLog($"Prompt.KeyDown: Key={e.Key}, KeyStates={e.KeyStates}"); } catch { } };
+                    prompt.TextChanged += (s, e) => { try { AppendKeyLog($"Prompt.TextChanged: Length={prompt.Text?.Length}"); } catch { } };
+                }
+                catch { }
+            }
+            catch { }
             // Set initial version
             var ver = GetAddinVersion();
             lblVersion.Content = ver;
@@ -111,6 +154,76 @@ namespace AICAD.UI
         private string GetPromptText() => prompt.Text;
 
         private void SetPromptText(string text) => prompt.Text = text ?? string.Empty;
+
+        // Public helpers to ensure focus can be moved into WPF textboxes from the WinForms host
+        public void FocusPrompt()
+        {
+            try
+            {
+                // Clear placeholder text when first focusing
+                try
+                {
+                    if (string.Equals((prompt.Text ?? string.Empty).Trim(), "Enter prompt...", StringComparison.OrdinalIgnoreCase))
+                    {
+                        prompt.Text = string.Empty;
+                    }
+                }
+                catch { }
+
+                // Defer keyboard focus to after the mouse event is processed to work around host focus quirks
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        prompt.Focus();
+                        System.Windows.Input.Keyboard.Focus(prompt);
+                        prompt.CaretIndex = prompt.Text?.Length ?? 0;
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Input);
+            }
+            catch { }
+        }
+
+        public void FocusTypeDescription()
+        {
+            try
+            {
+                // Defer focus similarly
+                this.Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        typeDescriptionTextBox.Focus();
+                        System.Windows.Input.Keyboard.Focus(typeDescriptionTextBox);
+                        typeDescriptionTextBox.CaretIndex = typeDescriptionTextBox.Text?.Length ?? 0;
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Input);
+            }
+            catch { }
+        }
+
+        // Helper: climb the visual tree to find an ancestor of type T
+        private static T FindAncestor<T>(System.Windows.DependencyObject current) where T : System.Windows.DependencyObject
+        {
+            while (current != null)
+            {
+                if (current is T t) return t;
+                current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+            }
+            return null;
+        }
+
+        private void AppendKeyLog(string line)
+        {
+            try
+            {
+                var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
+                System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
+            }
+            catch { }
+        }
 
         private void BtnHistory_Click(object sender, RoutedEventArgs e)
         {

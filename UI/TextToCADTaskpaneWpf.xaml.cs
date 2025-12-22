@@ -443,28 +443,7 @@ namespace AICAD.UI
         {
             try
             {
-                // Show NameEasy settings dialog
-                var currentDbPath = SettingsManager.GetDatabasePath();
-                using (var nameDlg = new global::AICAD.UI.NameEasySettingsDialog(currentDbPath))
-                {
-                    var result = nameDlg.ShowDialog();
-                    if (result == System.Windows.Forms.DialogResult.OK)
-                    {
-                        // Prompt to restart SolidWorks
-                        var restart = System.Windows.Forms.MessageBox.Show(
-                            "Database path updated. Restart SolidWorks for changes to take effect?",
-                            "Restart Required",
-                            System.Windows.Forms.MessageBoxButtons.YesNo,
-                            System.Windows.Forms.MessageBoxIcon.Question);
-                        
-                        if (restart == System.Windows.Forms.DialogResult.Yes)
-                        {
-                            _swApp?.ExitApp();
-                        }
-                    }
-                }
-
-                // Show regular settings dialog
+                // Show unified Settings dialog (includes NameEasy tab)
                 using (var dlg = new global::AICAD.UI.SettingsDialog())
                 {
                     dlg.ShowDialog();

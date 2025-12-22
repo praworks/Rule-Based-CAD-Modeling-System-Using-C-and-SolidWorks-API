@@ -81,6 +81,22 @@ namespace AICAD.Services
 
                     _db = client.GetDatabase(_dbName);
                     _collection = _db.GetCollection<BsonDocument>(_collectionName);
+                    // Ensure collection exists (creates on first insert if allowed). Attempt explicit creation
+                    try
+                    {
+                        var exists = _db.ListCollectionNames().ToList().Contains(_collectionName);
+                        if (!exists)
+                        {
+                            var options = new CreateCollectionOptions();
+                            _db.CreateCollection(_collectionName, options);
+                            AddinStatusLogger.Log("MongoLogger", $"Created missing collection={_collectionName}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Creation may fail due to permissions; ignore but log
+                        try { AddinStatusLogger.Error("MongoLogger", "CreateCollection failed", ex); } catch { }
+                    }
                     _lastError = null;
                     try { AddinStatusLogger.Log("MongoLogger", $"Connected to MongoDB database={_dbName} collection={_collectionName}"); } catch { }
                 }

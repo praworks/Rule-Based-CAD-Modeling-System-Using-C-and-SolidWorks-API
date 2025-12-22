@@ -1,5 +1,7 @@
 using System;
 using System.Drawing;
+using System.Net.Http;
+using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace AICAD.UI
@@ -9,26 +11,82 @@ namespace AICAD.UI
     /// </summary>
     public class SettingsDialog : Form
     {
+        private const string RecommendedMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
+
         private TabControl _tabControl;
         
         // MongoDB Tab Controls
         private TextBox _txtMongoUri;
         private TextBox _txtMongoDb;
+        private TextBox _txtMongoUser;
         private TextBox _txtMongoPassword;
+        private Button _btnToggleMongoPwVisibility;
         private Button _btnSaveMongo;
         private Button _btnLoadMongo;
         private Label _lblMongoStatus;
         
         // API Key Tab Controls
         private TextBox _txtApiKey;
+        private TextBox _txtProjectId;
+        private Button _btnToggleApiKeyVisibility;
+        private ComboBox _cmbApiModel;
         private ComboBox _cmbApiProvider;
         private Button _btnSaveApiKey;
         private Button _btnLoadApiKey;
         private Label _lblApiStatus;
+        private Button _btnTestApi;
+        
+        // NameEasy Tab Controls
+        private TextBox _txtNameEasyPath;
+        private Button _btnBrowseNameEasy;
+        private Button _btnSaveNameEasy;
+        private Label _lblNameEasyInfo;
         
         public SettingsDialog()
         {
             InitializeComponents();
+            TryReplaceOldMongoUri();
+            LoadAllSettings();
+        }
+
+        private void LoadAllSettings()
+        {
+            try
+            {
+                BtnLoadMongo_Click(this, EventArgs.Empty);
+                BtnLoadApiKey_Click(this, EventArgs.Empty);
+
+                // Load model selection from env
+                var model = Environment.GetEnvironmentVariable("GEMINI_MODEL", EnvironmentVariableTarget.User) ?? "";
+                if (!string.IsNullOrEmpty(model) && _cmbApiModel != null)
+                {
+                    for (int i = 0; i < _cmbApiModel.Items.Count; i++)
+                    {
+                        if (string.Equals(_cmbApiModel.Items[i].ToString(), model, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _cmbApiModel.SelectedIndex = i;
+                            break;
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private void TryReplaceOldMongoUri()
+        {
+            try
+            {
+                var current = Environment.GetEnvironmentVariable("MONGODB_URI", EnvironmentVariableTarget.User) ?? "";
+                if (!string.IsNullOrEmpty(current) &&
+                    (current.IndexOf("prashanth", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     current.IndexOf("cluster2.9abz2oy", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     current.IndexOf("prashan2011th", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    Environment.SetEnvironmentVariable("MONGODB_URI", RecommendedMongoUri, EnvironmentVariableTarget.User);
+                }
+            }
+            catch { }
         }
         
         private void InitializeComponents()
@@ -51,9 +109,11 @@ namespace AICAD.UI
             // Create tabs
             var dbTab = CreateDatabaseTab();
             var apiTab = CreateApiKeyTab();
+            var nameEasyTab = CreateNameEasyTab();
             
             _tabControl.TabPages.Add(dbTab);
             _tabControl.TabPages.Add(apiTab);
+            _tabControl.TabPages.Add(nameEasyTab);
             
             Controls.Add(_tabControl);
             
@@ -68,6 +128,29 @@ namespace AICAD.UI
             };
             btnClose.Click += (s, e) => Close();
             Controls.Add(btnClose);
+
+            // Apply all settings button
+            var btnApplyAll = new Button
+            {
+                Text = "Apply",
+                Width = 100,
+                Height = 30,
+                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
+                Location = new Point(Width - 240, Height - 70)
+            };
+            btnApplyAll.Click += BtnApplyAll_Click;
+            Controls.Add(btnApplyAll);
+
+            // Load NameEasy current path into the tab if present
+            try
+            {
+                var defaultPath = AICAD.Services.SettingsManager.GetDatabasePath();
+                if (!string.IsNullOrEmpty(defaultPath) && _txtNameEasyPath != null)
+                {
+                    _txtNameEasyPath.Text = defaultPath;
+                }
+            }
+            catch { }
         }
         
         private TabPage CreateDatabaseTab()
@@ -77,7 +160,7 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 6,
+                RowCount = 7,
                 Padding = new Padding(15)
             };
             
@@ -116,8 +199,24 @@ namespace AICAD.UI
             };
             panel.Controls.Add(lblDb, 0, 1);
             panel.Controls.Add(_txtMongoDb, 1, 1);
+
+            // Row 2: Username
+            var lblUser = new Label
+            {
+                Text = "Username:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            _txtMongoUser = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 5, 0, 5)
+            };
+            panel.Controls.Add(lblUser, 0, 2);
+            panel.Controls.Add(_txtMongoUser, 1, 2);
             
-            // Row 2: Password
+            // Row 3: Password
             var lblPassword = new Label 
             { 
                 Text = "Password:",
@@ -131,8 +230,24 @@ namespace AICAD.UI
                 UseSystemPasswordChar = true,
                 Margin = new Padding(0, 5, 0, 5)
             };
-            panel.Controls.Add(lblPassword, 0, 2);
-            panel.Controls.Add(_txtMongoPassword, 1, 2);
+
+            // Panel to hold password textbox + visibility toggle
+            var pwPanel = new Panel { Dock = DockStyle.Fill };
+            _btnToggleMongoPwVisibility = new Button
+            {
+                Width = 30,
+                Height = 24,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                Text = "Show",
+                TabStop = false
+            };
+            _btnToggleMongoPwVisibility.Click += ToggleMongoPasswordVisibility_Click;
+            pwPanel.Controls.Add(_btnToggleMongoPwVisibility);
+            pwPanel.Controls.Add(_txtMongoPassword);
+
+            panel.Controls.Add(lblPassword, 0, 3);
+            panel.Controls.Add(pwPanel, 1, 3);
             
             // Row 3: Buttons
             var buttonPanel = new FlowLayoutPanel
@@ -165,7 +280,7 @@ namespace AICAD.UI
             buttonPanel.Controls.Add(_btnLoadMongo);
             buttonPanel.Controls.Add(_btnSaveMongo);
             panel.SetColumnSpan(buttonPanel, 2);
-            panel.Controls.Add(buttonPanel, 0, 3);
+            panel.Controls.Add(buttonPanel, 0, 4);
             
             // Row 4: Status
             _lblMongoStatus = new Label
@@ -177,7 +292,7 @@ namespace AICAD.UI
                 Padding = new Padding(0, 5, 0, 5)
             };
             panel.SetColumnSpan(_lblMongoStatus, 2);
-            panel.Controls.Add(_lblMongoStatus, 0, 4);
+            panel.Controls.Add(_lblMongoStatus, 0, 5);
             
             // Row 5: Help text
             var helpText = new Label
@@ -191,9 +306,10 @@ namespace AICAD.UI
                 Padding = new Padding(0, 10, 0, 0)
             };
             panel.SetColumnSpan(helpText, 2);
-            panel.Controls.Add(helpText, 0, 5);
+            panel.Controls.Add(helpText, 0, 6);
             
             // Set row heights
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
@@ -212,7 +328,7 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 5,
+                RowCount = 7,
                 Padding = new Padding(15)
             };
             
@@ -253,10 +369,61 @@ namespace AICAD.UI
                 UseSystemPasswordChar = true,
                 Margin = new Padding(0, 5, 0, 5)
             };
+
+            // Panel to hold API key textbox + visibility toggle
+            var apiPanel = new Panel { Dock = DockStyle.Fill };
+            _btnToggleApiKeyVisibility = new Button
+            {
+                Width = 30,
+                Height = 24,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                Text = "Show",
+                TabStop = false
+            };
+            _btnToggleApiKeyVisibility.Click += ToggleApiKeyVisibility_Click;
+            apiPanel.Controls.Add(_btnToggleApiKeyVisibility);
+            apiPanel.Controls.Add(_txtApiKey);
+
             panel.Controls.Add(lblApiKey, 0, 1);
-            panel.Controls.Add(_txtApiKey, 1, 1);
+            panel.Controls.Add(apiPanel, 1, 1);
+
+            // Row 2: Project ID (for providers that require a project id, e.g., Google)
+            var lblProject = new Label
+            {
+                Text = "Project ID:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            _txtProjectId = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 5, 0, 5)
+            };
+            panel.Controls.Add(lblProject, 0, 2);
+            panel.Controls.Add(_txtProjectId, 1, 2);
+
+            // Row 3: Model selector (for providers that support models)
+            var lblModel = new Label
+            {
+                Text = "Model:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            _cmbApiModel = new ComboBox
+            {
+                Dock = DockStyle.Fill,
+                DropDownStyle = ComboBoxStyle.DropDownList,
+                Margin = new Padding(0, 5, 0, 5)
+            };
+            _cmbApiModel.Items.AddRange(new object[] { "gemini-1.0", "gemini-1.5", "gemini-1.5-flash", "gpt-4o" });
+            _cmbApiModel.SelectedIndex = 0;
+            panel.Controls.Add(lblModel, 0, 3);
+            panel.Controls.Add(_cmbApiModel, 1, 3);
             
-            // Row 2: Buttons
+            // Row 3: Buttons
             var buttonPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -286,10 +453,20 @@ namespace AICAD.UI
             
             buttonPanel.Controls.Add(_btnLoadApiKey);
             buttonPanel.Controls.Add(_btnSaveApiKey);
+            // Test button
+            _btnTestApi = new Button
+            {
+                Text = "Test API",
+                Width = 120,
+                Height = 30,
+                Margin = new Padding(10, 0, 0, 0)
+            };
+            _btnTestApi.Click += (s, e) => { var _ = BtnTestApi_Click(s, e); };
+            buttonPanel.Controls.Add(_btnTestApi);
             panel.SetColumnSpan(buttonPanel, 2);
-            panel.Controls.Add(buttonPanel, 0, 2);
+            panel.Controls.Add(buttonPanel, 0, 4);
             
-            // Row 3: Status
+            // Row 5: Status
             _lblApiStatus = new Label
             {
                 Text = "",
@@ -299,9 +476,9 @@ namespace AICAD.UI
                 Padding = new Padding(0, 5, 0, 5)
             };
             panel.SetColumnSpan(_lblApiStatus, 2);
-            panel.Controls.Add(_lblApiStatus, 0, 3);
+            panel.Controls.Add(_lblApiStatus, 0, 5);
             
-            // Row 4: Help text
+            // Row 6: Help text
             var helpText = new Label
             {
                 Text = "Note: API keys are saved to user environment variables.\n" +
@@ -313,15 +490,78 @@ namespace AICAD.UI
                 Padding = new Padding(0, 10, 0, 0)
             };
             panel.SetColumnSpan(helpText, 2);
-            panel.Controls.Add(helpText, 0, 4);
+            panel.Controls.Add(helpText, 0, 6);
             
             // Set row heights
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // provider
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // key
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // project id
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // model
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); // buttons
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // status
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // help
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             
+            tab.Controls.Add(panel);
+            return tab;
+        }
+
+        private TabPage CreateNameEasyTab()
+        {
+            var tab = new TabPage("NameEasy");
+            var panel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 3,
+                Padding = new Padding(15)
+            };
+
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+
+            var lblPath = new Label
+            {
+                Text = "Database Path:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            _txtNameEasyPath = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0,5,0,5) };
+            _btnBrowseNameEasy = new Button { Text = "Browse...", Width = 80, Height = 26 };
+            _btnBrowseNameEasy.Click += BtnBrowseNameEasy_Click;
+
+            panel.Controls.Add(lblPath, 0, 0);
+            panel.Controls.Add(_txtNameEasyPath, 1, 0);
+            panel.Controls.Add(_btnBrowseNameEasy, 2, 0);
+
+            _lblNameEasyInfo = new Label
+            {
+                Text = "Choose where to store the NameEasy.db database. Default: add-in folder.",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.Gray,
+                AutoSize = false,
+                Padding = new Padding(0,10,0,0)
+            };
+            panel.SetColumnSpan(_lblNameEasyInfo, 3);
+            panel.Controls.Add(_lblNameEasyInfo, 0, 1);
+
+            _btnSaveNameEasy = new Button
+            {
+                Text = "Save",
+                Width = 100,
+                Height = 30,
+                Anchor = AnchorStyles.Right
+            };
+            _btnSaveNameEasy.Click += BtnSaveNameEasy_Click;
+            panel.SetColumnSpan(_btnSaveNameEasy, 3);
+            panel.Controls.Add(_btnSaveNameEasy, 0, 2);
+
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+
             tab.Controls.Add(panel);
             return tab;
         }
@@ -333,8 +573,18 @@ namespace AICAD.UI
                 _txtMongoUri.Text = Environment.GetEnvironmentVariable("MONGODB_URI", EnvironmentVariableTarget.User) 
                     ?? Environment.GetEnvironmentVariable("MONGO_LOG_CONN", EnvironmentVariableTarget.User) 
                     ?? "";
+
+                // If an older or placeholder URI is present, replace it with the recommended URI
+                if (string.IsNullOrWhiteSpace(_txtMongoUri.Text) ||
+                    _txtMongoUri.Text.IndexOf("prashanth", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    _txtMongoUri.Text.IndexOf("cluster2.9abz2oy", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    _txtMongoUri.Text.IndexOf("prashan2011th", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    _txtMongoUri.Text = RecommendedMongoUri;
+                }
                 _txtMongoDb.Text = Environment.GetEnvironmentVariable("MONGODB_DB", EnvironmentVariableTarget.User) 
                     ?? "TaskPaneAddin";
+                _txtMongoUser.Text = Environment.GetEnvironmentVariable("MONGODB_USER", EnvironmentVariableTarget.User) ?? "";
                 _txtMongoPassword.Text = Environment.GetEnvironmentVariable("MONGODB_PW", EnvironmentVariableTarget.User) 
                     ?? "";
                 
@@ -354,6 +604,7 @@ namespace AICAD.UI
             {
                 Environment.SetEnvironmentVariable("MONGODB_URI", _txtMongoUri.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_DB", _txtMongoDb.Text, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("MONGODB_USER", _txtMongoUser.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_PW", _txtMongoPassword.Text, EnvironmentVariableTarget.User);
                 
                 _lblMongoStatus.Text = "Settings saved successfully! Restart SolidWorks to apply changes.";
@@ -387,6 +638,7 @@ namespace AICAD.UI
             {
                 _txtApiKey.Text = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) 
                     ?? "";
+                _txtProjectId.Text = Environment.GetEnvironmentVariable("GEMINI_PROJECT_ID", EnvironmentVariableTarget.User) ?? "";
                 
                 _lblApiStatus.Text = "Loaded from environment variables";
                 _lblApiStatus.ForeColor = Color.DarkGreen;
@@ -417,6 +669,16 @@ namespace AICAD.UI
                 }
                 
                 Environment.SetEnvironmentVariable(envVarName, _txtApiKey.Text, EnvironmentVariableTarget.User);
+
+                // Save project id for Google Gemini provider
+                try
+                {
+                    if (_cmbApiProvider.SelectedIndex == 0)
+                    {
+                        Environment.SetEnvironmentVariable("GEMINI_PROJECT_ID", _txtProjectId.Text ?? "", EnvironmentVariableTarget.User);
+                    }
+                }
+                catch { }
                 
                 _lblApiStatus.Text = string.Format("API key saved to {0}! Restart SolidWorks to apply changes.", envVarName);
                 _lblApiStatus.ForeColor = Color.DarkGreen;
@@ -439,6 +701,164 @@ namespace AICAD.UI
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error
                 );
+            }
+        }
+
+        private async Task BtnTestApi_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                _lblApiStatus.Text = "Testing API...";
+                _lblApiStatus.ForeColor = Color.Blue;
+
+                string key = _txtApiKey.Text;
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    _lblApiStatus.Text = "No API key provided.";
+                    _lblApiStatus.ForeColor = Color.Orange;
+                    return;
+                }
+
+                using (var http = new HttpClient())
+                {
+                    http.Timeout = TimeSpan.FromSeconds(10);
+                    HttpResponseMessage resp = null;
+                    if (_cmbApiProvider.SelectedIndex == 1) // OpenAI
+                    {
+                        http.DefaultRequestHeaders.Clear();
+                        http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
+                        resp = await http.GetAsync("https://api.openai.com/v1/models");
+                    }
+                    else if (_cmbApiProvider.SelectedIndex == 0) // Google Gemini
+                    {
+                        var model = _cmbApiModel?.SelectedItem?.ToString() ?? "";
+                        var url = "https://generativeai.googleapis.com/v1/models" + (string.IsNullOrEmpty(model) ? "" : $"/{model}") + "?key=" + Uri.EscapeDataString(key);
+                        resp = await http.GetAsync(url);
+                    }
+                    else
+                    {
+                        _lblApiStatus.Text = "No test available for selected provider.";
+                        _lblApiStatus.ForeColor = Color.Gray;
+                        return;
+                    }
+
+                    if (resp != null && resp.IsSuccessStatusCode)
+                    {
+                        _lblApiStatus.Text = "API test succeeded (" + ((int)resp.StatusCode).ToString() + ")";
+                        _lblApiStatus.ForeColor = Color.DarkGreen;
+                    }
+                    else if (resp != null)
+                    {
+                        var body = await resp.Content.ReadAsStringAsync();
+                        _lblApiStatus.Text = string.Format("API test failed: {0} {1}", (int)resp.StatusCode, resp.ReasonPhrase);
+                        _lblApiStatus.ForeColor = Color.Red;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _lblApiStatus.Text = "API test error: " + ex.Message;
+                _lblApiStatus.ForeColor = Color.Red;
+            }
+        }
+
+        private void BtnApplyAll_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                // Save Mongo
+                BtnSaveMongo_Click(sender, e);
+
+                // Save API key
+                BtnSaveApiKey_Click(sender, e);
+
+                // Save selected model if Gemini
+                if (_cmbApiModel != null && _cmbApiModel.SelectedItem != null)
+                {
+                    Environment.SetEnvironmentVariable("GEMINI_MODEL", _cmbApiModel.SelectedItem.ToString(), EnvironmentVariableTarget.User);
+                }
+
+                // Save project id (if set)
+                try
+                {
+                    if (_txtProjectId != null)
+                    {
+                        Environment.SetEnvironmentVariable("GEMINI_PROJECT_ID", _txtProjectId.Text ?? "", EnvironmentVariableTarget.User);
+                    }
+                }
+                catch { }
+
+                MessageBox.Show("All settings applied. Restart SolidWorks for changes to take effect.", "Applied", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Failed to apply settings: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ToggleMongoPasswordVisibility_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                _txtMongoPassword.UseSystemPasswordChar = !_txtMongoPassword.UseSystemPasswordChar;
+                _btnToggleMongoPwVisibility.Text = _txtMongoPassword.UseSystemPasswordChar ? "Show" : "Hide";
+            }
+            catch { }
+        }
+
+        private void ToggleApiKeyVisibility_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                _txtApiKey.UseSystemPasswordChar = !_txtApiKey.UseSystemPasswordChar;
+                _btnToggleApiKeyVisibility.Text = _txtApiKey.UseSystemPasswordChar ? "Show" : "Hide";
+            }
+            catch { }
+        }
+
+        private void BtnBrowseNameEasy_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new FolderBrowserDialog())
+            {
+                dlg.Description = "Select folder for NameEasy.db database";
+                dlg.ShowNewFolderButton = true;
+                var current = _txtNameEasyPath.Text;
+                if (!string.IsNullOrEmpty(current))
+                {
+                    try { dlg.SelectedPath = System.IO.Path.GetDirectoryName(current); } catch { }
+                }
+
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    _txtNameEasyPath.Text = System.IO.Path.Combine(dlg.SelectedPath, "NameEasy.db");
+                }
+            }
+        }
+
+        private void BtnSaveNameEasy_Click(object sender, EventArgs e)
+        {
+            var path = _txtNameEasyPath.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrEmpty(path))
+            {
+                MessageBox.Show("Please specify a database path.", "Invalid Path", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            try
+            {
+                var ok = AICAD.Services.SettingsManager.SetDatabasePath(path);
+                if (ok)
+                {
+                    MessageBox.Show("NameEasy database path saved. Restart SolidWorks for changes to take effect.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    MessageBox.Show("Failed to save database path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error saving path: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
     }

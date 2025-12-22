@@ -85,4 +85,10 @@
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
   </ItemGroup>
+  <!-- Exclude helper scripts and nested projects from the SDK-style default compile/include behavior -->
+  <ItemGroup>
+    <Compile Remove="scripts\**\*.cs" />
+    <EmbeddedResource Remove="scripts\**\*" />
+    <None Remove="scripts\**\*" />
+  </ItemGroup>
 </Project>

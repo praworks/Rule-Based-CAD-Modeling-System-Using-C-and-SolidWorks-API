@@ -8,7 +8,7 @@ dotnet add package MongoDB.Driver
 using MongoDB.Driver;
 using MongoDB.Bson;
 
-const string connectionUri = "mongodb+srv://prashan2011th:<db_password>@cluster2.9abz2oy.mongodb.net/?retryWrites=true&w=majority&appName=Cluster2";
+const string connectionUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/?retryWrites=true&w=majority";
 
 var settings = MongoClientSettings.FromConnectionString(connectionUri);
 

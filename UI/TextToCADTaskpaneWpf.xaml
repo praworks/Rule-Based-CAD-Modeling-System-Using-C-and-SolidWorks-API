@@ -148,7 +148,7 @@
                 </Grid.ColumnDefinitions>
                 <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Value="0" Height="8" 
                              Foreground="#007ACC" Background="#E0E0E0" BorderThickness="0"/>
-                <TextBlock Grid.Column="1" Text="0%" Foreground="#007ACC" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="0%" Foreground="#007ACC" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
             </Grid>
 
             <Grid Grid.Row="2">

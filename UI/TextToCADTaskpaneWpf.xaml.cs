@@ -9,6 +9,9 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Threading;
+using System.Runtime.InteropServices;
+using System.Windows.Interop;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swcommands;
@@ -20,8 +23,6 @@ namespace AICAD.UI
     public partial class TextToCADTaskpaneWpf : UserControl
     {
         private readonly ISldWorks _swApp;
-
-        // Events to allow the WinForms host or other code to react to UI actions ✅
         public class PromptChangedEventArgs : EventArgs
         {
             public string Text { get; }
@@ -70,7 +71,28 @@ namespace AICAD.UI
             // Make sure TextBoxes are focusable and accept keyboard input when the host is clicked
             try
             {
-                this.Loaded += (s, e) => { try { prompt.Focusable = true; typeDescriptionTextBox.Focusable = true; this.Focusable = true; } catch { } };
+                this.Loaded += (s, e) =>
+                {
+                    try
+                    {
+                        prompt.Focusable = true;
+                        typeDescriptionTextBox.Focusable = true;
+                        this.Focusable = true;
+                        // Fallback: after load, try to move keyboard focus into the description box
+                        this.Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            try
+                            {
+                                typeDescriptionTextBox.Focus();
+                                System.Windows.Input.Keyboard.Focus(typeDescriptionTextBox);
+                                typeDescriptionTextBox.CaretIndex = typeDescriptionTextBox.Text?.Length ?? 0;
+                                AppendKeyLog("Loaded: forced TypeDesc focus");
+                            }
+                            catch { }
+                        }), System.Windows.Threading.DispatcherPriority.Input);
+                    }
+                    catch { }
+                };
                 // If user clicks anywhere in the WPF control, try to move focus into the clicked TextBox
                 // (handles tricky host focus capture when hosted inside SolidWorks WinForms panes).
                 this.PreviewMouseDown += (s, e) =>
@@ -131,18 +153,29 @@ namespace AICAD.UI
                     prompt.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.GotKeyboardFocus"); } catch { } };
                     prompt.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.LostKeyboardFocus"); } catch { } };
                     // Also instrument the type description textbox to diagnose focus/keyboard issues
-                    try
-                    {
-                        typeDescriptionTextBox.PreviewMouseDown += (s, e) => { try { FocusTypeDescription(); } catch { } };
-                        typeDescriptionTextBox.PreviewKeyDown += (s, e) => { try { AppendKeyLog($"TypeDesc.PreviewKeyDown: Key={e.Key}, IsRepeat={e.IsRepeat}"); } catch { } };
-                        typeDescriptionTextBox.KeyDown += (s, e) => { try { AppendKeyLog($"TypeDesc.KeyDown: Key={e.Key}, KeyStates={e.KeyStates}"); } catch { } };
-                        typeDescriptionTextBox.TextChanged += (s, e) => { try { AppendKeyLog($"TypeDesc.TextChanged: Length={typeDescriptionTextBox.Text?.Length}"); } catch { } };
-                        typeDescriptionTextBox.PreviewTextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.PreviewTextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
-                        typeDescriptionTextBox.TextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.TextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
-                        typeDescriptionTextBox.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.GotKeyboardFocus"); } catch { } };
-                        typeDescriptionTextBox.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.LostKeyboardFocus"); } catch { } };
-                    }
-                    catch { }
+                        try
+                        {
+                            // Basic handlers
+                            typeDescriptionTextBox.PreviewKeyDown += (s, e) => { try { AppendKeyLog($"TypeDesc.PreviewKeyDown: Key={e.Key}, IsRepeat={e.IsRepeat}"); } catch { } };
+                            typeDescriptionTextBox.KeyDown += (s, e) => { try { AppendKeyLog($"TypeDesc.KeyDown: Key={e.Key}, KeyStates={e.KeyStates}"); } catch { } };
+                            typeDescriptionTextBox.TextChanged += (s, e) => { try { AppendKeyLog($"TypeDesc.TextChanged: Length={typeDescriptionTextBox.Text?.Length}"); } catch { } };
+                            typeDescriptionTextBox.PreviewTextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.PreviewTextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
+                            typeDescriptionTextBox.TextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.TextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
+                            typeDescriptionTextBox.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.GotKeyboardFocus"); EnsureNativeFocus(typeDescriptionTextBox); } catch { } };
+                            typeDescriptionTextBox.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.LostKeyboardFocus"); } catch { } };
+
+                            // Stronger focus acquisition: handle mouse enter and mouse down (even if host swallows events)
+                            typeDescriptionTextBox.MouseEnter += (s, e) => { try { FocusTypeDescription(); } catch { } };
+                            // Register PreviewMouseLeftButtonDown with handledEventsToo so we catch it even if routed
+                            typeDescriptionTextBox.AddHandler(UIElement.PreviewMouseLeftButtonDownEvent,
+                                new System.Windows.Input.MouseButtonEventHandler((s, e) => { try { FocusTypeDescription(); e.Handled = true; } catch { } }),
+                                true);
+                            // Also try touch
+                            typeDescriptionTextBox.AddHandler(UIElement.PreviewTouchDownEvent,
+                                new System.EventHandler<System.Windows.Input.TouchEventArgs>((s, e) => { try { FocusTypeDescription(); } catch { } }),
+                                true);
+                        }
+                        catch { }
                 }
                 catch { }
             }
@@ -311,6 +344,29 @@ namespace AICAD.UI
                 var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
                 System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
                 try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
+            }
+            catch { }
+        }
+
+        [DllImport("user32.dll")]
+        private static extern IntPtr SetFocus(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+        private void EnsureNativeFocus(System.Windows.FrameworkElement fe)
+        {
+            try
+            {
+                var src = PresentationSource.FromVisual(fe) as HwndSource;
+                if (src != null)
+                {
+                    var hwnd = src.Handle;
+                    SetForegroundWindow(hwnd);
+                    SetFocus(hwnd);
+                    AppendKeyLog($"EnsureNativeFocus: hwnd={hwnd}");
+                }
             }
             catch { }
         }
@@ -497,6 +553,90 @@ namespace AICAD.UI
             AppendStatusLine($"[Status] {text}");
         }
 
+        private void UpdateGenerationProgress(int percent)
+        {
+            try
+            {
+                if (generationProgressBar != null)
+                {
+                    var p = Math.Max(0, Math.Min(100, percent));
+                    // Ensure we update on UI thread
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try
+                        {
+                            generationProgressBar.Value = p;
+                            if (generationProgressText != null) generationProgressText.Text = p + "%";
+                        }
+                        catch { }
+                    }), System.Windows.Threading.DispatcherPriority.Background);
+                }
+            }
+            catch { }
+        }
+
+        private void UpdateKaraokeStatus(string text)
+        {
+            try
+            {
+                var t = text ?? string.Empty;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (KaraokeStatus != null) KaraokeStatus.Text = t;
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        private CancellationTokenSource _karaokeCts;
+
+        public void StartKaraoke(IEnumerable<string> lines, int intervalMs = 700)
+        {
+            try
+            {
+                StopKaraoke();
+                _karaokeCts = new CancellationTokenSource();
+                var token = _karaokeCts.Token;
+                var msgs = (lines ?? Array.Empty<string>()).ToArray();
+                if (msgs.Length == 0) return;
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        while (!token.IsCancellationRequested)
+                        {
+                            foreach (var m in msgs)
+                            {
+                                if (token.IsCancellationRequested) break;
+                                UpdateKaraokeStatus(m);
+                                try { await Task.Delay(intervalMs, token); } catch { break; }
+                            }
+                        }
+                    }
+                    catch { }
+                }, token);
+            }
+            catch { }
+        }
+
+        public void StopKaraoke()
+        {
+            try
+            {
+                if (_karaokeCts != null && !_karaokeCts.IsCancellationRequested)
+                {
+                    try { _karaokeCts.Cancel(); } catch { }
+                    try { _karaokeCts.Dispose(); } catch { }
+                }
+                _karaokeCts = null;
+            }
+            catch { }
+        }
+
         private void SetLlmStatus(string text, Color color)
         {
             AppendStatusLine($"[LLM] {text}");
@@ -610,8 +750,11 @@ namespace AICAD.UI
                 build.IsEnabled = false;
                 _lastPrompt = text;
                 AppendStatusLine("> " + text);
+                // Kick off progress bar animation
+                UpdateGenerationProgress(5);
                 SetRealTimeStatus("Communicating with LLM…", Colors.DarkOrange);
-                SetLlmStatus("Sending…", Colors.DarkOrange);
+                    UpdateKaraokeStatus("Communicating with LLM…");
+                    SetLlmStatus("Sending…", Colors.DarkOrange);
                 SetLastError(null);
                 SetTimes(null, null);
 
@@ -650,13 +793,18 @@ namespace AICAD.UI
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
                 llmSw.Stop();
+                // LLM returned — update progress
+                UpdateGenerationProgress(50);
                 llmMs = llmSw.Elapsed;
                 _lastReply = reply;
                 AppendStatusLine(reply);
                 SetRealTimeStatus("Received response from LLM", Colors.DarkGreen);
+                UpdateKaraokeStatus("LLM response received");
                 SetLlmStatus("OK", Colors.DarkGreen);
 
                 SetRealTimeStatus("Executing plan…", Colors.DarkOrange);
+                UpdateGenerationProgress(70);
+                UpdateKaraokeStatus("Executing plan…");
                 SetSwStatus("Working…", Colors.DarkOrange);
                 var attempt = 0;
                 var maxAttempts = 2;
@@ -707,7 +855,9 @@ namespace AICAD.UI
                 if (exec != null && exec.Success)
                 {
                     AppendStatusLine("Model created.");
+                    UpdateKaraokeStatus("Model created.");
                     SetRealTimeStatus("Creating model…", Colors.DarkOrange);
+                    UpdateGenerationProgress(95);
                     SetSwStatus("OK", Colors.DarkGreen);
                     try { SetModified(false); } catch { }
                 }
@@ -717,6 +867,7 @@ namespace AICAD.UI
                         ? exec.Log[exec.Log.Count - 1].Value<string>("error")
                         : (errText ?? "Unknown error");
                     AppendStatusLine("SOLIDWORKS error: " + swError);
+                    UpdateKaraokeStatus("Error: " + swError);
                     SetRealTimeStatus("Error: " + swError, Colors.Firebrick);
                     SetSwStatus("Error", Colors.Firebrick);
                     if (string.IsNullOrWhiteSpace(errText)) errText = swError;
@@ -839,6 +990,7 @@ namespace AICAD.UI
                     _lastDbLogged = logged;
                     SetDbStatus(logged ? "Logged" : "Log error", logged ? Colors.DarkGreen : Colors.Firebrick);
                     SetRealTimeStatus(logged ? "Completed" : "Error logging", logged ? Colors.DarkGreen : Colors.Firebrick);
+                    UpdateGenerationProgress(logged ? 100 : 0);
                 }
                 catch
                 {

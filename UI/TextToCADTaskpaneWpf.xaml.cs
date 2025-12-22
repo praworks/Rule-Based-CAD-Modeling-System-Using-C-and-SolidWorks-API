@@ -71,21 +71,41 @@ namespace AICAD.UI
             try
             {
                 this.Loaded += (s, e) => { try { prompt.Focusable = true; typeDescriptionTextBox.Focusable = true; this.Focusable = true; } catch { } };
-                // If user clicks anywhere in the WPF control, try to move focus into the prompt (handles tricky host focus capture)
+                // If user clicks anywhere in the WPF control, try to move focus into the clicked TextBox
+                // (handles tricky host focus capture when hosted inside SolidWorks WinForms panes).
                 this.PreviewMouseDown += (s, e) =>
                 {
                     try
                     {
                         var src = e.OriginalSource as System.Windows.DependencyObject;
-                        // If the click target (or any ancestor) is the prompt textbox, focus it
-                        if (FindAncestor<System.Windows.Controls.TextBox>(src) == prompt)
+                        var clickedTextBox = FindAncestor<System.Windows.Controls.TextBox>(src);
+                        if (clickedTextBox != null)
                         {
-                            FocusPrompt();
+                            // Preserve special placeholder/clearing behavior for the main prompt
+                            if (clickedTextBox == prompt)
+                            {
+                                FocusPrompt();
+                            }
+                            else
+                            {
+                                // Focus any other textbox (e.g. typeDescriptionTextBox) so keyboard input is routed
+                                this.Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try
+                                    {
+                                        clickedTextBox.Focus();
+                                        System.Windows.Input.Keyboard.Focus(clickedTextBox);
+                                        clickedTextBox.CaretIndex = clickedTextBox.Text?.Length ?? 0;
+                                    }
+                                    catch { }
+                                }), System.Windows.Threading.DispatcherPriority.Input);
+                            }
+
                             e.Handled = false;
                             return;
                         }
 
-                        // Otherwise, if the click is inside the lower prompt area, give focus as well
+                        // Fallback: if click is inside the prompt area bounds, ensure prompt receives focus
                         var promptContainer = prompt;
                         if (promptContainer != null)
                         {
@@ -106,6 +126,23 @@ namespace AICAD.UI
                     prompt.PreviewKeyDown += (s, e) => { try { AppendKeyLog($"Prompt.PreviewKeyDown: Key={e.Key}, IsRepeat={e.IsRepeat}"); } catch { } };
                     prompt.KeyDown += (s, e) => { try { AppendKeyLog($"Prompt.KeyDown: Key={e.Key}, KeyStates={e.KeyStates}"); } catch { } };
                     prompt.TextChanged += (s, e) => { try { AppendKeyLog($"Prompt.TextChanged: Length={prompt.Text?.Length}"); } catch { } };
+                    prompt.PreviewTextInput += (s, e) => { try { AppendKeyLog($"Prompt.PreviewTextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
+                    prompt.TextInput += (s, e) => { try { AppendKeyLog($"Prompt.TextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
+                    prompt.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.GotKeyboardFocus"); } catch { } };
+                    prompt.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.LostKeyboardFocus"); } catch { } };
+                    // Also instrument the type description textbox to diagnose focus/keyboard issues
+                    try
+                    {
+                        typeDescriptionTextBox.PreviewMouseDown += (s, e) => { try { FocusTypeDescription(); } catch { } };
+                        typeDescriptionTextBox.PreviewKeyDown += (s, e) => { try { AppendKeyLog($"TypeDesc.PreviewKeyDown: Key={e.Key}, IsRepeat={e.IsRepeat}"); } catch { } };
+                        typeDescriptionTextBox.KeyDown += (s, e) => { try { AppendKeyLog($"TypeDesc.KeyDown: Key={e.Key}, KeyStates={e.KeyStates}"); } catch { } };
+                        typeDescriptionTextBox.TextChanged += (s, e) => { try { AppendKeyLog($"TypeDesc.TextChanged: Length={typeDescriptionTextBox.Text?.Length}"); } catch { } };
+                        typeDescriptionTextBox.PreviewTextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.PreviewTextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
+                        typeDescriptionTextBox.TextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.TextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
+                        typeDescriptionTextBox.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.GotKeyboardFocus"); } catch { } };
+                        typeDescriptionTextBox.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.LostKeyboardFocus"); } catch { } };
+                    }
+                    catch { }
                 }
                 catch { }
             }
@@ -273,10 +310,49 @@ namespace AICAD.UI
             {
                 var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
                 System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
+                try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
             }
             catch { }
         }
 
+        // Handlers referenced from XAML. Minimal implementations to satisfy compilation
+        // and preserve the previously wired behaviors.
+        private void prompt_GotFocus(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                FocusPrompt();
+            }
+            catch { }
+        }
+
+        private void prompt_LostFocus(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Keep placeholder behavior: if empty, restore hint text (non-destructive)
+                if (string.IsNullOrWhiteSpace(prompt.Text))
+                {
+                    prompt.Text = "Enter prompt...";
+                }
+            }
+            catch { }
+        }
+
+        private void prompt_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+        {
+            try
+            {
+                // Ctrl+Enter triggers a build, mirror intuitive behavior for the user
+                if (e.Key == System.Windows.Input.Key.Enter && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == System.Windows.Input.ModifierKeys.Control)
+                {
+                    try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
+                    _ = BuildFromPromptAsync();
+                    e.Handled = true;
+                }
+            }
+            catch { }
+        }
         private void BtnHistory_Click(object sender, RoutedEventArgs e)
         {
             try

@@ -156,6 +156,9 @@
                          AcceptsReturn="True" TextWrapping="Wrap" 
                          VerticalScrollBarVisibility="Auto" Padding="8,8,105,8" 
                          Text="Enter prompt..."
+                         GotFocus="prompt_GotFocus"
+                         LostFocus="prompt_LostFocus"
+                         PreviewKeyDown="prompt_PreviewKeyDown"
                          BorderBrush="#FFCCCCCC" Margin="0,0,100,0" Height="125" VerticalAlignment="Center"/>
                 <Button x:Name="build" Content="Build 🚀" 
                         HorizontalAlignment="Right" VerticalAlignment="Bottom" 

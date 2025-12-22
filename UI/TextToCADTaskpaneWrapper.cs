@@ -14,6 +14,7 @@ namespace AICAD.UI
     {
         private ElementHost _elementHost;
         private TextToCADTaskpaneWpf _wpfControl;
+        private System.Windows.Forms.RichTextBox _fallbackRtb;
 
         // Expose WPF control and events to host code
         public TextToCADTaskpaneWpf WpfControl => _wpfControl;
@@ -100,12 +101,67 @@ namespace AICAD.UI
                 catch { }
             }
 
-            // Enable keyboard interop so WPF controls inside ElementHost receive keyboard input reliably
+            // Enable keyboard interop so WPF controls inside ElementHost receive keyboard input reliably.
+            // Do this after the WPF control is loaded and try multiple ways to obtain the containing Window.
             try
             {
-                // ElementHost.EnableModelessKeyboardInterop expects a Window instance; get the containing window for the control
-                var wnd = System.Windows.Window.GetWindow(_wpfControl);
-                if (wnd != null) System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(wnd);
+                _wpfControl.Loaded += (s, e) =>
+                {
+                    try
+                    {
+                        var wnd = System.Windows.Window.GetWindow(_wpfControl);
+                        if (wnd == null)
+                        {
+                            var src = System.Windows.PresentationSource.FromVisual(_wpfControl);
+                            if (src is System.Windows.Interop.HwndSource hwndSrc && hwndSrc.RootVisual is System.Windows.Window rv)
+                            {
+                                wnd = rv;
+                            }
+                        }
+
+                        if (wnd != null)
+                        {
+                            System.Windows.Forms.Integration.ElementHost.EnableModelessKeyboardInterop(wnd);
+                        }
+                    }
+                    catch { }
+                };
+
+                // Optional RichTextBox fallback for hosts that swallow WM_CHAR (set env AICAD_USE_RTF_FALLBACK=1)
+                try
+                {
+                    var useRtf = string.Equals(System.Environment.GetEnvironmentVariable("AICAD_USE_RTF_FALLBACK"), "1", System.StringComparison.Ordinal);
+                    if (useRtf)
+                    {
+                        _fallbackRtb = new System.Windows.Forms.RichTextBox
+                        {
+                            Dock = System.Windows.Forms.DockStyle.Fill,
+                            Multiline = true,
+                            AcceptsTab = true,
+                            BorderStyle = System.Windows.Forms.BorderStyle.None,
+                            Visible = true
+                        };
+
+                        _fallbackRtb.TextChanged += (fs, fe) =>
+                        {
+                            try
+                            {
+                                var txt = _fallbackRtb.Text ?? string.Empty;
+                                this.BeginInvoke(new Action(() => { try { if (_wpfControl != null) _wpfControl.PromptText = txt; } catch { } }));
+                                try { AICAD.Services.AddinStatusLogger.Log("RTF", $"TextChanged len={txt.Length}"); } catch { }
+                            }
+                            catch { }
+                        };
+
+                        _fallbackRtb.KeyDown += (fs, fe) => { try { AICAD.Services.AddinStatusLogger.Log("RTF", $"KeyDown: {fe.KeyCode}"); } catch { } };
+                        _fallbackRtb.KeyPress += (fs, fe) => { try { AICAD.Services.AddinStatusLogger.Log("RTF", $"KeyPress: {fe.KeyChar}"); } catch { } };
+
+                        this.Controls.Add(_fallbackRtb);
+                        _fallbackRtb.BringToFront();
+                        try { AICAD.Services.AddinStatusLogger.Log("RTF", "RichTextBox fallback enabled"); } catch { }
+                    }
+                }
+                catch { }
             }
             catch { }
 
@@ -135,6 +191,7 @@ namespace AICAD.UI
             {
                 var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
                 System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
+                try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
             }
             catch { }
         }

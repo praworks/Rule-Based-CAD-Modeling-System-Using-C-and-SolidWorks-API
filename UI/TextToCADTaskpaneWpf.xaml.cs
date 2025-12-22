@@ -180,7 +180,7 @@ namespace AICAD.UI
         {
             try
             {
-                var baseDir = @"D:\SolidWorks API\7. SolidWorks Taskpane Text To CAD";
+                var baseDir = @"D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API";
                 _fileLogger = new FileDbLogger(baseDir);
 
                 var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI")
@@ -518,7 +518,7 @@ namespace AICAD.UI
             }
             catch (Exception ex)
             {
-                errText = ex.Message;
+                errText = ex.Message + "\n" + ex.StackTrace;
                 AppendStatusLine("Error: " + ex.Message);
                 SetRealTimeStatus("Error: " + ex.Message, Colors.Firebrick);
                 SetLlmStatus("Error", Colors.Firebrick);
@@ -527,6 +527,11 @@ namespace AICAD.UI
                 _lastLlm = llmMs;
                 _lastTotal = totalSw.Elapsed;
                 SetTimes(llmMs, totalSw.Elapsed);
+                // Log full exception details to file
+                if (_fileLogger != null)
+                {
+                    await _fileLogger.LogAsync(text, reply, _lastModel ?? "gemini", llmMs, totalSw.Elapsed, errText);
+                }
             }
             finally
             {

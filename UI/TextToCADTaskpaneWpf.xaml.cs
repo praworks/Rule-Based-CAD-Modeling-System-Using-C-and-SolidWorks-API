@@ -239,7 +239,8 @@ namespace AICAD.UI
             SetTimes(null, null);
             SetLastError(null);
                 // Ensure karaoke status starts gray (animated to initial color)
-            try { AnimateKaraokeToColor(Colors.Gray, 0); } catch { }
+                try { AnimateKaraokeToColor(Colors.Gray, 0); } catch { }
+                try { InitProgressPanel(); } catch { }
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
             try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
             try { InitNameEasy(); } catch (Exception ex) { AppendDetailedStatus("NameEasy", "init failed", ex); }
@@ -527,11 +528,7 @@ namespace AICAD.UI
 
         private void SetRealTimeStatus(string text, Color color)
         {
-            if (lblRealTimeStatus != null)
-            {
-                lblRealTimeStatus.Content = text ?? string.Empty;
-                lblRealTimeStatus.Foreground = new SolidColorBrush(color);
-            }
+            // `lblRealTimeStatus` removed from UI; mirror status to logs instead.
             AppendStatusLine($"[Status] {text}");
         }
 
@@ -602,6 +599,30 @@ namespace AICAD.UI
         private int _karaokeLineIndex;
         private bool _karaokeStopOnError;
 
+        // Progressive status UI controls
+        private System.Collections.Generic.List<Grid> _progressItems = new System.Collections.Generic.List<Grid>();
+        private int _activeProgressIndex = -1;
+        private readonly object _progressLock = new object();
+        // Simplified preset status lines (15 plain-English steps)
+        private readonly string[] _presetStatusLines = new[]
+        {
+            "Got your request",
+            "Preparing inputs",
+            "Connecting to AI",
+            "Sending request to AI",
+            "Waiting for AI response",
+            "AI responded",
+            "Reading AI response",
+            "Checking parameters",
+            "Building sketch",
+            "Adding features",
+            "Applying constraints",
+            "Running checks",
+            "Saving model",
+            "Updating UI",
+            "Complete"
+        };
+
         // Animate progress toward a target percent smoothly.
         private void UpdateGenerationProgressAnimated(int target)
         {
@@ -612,7 +633,8 @@ namespace AICAD.UI
                 _progressCts = new CancellationTokenSource();
                 var token = _progressCts.Token;
                 // Run animation without blocking UI thread
-                Task.Run(async () =>
+                #pragma warning disable CS4014
+                _ = Task.Run(async () =>
                 {
                     try
                     {
@@ -662,6 +684,7 @@ namespace AICAD.UI
                     }
                     catch { }
                 }, token);
+                #pragma warning restore CS4014
             }
             catch { }
         }
@@ -744,7 +767,8 @@ namespace AICAD.UI
                 var token = _karaokeCts.Token;
                 var msgs = (lines ?? Array.Empty<string>()).ToArray();
                 if (msgs.Length == 0) return;
-                Task.Run(async () =>
+                #pragma warning disable CS4014
+                _ = Task.Run(async () =>
                 {
                     try
                     {
@@ -763,6 +787,7 @@ namespace AICAD.UI
                     }
                     catch { }
                 }, token);
+                #pragma warning restore CS4014
             }
             catch { }
         }
@@ -822,7 +847,8 @@ namespace AICAD.UI
                     return;
                 }
 
-                Task.Run(async () =>
+                #pragma warning disable CS4014
+                _ = Task.Run(async () =>
                 {
                     try
                     {
@@ -844,6 +870,7 @@ namespace AICAD.UI
                     }
                     catch { }
                 }, token);
+                #pragma warning restore CS4014
             }
             catch { }
         }
@@ -990,31 +1017,49 @@ namespace AICAD.UI
                 SetLastError(null);
                 SetTimes(null, null);
 
-                var fewshot = new StringBuilder()
-                    .Append("Examples:")
-                    .Append("\nInput: Box 100x50x25 mm")
-                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
-                    .Append("\nInput: Cylinder 40 dia x 80 mm")
-                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
-
-                if (_goodStore != null)
+                // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
+                bool useFewShot = true;
+                try
                 {
-                    var extras = _goodStore.GetRecentFewShots(2);
-                    foreach (var s in extras)
+                    var v = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Process)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Machine);
+                    if (!string.IsNullOrEmpty(v))
                     {
-                        fewshot.Append(s);
+                        if (v == "0" || v.Equals("false", StringComparison.OrdinalIgnoreCase)) useFewShot = false;
                     }
                 }
-                if (_stepStore != null)
+                catch { useFewShot = true; }
+
+                StringBuilder fewshot = null;
+                if (useFewShot)
                 {
-                    var more = _stepStore.GetRelevantFewShots(text, 3);
-                    foreach (var s in more) fewshot.Append(s);
+                    fewshot = new StringBuilder()
+                        .Append("Examples:")
+                        .Append("\nInput: Box 100x50x25 mm")
+                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
+                        .Append("\nInput: Cylinder 40 dia x 80 mm")
+                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
+
+                    if (_goodStore != null)
+                    {
+                        var extras = _goodStore.GetRecentFewShots(2);
+                        foreach (var s in extras)
+                        {
+                            fewshot.Append(s);
+                        }
+                    }
+                    if (_stepStore != null)
+                    {
+                        var more = _stepStore.GetRelevantFewShots(text, 3);
+                        foreach (var s in more) fewshot.Append(s);
+                    }
                 }
 
                 var sysPrompt =
                     "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
                     "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
-                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + fewshot + "\nNow generate plan for: ";
+                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
                 var client = GetClient();
                 if (client == null)
                 {
@@ -1240,12 +1285,8 @@ namespace AICAD.UI
 
         private void SetModified(bool modified)
         {
+            // Track modified state but do not touch removed UI element
             _isModified = modified;
-            var modifiedLabel = FindName("lblModified") as Label;
-            if (modifiedLabel != null)
-            {
-                modifiedLabel.Visibility = modified ? Visibility.Visible : Visibility.Collapsed;
-            }
         }
 
         private void InitNameEasy()
@@ -1832,12 +1873,8 @@ namespace AICAD.UI
 
         private void MirrorStatusToTempFile(string line)
         {
-            try
-            {
-                var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "TextToCAD_Status.log");
-                System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
-            }
-            catch { }
+            // Disabled: user requested stopping temporary mirror logging to disk.
+            return;
         }
 
         private void AppendDetailedStatus(string category, string message, Exception ex)
@@ -1872,22 +1909,253 @@ namespace AICAD.UI
             return arr;
         }
 
+        // --- Progressive status UI helpers ---
+        private Grid CreateProgressItem(string text)
+        {
+            var grid = new Grid { Opacity = 0.0, Margin = new Thickness(2, 2, 2, 2) };
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+            var icon = new TextBlock
+            {
+                Text = string.Empty,
+                FontSize = 14,
+                VerticalAlignment = VerticalAlignment.Center,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                Width = 20,
+                RenderTransformOrigin = new Point(0.5, 0.5)
+            };
+            icon.RenderTransform = new RotateTransform(0);
+            Grid.SetColumn(icon, 0);
+
+            var tb = new TextBlock
+            {
+                Text = text ?? string.Empty,
+                Foreground = new SolidColorBrush(Colors.Gray),
+                TextWrapping = TextWrapping.Wrap
+            };
+            Grid.SetColumn(tb, 1);
+
+            grid.Children.Add(icon);
+            grid.Children.Add(tb);
+            return grid;
+        }
+
+        private void InitProgressPanel()
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        _progressItems.Clear();
+                        if (ProgressStatusPanel == null) return;
+                        ProgressStatusPanel.Children.Clear();
+                        foreach (var line in _presetStatusLines)
+                        {
+                            var item = CreateProgressItem(line);
+                            _progressItems.Add(item);
+                            ProgressStatusPanel.Children.Add(item);
+                            var da = new DoubleAnimation(1, new Duration(TimeSpan.FromMilliseconds(220)));
+                            item.BeginAnimation(UIElement.OpacityProperty, da);
+                        }
+                        if (KaraokeStatus != null) ProgressStatusPanel.Children.Add(KaraokeStatus);
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        private void StartSpinnerFor(Grid item)
+        {
+            try
+            {
+                if (item == null) return;
+                var texts = item.Children.OfType<TextBlock>().ToArray();
+                if (texts.Length == 0) return;
+                var icon = texts[0];
+                var tb = texts.Length > 1 ? texts[1] : texts[0];
+                icon.Text = "⟳";
+                var rt = icon.RenderTransform as RotateTransform;
+                if (rt == null)
+                {
+                    rt = new RotateTransform(0);
+                    icon.RenderTransform = rt;
+                    icon.RenderTransformOrigin = new Point(0.5, 0.5);
+                }
+                var da = new DoubleAnimation(0, 360, new Duration(TimeSpan.FromMilliseconds(900))) { RepeatBehavior = RepeatBehavior.Forever };
+                rt.BeginAnimation(RotateTransform.AngleProperty, da);
+                try { tb.Foreground = new SolidColorBrush(Colors.DarkOrange); } catch { }
+            }
+            catch { }
+        }
+
+        private void StopSpinner(Grid item)
+        {
+            try
+            {
+                if (item == null) return;
+                var texts = item.Children.OfType<TextBlock>().ToArray();
+                if (texts.Length == 0) return;
+                var icon = texts[0];
+                var rt = icon.RenderTransform as RotateTransform;
+                if (rt != null) rt.BeginAnimation(RotateTransform.AngleProperty, null);
+            }
+            catch { }
+        }
+
+        private void MarkProgressComplete(Grid item)
+        {
+            try
+            {
+                if (item == null) return;
+                StopSpinner(item);
+                var texts = item.Children.OfType<TextBlock>().ToArray();
+                if (texts.Length == 0) return;
+                var icon = texts[0];
+                var tb = texts.Length > 1 ? texts[1] : texts[0];
+                icon.Text = "✔";
+                try { icon.Foreground = new SolidColorBrush(Colors.DarkGreen); } catch { }
+                try { tb.Foreground = new SolidColorBrush(Colors.DarkGreen); } catch { }
+            }
+            catch { }
+        }
+
+        private void MarkProgressError(Grid item)
+        {
+            try
+            {
+                if (item == null) return;
+                StopSpinner(item);
+                var texts = item.Children.OfType<TextBlock>().ToArray();
+                if (texts.Length == 0) return;
+                var icon = texts[0];
+                var tb = texts.Length > 1 ? texts[1] : texts[0];
+                icon.Text = "⚠";
+                try { icon.Foreground = new SolidColorBrush(Colors.Firebrick); } catch { }
+                try { tb.Foreground = new SolidColorBrush(Colors.Firebrick); } catch { }
+            }
+            catch { }
+        }
+
         private void AppendStatusLine(string line)
         {
             try
             {
+                var ts = DateTime.Now.ToString("HH:mm:ss");
+                // Always mirror to temp file for debugging
+                try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
+
+                // If the external status window exists, write there as before
                 if (_statusWindow != null && !_statusWindow.IsDisposed)
                 {
-                    var ts = DateTime.Now.ToString("HH:mm:ss");
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
                     _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
                     _statusWindow.StatusConsole.ScrollToCaret();
-                    try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
-                    return;
                 }
+            }
+            catch { }
 
-                try { MirrorStatusToTempFile(DateTime.Now.ToString("HH:mm:ss") + " " + line); } catch { }
+            // Also render into the taskpane progressive status panel
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        lock (_progressLock)
+                        {
+                            // mark previous active complete unless it already shows an error
+                            if (_activeProgressIndex >= 0 && _activeProgressIndex < _progressItems.Count)
+                            {
+                                var prev = _progressItems[_activeProgressIndex];
+                                var texts = prev.Children.OfType<TextBlock>().ToArray();
+                                var prevText = texts.Length > 1 ? texts[1].Text : texts[0].Text;
+                                if (prevText.IndexOf("Error", StringComparison.OrdinalIgnoreCase) < 0)
+                                {
+                                    MarkProgressComplete(prev);
+                                }
+                            }
+
+                            // Only update the visual progress panel for known preset lines.
+                            // Ignore live logger output (e.g. lines starting with '[' or unrelated service logs).
+                            if (string.IsNullOrWhiteSpace(line)) return;
+
+                            // Ensure preset items exist in the panel
+                            if (_progressItems.Count == 0 && ProgressStatusPanel != null)
+                            {
+                                ProgressStatusPanel.Children.Clear();
+                                foreach (var preset in _presetStatusLines)
+                                {
+                                    var pitem = CreateProgressItem(preset);
+                                    _progressItems.Add(pitem);
+                                    ProgressStatusPanel.Children.Add(pitem);
+                                }
+                                if (KaraokeStatus != null) ProgressStatusPanel.Children.Add(KaraokeStatus);
+                            }
+
+                            // Try to find the incoming line among the preset lines (case-insensitive exact match)
+                            int matched = -1;
+                            for (int i = 0; i < _presetStatusLines.Length; i++)
+                            {
+                                if (string.Equals(_presetStatusLines[i], line, StringComparison.OrdinalIgnoreCase))
+                                {
+                                    matched = i;
+                                    break;
+                                }
+                            }
+
+                            if (matched < 0)
+                            {
+                                // Not a preset progress line: ignore for the taskpane panel (do not add new items)
+                                return;
+                            }
+
+                            // mark the matched item as the active step (or complete/error depending on wording)
+                            var matchedItem = (matched >= 0 && matched < _progressItems.Count) ? _progressItems[matched] : null;
+                            if (matchedItem == null) return;
+
+                            var lower = line.ToLowerInvariant();
+                            bool isError = lower.Contains("error") || lower.Contains("failed");
+                            bool isComplete = lower.Contains("complete") || lower.Contains("completed") || lower.Contains("success") || lower.Contains("saved") || lower.Contains("ai responded");
+
+                            // mark previous active complete unless it already shows an error
+                            if (_activeProgressIndex >= 0 && _activeProgressIndex < _progressItems.Count && _activeProgressIndex != matched)
+                            {
+                                var prev = _progressItems[_activeProgressIndex];
+                                var textsPrev = prev.Children.OfType<TextBlock>().ToArray();
+                                var prevText = textsPrev.Length > 1 ? textsPrev[1].Text : textsPrev[0].Text;
+                                if (prevText.IndexOf("Error", StringComparison.OrdinalIgnoreCase) < 0)
+                                {
+                                    MarkProgressComplete(prev);
+                                }
+                            }
+
+                            // Ensure visible
+                            try { matchedItem.Opacity = 1.0; } catch { }
+
+                            if (isError)
+                            {
+                                MarkProgressError(matchedItem);
+                                _activeProgressIndex = -1;
+                            }
+                            else if (isComplete)
+                            {
+                                MarkProgressComplete(matchedItem);
+                                _activeProgressIndex = -1;
+                            }
+                            else
+                            {
+                                _activeProgressIndex = matched;
+                                StartSpinnerFor(matchedItem);
+                            }
+                        }
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
             }
             catch { }
         }

@@ -110,37 +110,21 @@
 
         </StackPanel>
 
-        <Label x:Name="lblRealTimeStatus" Grid.Row="2" 
-               Padding="2,0,0,2" Foreground="DimGray" 
-               Content="Ready" FontSize="11" HorizontalAlignment="Left"/>
-        <Label x:Name="lblModified" Grid.Row="2"
-               Padding="0,0,2,2" Foreground="Firebrick"
-               Content="Modified" FontSize="11" HorizontalAlignment="Right"
-               Visibility="Collapsed"/>
+        <!-- lblModified removed per user request -->
 
         <Grid Grid.Row="3" Margin="0,5,0,10">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
-                <StackPanel>
-                    <TextBlock Text="Checking API services..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Checking MongoDB..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Initializing engine..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Parsing user input..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Parsing Key-Shot samples from db..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Receiving feedback..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Executing instructions..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Calculating geometric constraints..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Generating SolidWorks features..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Finishing..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Successful/Unsuccessful..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Reattempting..." Foreground="Gray" Margin="2"/>
-                    <TextBlock Text="Task completed, please save the file..." Foreground="Gray" Margin="2"/>
+            <TextBlock Grid.Row="0" Text="Generation Status" FontSize="13" FontWeight="SemiBold" Foreground="#005A9E" Margin="0,0,0,6"/>
 
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
+                <StackPanel x:Name="ProgressStatusPanel">
+                    <!-- Status lines are injected at runtime. -->
                     <TextBlock x:Name="KaraokeStatus"
                                FontSize="16"
                                FontWeight="Bold"
@@ -150,7 +134,7 @@
                 </StackPanel>
             </ScrollViewer>
 
-            <Grid Grid.Row="1" Margin="0,0,0,8">
+            <Grid Grid.Row="2" Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -160,7 +144,7 @@
                 <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="0%" Foreground="#007ACC" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
             </Grid>
 
-            <Grid Grid.Row="2">
+            <Grid Grid.Row="3">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="90"/>
@@ -209,6 +193,9 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal">
                 <Button x:Name="btnThumbDown" Content="👎" Background="Transparent" BorderThickness="0" Margin="0,0,5,0"/>
                 <Button x:Name="btnThumbUp" Content="👍" Background="Transparent" BorderThickness="0"/>
+                <Label x:Name="feedbackLabel" Content="Successful?" Foreground="DimGray" VerticalAlignment="Center" Margin="5,0,0,0"/>
+                <Label x:Name="feedbackSucessLabel" Content="Feedback from db" Foreground="Green" VerticalAlignment="Center" Margin="5,0,0,0" Visibility="Collapsed"/>
+                
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
                 <Button x:Name="btnHistory" Content="History" Padding="8,2" Margin="5,0,0,0"/>

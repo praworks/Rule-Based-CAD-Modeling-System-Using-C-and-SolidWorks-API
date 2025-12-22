@@ -497,34 +497,52 @@ namespace AICAD.UI
                 SetLastError(null);
                 SetTimes(null, null);
 
-                // Ask Gemini to produce a corrective, executable plan of SOLIDWORKS steps (few-shot guided)
-                var fewshot = new StringBuilder()
-                    .Append("Examples:")
-                    .Append("\nInput: Box 100x50x25 mm")
-                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
-                    .Append("\nInput: Cylinder 40 dia x 80 mm")
-                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
-
-                // Add dynamic few-shots from SQLite good feedback
-                if (_goodStore != null)
+                // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
+                bool useFewShot = true;
+                try
                 {
-                    var extras = _goodStore.GetRecentFewShots(2);
-                    foreach (var s in extras)
+                    var v = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Process)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Machine);
+                    if (!string.IsNullOrEmpty(v))
                     {
-                        fewshot.Append(s);
+                        if (v == "0" || v.Equals("false", StringComparison.OrdinalIgnoreCase)) useFewShot = false;
                     }
                 }
-                // Add retrieval from step store
-                if (_stepStore != null)
+                catch { useFewShot = true; }
+
+                StringBuilder fewshot = null;
+                if (useFewShot)
                 {
-                    var more = _stepStore.GetRelevantFewShots(text, 3);
-                    foreach (var s in more) fewshot.Append(s);
+                    // Ask Gemini to produce a corrective, executable plan of SOLIDWORKS steps (few-shot guided)
+                    fewshot = new StringBuilder()
+                        .Append("Examples:")
+                        .Append("\nInput: Box 100x50x25 mm")
+                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
+                        .Append("\nInput: Cylinder 40 dia x 80 mm")
+                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
+
+                    // Add dynamic few-shots from SQLite good feedback
+                    if (_goodStore != null)
+                    {
+                        var extras = _goodStore.GetRecentFewShots(2);
+                        foreach (var s in extras)
+                        {
+                            fewshot.Append(s);
+                        }
+                    }
+                    // Add retrieval from step store
+                    if (_stepStore != null)
+                    {
+                        var more = _stepStore.GetRelevantFewShots(text, 3);
+                        foreach (var s in more) fewshot.Append(s);
+                    }
                 }
 
                 var sysPrompt =
                     "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
                     "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
-                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + fewshot + "\nNow generate plan for: ";
+                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
                 var client = GetClient();
                 _lastModel = client?.Model;
                 SetRealTimeStatus("Applying few-shot examples…", Color.DarkOrange);

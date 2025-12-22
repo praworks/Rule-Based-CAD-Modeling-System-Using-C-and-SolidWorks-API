@@ -20,6 +20,7 @@ namespace AICAD.UI
         private TextBox _txtMongoDb;
         private TextBox _txtMongoUser;
         private TextBox _txtMongoPassword;
+        private CheckBox _chkUseFewShot;
         private Button _btnToggleMongoPwVisibility;
         private Button _btnSaveMongo;
         private Button _btnLoadMongo;
@@ -271,8 +272,18 @@ namespace AICAD.UI
             buttonPanel.Controls.Add(_btnSaveMongo);
             panel.SetColumnSpan(buttonPanel, 2);
             panel.Controls.Add(buttonPanel, 0, 4);
+
+            // Row 5: Few-shot checkbox
+            _chkUseFewShot = new CheckBox
+            {
+                Text = "Enable Few-Shot examples (use examples from DB)",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(3, 8, 0, 0)
+            };
+            panel.SetColumnSpan(_chkUseFewShot, 2);
+            panel.Controls.Add(_chkUseFewShot, 0, 5);
             
-            // Row 4: Status
+            // Row 6: Status
             _lblMongoStatus = new Label
             {
                 Text = "",
@@ -282,7 +293,7 @@ namespace AICAD.UI
                 Padding = new Padding(0, 5, 0, 5)
             };
             panel.SetColumnSpan(_lblMongoStatus, 2);
-            panel.Controls.Add(_lblMongoStatus, 0, 5);
+            panel.Controls.Add(_lblMongoStatus, 0, 6);
             
             // Row 5: Help text
             var helpText = new Label
@@ -296,7 +307,7 @@ namespace AICAD.UI
                 Padding = new Padding(0, 10, 0, 0)
             };
             panel.SetColumnSpan(helpText, 2);
-            panel.Controls.Add(helpText, 0, 6);
+            panel.Controls.Add(helpText, 0, 7);
             
             // Set row heights
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
@@ -304,7 +315,8 @@ namespace AICAD.UI
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // few-shot checkbox
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // status
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             
             tab.Controls.Add(panel);
@@ -576,6 +588,13 @@ namespace AICAD.UI
                 _txtMongoUser.Text = Environment.GetEnvironmentVariable("MONGODB_USER", EnvironmentVariableTarget.User) ?? "";
                 _txtMongoPassword.Text = Environment.GetEnvironmentVariable("MONGODB_PW", EnvironmentVariableTarget.User) 
                     ?? "";
+                // Load few-shot flag from environment: AICAD_USE_FEWSHOT (1 = enabled)
+                try
+                {
+                    var fs = Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT");
+                    _chkUseFewShot.Checked = string.IsNullOrEmpty(fs) ? true : (fs == "1" || fs.Equals("true", StringComparison.OrdinalIgnoreCase));
+                }
+                catch { _chkUseFewShot.Checked = true; }
                 
                 _lblMongoStatus.Text = "Loaded from environment variables";
                 _lblMongoStatus.ForeColor = Color.DarkGreen;
@@ -595,6 +614,12 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("MONGODB_DB", _txtMongoDb.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_USER", _txtMongoUser.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_PW", _txtMongoPassword.Text, EnvironmentVariableTarget.User);
+                // Save few-shot checkbox state
+                try
+                {
+                    Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", _chkUseFewShot.Checked ? "1" : "0", EnvironmentVariableTarget.User);
+                }
+                catch { }
                 
                 _lblMongoStatus.Text = "Settings saved successfully! Restart SolidWorks to apply changes.";
                 _lblMongoStatus.ForeColor = Color.DarkGreen;

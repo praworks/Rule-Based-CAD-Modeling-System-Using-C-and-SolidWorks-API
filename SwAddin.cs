@@ -220,12 +220,8 @@ namespace AICAD
 
         private void MirrorStatusToTempFile(string line)
         {
-            try
-            {
-                var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Unhandled.log");
-                System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
-            }
-            catch { }
+            // Disabled: writing unhandled exception info to temp files is turned off per user request.
+            return;
         }
 
         // If enabled (AICAD_DUMP_ON_UNHANDLED=1), create a minidump of this process to %TEMP%

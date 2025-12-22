@@ -12,11 +12,24 @@ namespace AICAD.Services
         private readonly HttpClient _http;
         private readonly string _apiKey;
         private string _model;
+        private static readonly string[] DefaultFallbackModels = new[] { "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-flash" };
+        private const string BaseUrlV1 = "https://generativelanguage.googleapis.com/v1";
         private const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta";
 
         public GeminiClient(string apiKey, string model = null)
         {
-            _apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
+            // Prefer an environment-provided key so we don't accidentally use a hardcoded value passed in.
+            var envKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User)
+                         ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.Process)
+                         ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.Machine);
+            if (!string.IsNullOrWhiteSpace(envKey))
+            {
+                _apiKey = envKey.Trim();
+            }
+            else
+            {
+                _apiKey = string.IsNullOrWhiteSpace(apiKey) ? null : apiKey.Trim();
+            }
 
             // Allow overriding model via GEMINI_MODEL env var (user/process/machine),
             // otherwise use provided model parameter, otherwise fall back to a safe default.
@@ -28,7 +41,12 @@ namespace AICAD.Services
 
             _http = new HttpClient();
             _http.Timeout = TimeSpan.FromSeconds(60);
-            try { AddinStatusLogger.Log("GeminiClient", $"Ctor model={_model}"); } catch { }
+            try
+            {
+                var src = !string.IsNullOrWhiteSpace(envKey) ? "env" : (!string.IsNullOrWhiteSpace(apiKey) ? "ctor" : "none");
+                AddinStatusLogger.Log("GeminiClient", $"Ctor model={_model} apiKeySource={src}");
+            }
+            catch { }
         }
 
         public void SetModel(string model)
@@ -54,6 +72,28 @@ namespace AICAD.Services
             {
                 throw new InvalidOperationException("No Gemini credentials available. Sign in with Google OAuth or set a GEMINI_API_KEY.");
             }
+            // Ensure the model exists for our credentials; consult ListModels and pick a fallback if needed.
+            try
+            {
+                var available = await ListAvailableModelsAsync(bearer).ConfigureAwait(false);
+                if (available != null && available.Count > 0)
+                {
+                    if (!string.IsNullOrEmpty(_model) && !available.Contains($"models/{_model}"))
+                    {
+                        // Try to pick a fallback from defaults
+                        foreach (var f in DefaultFallbackModels)
+                        {
+                            if (available.Contains($"models/{f}"))
+                            {
+                                try { AddinStatusLogger.Log("GeminiClient", $"Configured model '{_model}' not available; falling back to {f}"); } catch { }
+                                _model = f;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            catch { }
 
             var url = $"{BaseUrl}/models/{_model}:generateContent";
             try { AddinStatusLogger.Log("GeminiClient", $"GenerateAsync: URL='{url}', Model='{_model}', HasBearerToken={!string.IsNullOrEmpty(bearer)}, HasApiKey={!string.IsNullOrEmpty(_apiKey)}"); } catch { }
@@ -78,30 +118,61 @@ namespace AICAD.Services
 
             using (var content = new StringContent(jsonBody, Encoding.UTF8, "application/json"))
             {
-                HttpResponseMessage resp;
-                if (!string.IsNullOrWhiteSpace(bearer))
+                const int maxRetries = 3;
+                int attempt = 0;
+                while (true)
                 {
-                    var httpReq = new HttpRequestMessage(HttpMethod.Post, url);
-                    httpReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer);
-                    httpReq.Content = content;
-                    resp = await _http.SendAsync(httpReq).ConfigureAwait(false);
-                }
-                else
-                {
-                    // fallback to API key in query string
-                    if (string.IsNullOrWhiteSpace(_apiKey))
+                    attempt++;
+                    HttpResponseMessage resp = null;
+                    if (!string.IsNullOrWhiteSpace(bearer))
                     {
-                        throw new InvalidOperationException("GEMINI_API_KEY not set and OAuth token unavailable.");
+                        var httpReq = new HttpRequestMessage(HttpMethod.Post, url);
+                        httpReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer);
+                        httpReq.Content = content;
+                        resp = await _http.SendAsync(httpReq).ConfigureAwait(false);
                     }
-                    var urlWithKey = url + "?key=" + Uri.EscapeDataString(_apiKey);
-                    resp = await _http.PostAsync(urlWithKey, content).ConfigureAwait(false);
-                }
-                var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode)
-                {
+                    else
+                    {
+                        // fallback to API key in query string
+                        if (string.IsNullOrWhiteSpace(_apiKey))
+                        {
+                            throw new InvalidOperationException("GEMINI_API_KEY not set and OAuth token unavailable.");
+                        }
+                        var urlWithKey = url + "?key=" + Uri.EscapeDataString(_apiKey);
+                        resp = await _http.PostAsync(urlWithKey, content).ConfigureAwait(false);
+                    }
+
+                    var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    if (resp.IsSuccessStatusCode)
+                    {
+                        var respSerializer = new DataContractJsonSerializer(typeof(GenerateResponse));
+                        using (var ms = new System.IO.MemoryStream(Encoding.UTF8.GetBytes(respText)))
+                        {
+                            var parsed = (GenerateResponse)respSerializer.ReadObject(ms);
+                            var text = parsed?.GetFirstText();
+                            try { AddinStatusLogger.Log("GeminiClient", $"GenerateAsync success textLen={text?.Length ?? 0}"); } catch { }
+                            return text ?? string.Empty;
+                        }
+                    }
+
                     try { AddinStatusLogger.Error("GeminiClient", $"HTTP {(int)resp.StatusCode} response", new Exception(respText)); } catch { }
                     var status = (int)resp.StatusCode;
-                    // Give a short, actionable hint without exposing the key or sensitive data.
+
+                    // If transient (rate limit or server error), optionally retry with backoff
+                    if ((status == 429 || status == 503) && attempt <= maxRetries)
+                    {
+                        int delaySeconds = 1 << (attempt - 1); // 1,2,4
+                        // honor Retry-After header if present
+                        if (resp.Headers.RetryAfter != null)
+                        {
+                            if (resp.Headers.RetryAfter.Delta.HasValue) delaySeconds = (int)resp.Headers.RetryAfter.Delta.Value.TotalSeconds;
+                        }
+                        try { AddinStatusLogger.Log("GeminiClient", $"Transient HTTP {status} - retry {attempt}/{maxRetries} after {delaySeconds}s"); } catch { }
+                        await Task.Delay(TimeSpan.FromSeconds(delaySeconds)).ConfigureAwait(false);
+                        continue;
+                    }
+
+                    // Non-retriable or exhausted retries — provide actionable hint
                     string hint = string.Empty;
                     switch (status)
                     {
@@ -111,6 +182,9 @@ namespace AICAD.Services
                         case 404:
                             hint = "Not found: the requested model may not support the generateContent method for this API version or your key; try a different model from ListModels.";
                             break;
+                        case 429:
+                            hint = "Rate limited: your quota may be exhausted or you're sending too many requests; consider checking billing/limits or reducing request rate.";
+                            break;
                         default:
                             hint = string.Empty;
                             break;
@@ -119,21 +193,51 @@ namespace AICAD.Services
                     var message = $"Gemini error {status}: {hint} {suggestion}";
                     throw new InvalidOperationException(message);
                 }
-
-                var respSerializer = new DataContractJsonSerializer(typeof(GenerateResponse));
-                using (var ms = new System.IO.MemoryStream(Encoding.UTF8.GetBytes(respText)))
-                {
-                    var parsed = (GenerateResponse)respSerializer.ReadObject(ms);
-                    var text = parsed?.GetFirstText();
-                    try { AddinStatusLogger.Log("GeminiClient", $"GenerateAsync success textLen={text?.Length ?? 0}"); } catch { }
-                    return text ?? string.Empty;
-                }
             }
         }
 
         public void Dispose()
         {
             _http?.Dispose();
+        }
+
+        public async Task<System.Collections.Generic.List<string>> ListAvailableModelsAsync(string bearerToken = null)
+        {
+            try
+            {
+                var url = BaseUrlV1 + "/models";
+                HttpResponseMessage resp;
+                if (!string.IsNullOrEmpty(bearerToken))
+                {
+                    var req = new HttpRequestMessage(HttpMethod.Get, url);
+                    req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearerToken);
+                    resp = await _http.SendAsync(req).ConfigureAwait(false);
+                }
+                else
+                {
+                    var key = _apiKey;
+                    if (string.IsNullOrWhiteSpace(key)) return null;
+                    resp = await _http.GetAsync(url + "?key=" + Uri.EscapeDataString(key)).ConfigureAwait(false);
+                }
+                if (!resp.IsSuccessStatusCode) return null;
+                var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var list = new System.Collections.Generic.List<string>();
+                var idx = 0;
+                while (true)
+                {
+                    var nm = "\"name\": \"models/";
+                    var pos = body.IndexOf(nm, idx, StringComparison.OrdinalIgnoreCase);
+                    if (pos < 0) break;
+                    pos += nm.Length;
+                    var end = body.IndexOf('"', pos);
+                    if (end < 0) break;
+                    var modelName = body.Substring(pos, end - pos);
+                    list.Add("models/" + modelName);
+                    idx = end + 1;
+                }
+                return list;
+            }
+            catch { return null; }
         }
     }
 

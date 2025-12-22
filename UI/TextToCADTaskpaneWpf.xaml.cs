@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Media.Animation;
 using System.Threading;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
@@ -237,6 +238,8 @@ namespace AICAD.UI
             SetSwStatus("Idle", Colors.DimGray);
             SetTimes(null, null);
             SetLastError(null);
+                // Ensure karaoke status starts gray (animated to initial color)
+            try { AnimateKaraokeToColor(Colors.Gray, 0); } catch { }
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
             try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
             try { InitNameEasy(); } catch (Exception ex) { AppendDetailedStatus("NameEasy", "init failed", ex); }
@@ -534,24 +537,8 @@ namespace AICAD.UI
 
         private void UpdateGenerationProgress(int percent)
         {
-            try
-            {
-                if (generationProgressBar != null)
-                {
-                    var p = Math.Max(0, Math.Min(100, percent));
-                    // Ensure we update on UI thread
-                    Dispatcher.BeginInvoke(new Action(() =>
-                    {
-                        try
-                        {
-                            generationProgressBar.Value = p;
-                            if (generationProgressText != null) generationProgressText.Text = p + "%";
-                        }
-                        catch { }
-                    }), System.Windows.Threading.DispatcherPriority.Background);
-                }
-            }
-            catch { }
+            // Use the animated progress updater for a more natural feel.
+            try { UpdateGenerationProgressAnimated(Math.Max(0, Math.Min(100, percent))); } catch { }
         }
 
         private void UpdateKaraokeStatus(string text)
@@ -571,7 +558,182 @@ namespace AICAD.UI
             catch { }
         }
 
+        private void AnimateKaraokeToColor(Color targetColor, int durationMs = 400)
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (KaraokeStatus == null) return;
+                        var brush = KaraokeStatus.Foreground as SolidColorBrush;
+                        if (brush == null)
+                        {
+                            brush = new SolidColorBrush(targetColor);
+                            KaraokeStatus.Foreground = brush;
+                        }
+                        // If brush is frozen clone it so we can animate
+                        if (brush.IsFrozen)
+                        {
+                            brush = brush.Clone();
+                            KaraokeStatus.Foreground = brush;
+                        }
+                        var animation = new ColorAnimation
+                        {
+                            To = targetColor,
+                            Duration = new Duration(TimeSpan.FromMilliseconds(durationMs)),
+                            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
+                        };
+                        brush.BeginAnimation(SolidColorBrush.ColorProperty, animation);
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
         private CancellationTokenSource _karaokeCts;
+        private CancellationTokenSource _progressCts;
+        private readonly Random _rand = new Random();
+        private readonly System.Windows.Media.Color[] _karaokeColors = new[] { Colors.Gray, Colors.DarkOrange, Colors.DodgerBlue, Colors.DarkGreen };
+        // Line-based karaoke controls: highlight preset TextBlocks top-to-bottom
+        private System.Collections.Generic.List<TextBlock> _karaokeLineBlocks;
+        private int _karaokeLineIndex;
+        private bool _karaokeStopOnError;
+
+        // Animate progress toward a target percent smoothly.
+        private void UpdateGenerationProgressAnimated(int target)
+        {
+            try
+            {
+                // Cancel any existing animation
+                try { _progressCts?.Cancel(); } catch { }
+                _progressCts = new CancellationTokenSource();
+                var token = _progressCts.Token;
+                // Run animation without blocking UI thread
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        // read current value on UI thread
+                        int current = 0;
+                        Dispatcher.Invoke(() =>
+                        {
+                            try { current = (int)Math.Round(generationProgressBar.Value); } catch { current = 0; }
+                        });
+
+                        // Approach the target with small random steps
+                        while (!token.IsCancellationRequested && current != target)
+                        {
+                            var remaining = target - current;
+                            var step = Math.Max(1, Math.Min(10, Math.Abs(remaining) / 6));
+                            // bias to slower progress when large remaining
+                            if (Math.Abs(remaining) > 30) step = Math.Max(2, step);
+                            current += Math.Sign(remaining) * step;
+                            // clamp
+                            current = Math.Max(0, Math.Min(100, current));
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    generationProgressBar.Value = current;
+                                    if (generationProgressText != null) generationProgressText.Text = current + "%";
+                                }
+                                catch { }
+                            }));
+                            // random small delay to look organic
+                            await Task.Delay(60 + _rand.Next(0, 120), token).ConfigureAwait(false);
+                        }
+
+                        // ensure exact final value
+                        if (!token.IsCancellationRequested)
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    generationProgressBar.Value = target;
+                                    if (generationProgressText != null) generationProgressText.Text = target + "%";
+                                }
+                                catch { }
+                            }));
+                        }
+                    }
+                    catch { }
+                }, token);
+            }
+            catch { }
+        }
+
+        // Start a realistic progress phase: communicating, awaiting_response, executing, success, error
+        private void StartProgressPhase(string phase)
+        {
+            switch ((phase ?? string.Empty).ToLowerInvariant())
+            {
+                case "communicating":
+                    UpdateGenerationProgressAnimated(10 + _rand.Next(0, 6));
+                    break;
+                case "awaiting_response":
+                    // move to mid-range while waiting
+                    UpdateGenerationProgressAnimated(40 + _rand.Next(0, 11));
+                    break;
+                case "executing":
+                    UpdateGenerationProgressAnimated(65 + _rand.Next(0, 11));
+                    break;
+                case "success":
+                    UpdateGenerationProgressAnimated(100);
+                    break;
+                case "error":
+                    UpdateGenerationProgressAnimated(0);
+                    break;
+                default:
+                    // fallback to a direct value parse
+                    int v;
+                    if (int.TryParse(phase, out v)) UpdateGenerationProgressAnimated(v);
+                    break;
+            }
+        }
+
+        // Produce simple English karaoke lines for a given scenario.
+        private string[] GenerateKaraokeLines(string scenario, string detail = null)
+        {
+            detail = detail ?? string.Empty;
+            switch ((scenario ?? string.Empty).ToLowerInvariant())
+            {
+                case "communicating":
+                    return new[] { "Connecting to AI service...", "Sending your request now.", "Please wait while we think." };
+                case "awaiting_response":
+                    return new[] { "Waiting for the AI to respond...", "Processing response...", "Almost there." };
+                case "executing":
+                    return new[] { "Running steps in SolidWorks...", "Applying changes to the model.", "This may take a moment." };
+                case "success":
+                    return new[] { "Model created successfully.", "You can view or edit the model now." };
+                case "error_sw":
+                    return new[] { $"SolidWorks error: {detail}", "Check the error details and try again." };
+                case "error_llm":
+                    return new[] { $"AI error: {detail}", "Check your API key, model, and quota then retry." };
+                case "saving":
+                    return new[] { "Saving the run and feedback...", "Done." };
+                default:
+                    return new[] { detail, string.Empty };
+            }
+        }
+
+        // Convenience: show scenario-based karaoke (stops previous karaoke first)
+        private void ShowKaraokeScenario(string scenario, string detail = null, int intervalMs = 700)
+        {
+            try
+            {
+                // Switch to line-based karaoke: stop any existing animation, init preset lines,
+                // and start top-to-bottom activation. For error scenarios, we'll let callers
+                // signal an error which will stop progression at the current line.
+                StopKaraoke();
+                InitKaraokeLines();
+                StartKaraokeLines(intervalMs);
+            }
+            catch { }
+        }
 
         public void StartKaraoke(IEnumerable<string> lines, int intervalMs = 700)
         {
@@ -586,15 +748,18 @@ namespace AICAD.UI
                 {
                     try
                     {
-                        while (!token.IsCancellationRequested)
-                        {
-                            foreach (var m in msgs)
-                            {
-                                if (token.IsCancellationRequested) break;
-                                UpdateKaraokeStatus(m);
-                                try { await Task.Delay(intervalMs, token); } catch { break; }
-                            }
-                        }
+                                while (!token.IsCancellationRequested)
+                                {
+                                for (int i = 0; i < msgs.Length; i++)
+                                {
+                                    if (token.IsCancellationRequested) break;
+                                    var m = msgs[i];
+                                    // animate to the next color for this message
+                                    try { AnimateKaraokeToColor(_karaokeColors[i % _karaokeColors.Length], 350); } catch { }
+                                    UpdateKaraokeStatus(m);
+                                    try { await Task.Delay(intervalMs, token); } catch { break; }
+                                }
+                                }
                     }
                     catch { }
                 }, token);
@@ -612,6 +777,92 @@ namespace AICAD.UI
                     try { _karaokeCts.Dispose(); } catch { }
                 }
                 _karaokeCts = null;
+            }
+            catch { }
+        }
+
+        // Initialize line-based karaoke: gather preset TextBlocks and reset colors
+        private void InitKaraokeLines()
+        {
+            try
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    _karaokeLineBlocks = new System.Collections.Generic.List<TextBlock>();
+                    if (KaraokeLinesPanel != null)
+                    {
+                        foreach (var child in KaraokeLinesPanel.Children)
+                        {
+                            if (child is TextBlock tb && tb != KaraokeStatus)
+                            {
+                                try { tb.Foreground = new SolidColorBrush(Colors.Gray); } catch { }
+                                _karaokeLineBlocks.Add(tb);
+                            }
+                        }
+                    }
+                    _karaokeLineIndex = 0;
+                    _karaokeStopOnError = false;
+                });
+            }
+            catch { }
+        }
+
+        // Activate preset lines top-to-bottom; each activated line turns blue. Stops if signaled.
+        public void StartKaraokeLines(int intervalMs = 700)
+        {
+            try
+            {
+                // cancel any previous
+                try { _karaokeCts?.Cancel(); } catch { }
+                _karaokeCts = new CancellationTokenSource();
+                var token = _karaokeCts.Token;
+                if (_karaokeLineBlocks == null || _karaokeLineBlocks.Count == 0)
+                {
+                    // nothing to animate
+                    return;
+                }
+
+                Task.Run(async () =>
+                {
+                    try
+                    {
+                        while (!token.IsCancellationRequested && _karaokeLineIndex < _karaokeLineBlocks.Count)
+                        {
+                            if (_karaokeStopOnError) break;
+                            var idx = _karaokeLineIndex;
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    _karaokeLineBlocks[idx].Foreground = new SolidColorBrush(Colors.DodgerBlue);
+                                }
+                                catch { }
+                            }));
+                            _karaokeLineIndex++;
+                            try { await Task.Delay(intervalMs, token).ConfigureAwait(false); } catch { break; }
+                        }
+                    }
+                    catch { }
+                }, token);
+            }
+            catch { }
+        }
+
+        // Signal an error at the current line: mark it red and stop progression
+        public void SignalKaraokeError()
+        {
+            try
+            {
+                _karaokeStopOnError = true;
+                if (_karaokeLineBlocks != null && _karaokeLineIndex < _karaokeLineBlocks.Count)
+                {
+                    var idx = _karaokeLineIndex;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try { _karaokeLineBlocks[idx].Foreground = new SolidColorBrush(Colors.Firebrick); } catch { }
+                    }));
+                }
+                try { _karaokeCts?.Cancel(); } catch { }
             }
             catch { }
         }
@@ -692,20 +943,22 @@ namespace AICAD.UI
         {
             if (_client == null)
             {
-                var key = "AIzaSyBUzKATKs5ea0mTSmGziZDnDdjaDK1RpjE";
-
-                if (key == "REPLACE_WITH_YOUR_KEY_DO_NOT_COMMIT")
-                {
-                    AppendDetailedStatus("LLM", "API Key is not set. Please edit UI/TextToCADTaskpaneWpf.xaml.cs and replace the placeholder key.", null);
-                    throw new InvalidOperationException("API Key is not set in the source code.");
-                }
+                // Prefer API keys from environment; do not hardcode keys in source.
+                var key = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                          ?? null;
 
                 var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
                                      ?? "gemini-1.0-pro";
+
                 _client = new GeminiClient(key, preferredModel);
-                AppendStatusLine("[LLM] Gemini client constructed with hardcoded API key.");
+                AppendStatusLine("[LLM] Gemini client constructed; apiKeySource=" + (string.IsNullOrEmpty(key) ? "none" : "env"));
             }
             return _client;
         }
@@ -729,10 +982,10 @@ namespace AICAD.UI
                 build.IsEnabled = false;
                 _lastPrompt = text;
                 AppendStatusLine("> " + text);
-                // Kick off progress bar animation
-                UpdateGenerationProgress(5);
+                // Kick off progress bar animation (realistic phase)
+                StartProgressPhase("communicating");
                 SetRealTimeStatus("Communicating with LLM…", Colors.DarkOrange);
-                    UpdateKaraokeStatus("Communicating with LLM…");
+                        ShowKaraokeScenario("communicating");
                     SetLlmStatus("Sending…", Colors.DarkOrange);
                 SetLastError(null);
                 SetTimes(null, null);
@@ -772,18 +1025,19 @@ namespace AICAD.UI
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
                 llmSw.Stop();
-                // LLM returned — update progress
-                UpdateGenerationProgress(50);
+                // LLM returned — advance progress realistically
+                StartProgressPhase("awaiting_response");
                 llmMs = llmSw.Elapsed;
                 _lastReply = reply;
                 AppendStatusLine(reply);
                 SetRealTimeStatus("Received response from LLM", Colors.DarkGreen);
-                UpdateKaraokeStatus("LLM response received");
+                StopKaraoke();
+                ShowKaraokeScenario("awaiting_response");
                 SetLlmStatus("OK", Colors.DarkGreen);
 
                 SetRealTimeStatus("Executing plan…", Colors.DarkOrange);
-                UpdateGenerationProgress(70);
-                UpdateKaraokeStatus("Executing plan…");
+                StartProgressPhase("executing");
+                ShowKaraokeScenario("executing");
                 SetSwStatus("Working…", Colors.DarkOrange);
                 var attempt = 0;
                 var maxAttempts = 2;
@@ -834,9 +1088,10 @@ namespace AICAD.UI
                 if (exec != null && exec.Success)
                 {
                     AppendStatusLine("Model created.");
-                    UpdateKaraokeStatus("Model created.");
+                    StopKaraoke();
+                    ShowKaraokeScenario("success");
                     SetRealTimeStatus("Creating model…", Colors.DarkOrange);
-                    UpdateGenerationProgress(95);
+                    StartProgressPhase("success");
                     SetSwStatus("OK", Colors.DarkGreen);
                     try { SetModified(false); } catch { }
                 }
@@ -846,7 +1101,8 @@ namespace AICAD.UI
                         ? exec.Log[exec.Log.Count - 1].Value<string>("error")
                         : (errText ?? "Unknown error");
                     AppendStatusLine("SOLIDWORKS error: " + swError);
-                    UpdateKaraokeStatus("Error: " + swError);
+                    // Signal an error to the line-based karaoke: mark current line and stop advancing
+                    try { SignalKaraokeError(); } catch { StopKaraoke(); }
                     SetRealTimeStatus("Error: " + swError, Colors.Firebrick);
                     SetSwStatus("Error", Colors.Firebrick);
                     if (string.IsNullOrWhiteSpace(errText)) errText = swError;
@@ -970,6 +1226,8 @@ namespace AICAD.UI
                     SetDbStatus(logged ? "Logged" : "Log error", logged ? Colors.DarkGreen : Colors.Firebrick);
                     SetRealTimeStatus(logged ? "Completed" : "Error logging", logged ? Colors.DarkGreen : Colors.Firebrick);
                     UpdateGenerationProgress(logged ? 100 : 0);
+                    // Smoothly animate karaoke color: blue on success, gray on failure
+                    try { AnimateKaraokeToColor(logged ? Colors.DodgerBlue : Colors.Gray, 600); } catch { }
                 }
                 catch
                 {

@@ -28,7 +28,7 @@
         <StackPanel Grid.Row="1" Margin="0,0,0,10">
 
             <Border Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,5" Padding="5">
-                <StackPanel>
+                <StackPanel x:Name="KaraokeLinesPanel">
                     <Label Content="Select Series" Foreground="#005A9E" FontWeight="SemiBold" Padding="0,0,0,2"/>
                     <DockPanel>
                         <Label Content="Series:" FontSize="10" Foreground="Gray" Padding="0"/>
@@ -127,17 +127,26 @@
 
             <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
                 <StackPanel>
-                    <TextBlock Text="✓ Initializing Engine..." Foreground="#2E7D32" Margin="2"/>
-                    <TextBlock Text="✓ Parsing user input..." Foreground="#2E7D32" Margin="2"/>
-                    <TextBlock Text="⟳ Calculating geometric constraints..." Foreground="#005A9E" FontWeight="SemiBold" Margin="2"/>
-                    <TextBlock Text="•  Generating SolidWorks features..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Checking API services..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Checking MongoDB..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Initializing engine..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Parsing user input..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Parsing Key-Shot samples from db..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Receiving feedback..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Executing instructions..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Calculating geometric constraints..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Generating SolidWorks features..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Finishing..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Successful/Unsuccessful..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Reattempting..." Foreground="Gray" Margin="2"/>
+                    <TextBlock Text="Task completed, please save the file..." Foreground="Gray" Margin="2"/>
 
                     <TextBlock x:Name="KaraokeStatus"
                                FontSize="16"
                                FontWeight="Bold"
                                TextWrapping="Wrap"
                                Margin="0,10,0,0"
-                               Foreground="#005A9E"/>
+                               Foreground="Gray"/>
                 </StackPanel>
             </ScrollViewer>
 
@@ -152,18 +161,27 @@
             </Grid>
 
             <Grid Grid.Row="2">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="90"/>
+                </Grid.ColumnDefinitions>
+
                 <TextBox x:Name="prompt" 
+                         Grid.Column="0"
                          AcceptsReturn="True" TextWrapping="Wrap" 
-                         VerticalScrollBarVisibility="Auto" Padding="8,8,105,8" 
+                         VerticalScrollBarVisibility="Auto" Padding="8" 
                          Text="Enter prompt..."
                          GotFocus="prompt_GotFocus"
                          LostFocus="prompt_LostFocus"
                          PreviewKeyDown="prompt_PreviewKeyDown"
-                         BorderBrush="#FFCCCCCC" Margin="0,0,100,0" Height="125" VerticalAlignment="Center"/>
-                <Button x:Name="build" Content="Build 🚀" 
-                        HorizontalAlignment="Right" VerticalAlignment="Bottom" 
-                        Margin="0,0,10,10" Height="30" Width="85"
-                        Background="#FF007ACC" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+                         BorderBrush="#FFCCCCCC" Height="125" VerticalAlignment="Center"/>
+
+                <Button x:Name="build" 
+                        Grid.Column="1"
+                        Content="Build 🚀" 
+                        Margin="5,0,0,0"
+                        Background="#FF007ACC" Foreground="White" FontWeight="SemiBold" 
+                        BorderThickness="0" Height="125" VerticalAlignment="Center"/>
             </Grid>
         </Grid>
 
@@ -194,7 +212,7 @@
             </StackPanel>
             <StackPanel Grid.Column="2" Orientation="Horizontal">
                 <Button x:Name="btnHistory" Content="History" Padding="8,2" Margin="5,0,0,0"/>
-                <Button x:Name="btnStatus" Content="Status" Padding="8,2" Margin="5,0,0,0"/>
+                <Button x:Name="btnStatus" Content="👁️" Padding="8,2" Margin="5,0,0,0"/>
                 <Button x:Name="btnSettings" Content="⚙️" ToolTip="Settings" Padding="5,2" Margin="5,0,0,0"/>
             </StackPanel>
         </Grid>

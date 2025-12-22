@@ -28,8 +28,8 @@ namespace AICAD.UI
         // API Key Tab Controls
         private TextBox _txtApiKey;
         private TextBox _txtProjectId;
-        private Button _btnToggleApiKeyVisibility;
         private ComboBox _cmbApiModel;
+        private Button _btnToggleApiKeyVisibility;
         private ComboBox _cmbApiProvider;
         private Button _btnSaveApiKey;
         private Button _btnLoadApiKey;
@@ -56,19 +56,7 @@ namespace AICAD.UI
                 BtnLoadMongo_Click(this, EventArgs.Empty);
                 BtnLoadApiKey_Click(this, EventArgs.Empty);
 
-                // Load model selection from env
-                var model = Environment.GetEnvironmentVariable("GEMINI_MODEL", EnvironmentVariableTarget.User) ?? "";
-                if (!string.IsNullOrEmpty(model) && _cmbApiModel != null)
-                {
-                    for (int i = 0; i < _cmbApiModel.Items.Count; i++)
-                    {
-                        if (string.Equals(_cmbApiModel.Items[i].ToString(), model, StringComparison.OrdinalIgnoreCase))
-                        {
-                            _cmbApiModel.SelectedIndex = i;
-                            break;
-                        }
-                    }
-                }
+                // Model selection is configured via environment (`GEMINI_MODEL`) not the UI.
             }
             catch { }
         }
@@ -249,7 +237,9 @@ namespace AICAD.UI
             panel.Controls.Add(lblPassword, 0, 3);
             panel.Controls.Add(pwPanel, 1, 3);
             
-            // Row 3: Buttons
+            // (Model control intentionally moved to API Key tab)
+
+            // Row 4: Buttons
             var buttonPanel = new FlowLayoutPanel
             {
                 Dock = DockStyle.Fill,
@@ -404,7 +394,7 @@ namespace AICAD.UI
             panel.Controls.Add(lblProject, 0, 2);
             panel.Controls.Add(_txtProjectId, 1, 2);
 
-            // Row 3: Model selector (for providers that support models)
+            // Row 3: Model selection (populated asynchronously)
             var lblModel = new Label
             {
                 Text = "Model:",
@@ -418,11 +408,10 @@ namespace AICAD.UI
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Margin = new Padding(0, 5, 0, 5)
             };
-            _cmbApiModel.Items.AddRange(new object[] { "gemini-1.0", "gemini-1.5", "gemini-1.5-flash", "gpt-4o" });
-            _cmbApiModel.SelectedIndex = 0;
+            _cmbApiModel.Items.Add("(not loaded)");
             panel.Controls.Add(lblModel, 0, 3);
             panel.Controls.Add(_cmbApiModel, 1, 3);
-            
+
             // Row 3: Buttons
             var buttonPanel = new FlowLayoutPanel
             {
@@ -632,7 +621,7 @@ namespace AICAD.UI
             }
         }
         
-        private void BtnLoadApiKey_Click(object sender, EventArgs e)
+        private async void BtnLoadApiKey_Click(object sender, EventArgs e)
         {
             try
             {
@@ -642,12 +631,58 @@ namespace AICAD.UI
                 
                 _lblApiStatus.Text = "Loaded from environment variables";
                 _lblApiStatus.ForeColor = Color.DarkGreen;
+                // Populate model dropdown asynchronously
+                try { await PopulateModelDropdownAsync(); } catch { }
             }
             catch (Exception ex)
             {
                 _lblApiStatus.Text = "Failed to load: " + ex.Message;
                 _lblApiStatus.ForeColor = Color.Red;
             }
+        }
+
+        private async Task PopulateModelDropdownAsync()
+        {
+            try
+            {
+                var key = _txtApiKey.Text;
+                if (string.IsNullOrWhiteSpace(key))
+                {
+                    key = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? "";
+                }
+
+                _cmbApiModel.Items.Clear();
+                _cmbApiModel.Items.Add("(loading)");
+                _cmbApiModel.SelectedIndex = 0;
+
+                var client = new AICAD.Services.GeminiClient(key);
+                var models = await client.ListAvailableModelsAsync(null).ConfigureAwait(false);
+                this.BeginInvoke((Action)(() =>
+                {
+                    _cmbApiModel.Items.Clear();
+                    if (models == null || models.Count == 0)
+                    {
+                        _cmbApiModel.Items.Add("(none)");
+                        _cmbApiModel.SelectedIndex = 0;
+                        return;
+                    }
+                    foreach (var m in models)
+                    {
+                        var display = m.StartsWith("models/") ? m.Substring("models/".Length) : m;
+                        _cmbApiModel.Items.Add(display);
+                    }
+
+                    var configured = Environment.GetEnvironmentVariable("GEMINI_MODEL", EnvironmentVariableTarget.User) ?? "";
+                    if (!string.IsNullOrEmpty(configured))
+                    {
+                        var simple = configured.StartsWith("models/") ? configured.Substring("models/".Length) : configured;
+                        var idx = _cmbApiModel.Items.IndexOf(simple);
+                        if (idx >= 0) _cmbApiModel.SelectedIndex = idx;
+                    }
+                    if (_cmbApiModel.SelectedIndex < 0 && _cmbApiModel.Items.Count > 0) _cmbApiModel.SelectedIndex = 0;
+                }));
+            }
+            catch { }
         }
         
         private void BtnSaveApiKey_Click(object sender, EventArgs e)
@@ -676,6 +711,21 @@ namespace AICAD.UI
                     if (_cmbApiProvider.SelectedIndex == 0)
                     {
                         Environment.SetEnvironmentVariable("GEMINI_PROJECT_ID", _txtProjectId.Text ?? "", EnvironmentVariableTarget.User);
+                    }
+                }
+                catch { }
+
+                // Save selected model if present
+                try
+                {
+                    if (_cmbApiModel != null && _cmbApiModel.SelectedItem != null)
+                    {
+                        var sel = _cmbApiModel.SelectedItem.ToString();
+                        if (!string.IsNullOrWhiteSpace(sel) && sel != "(none)" && sel != "(loading)")
+                        {
+                            var final = sel.StartsWith("models/") ? sel : "models/" + sel;
+                            Environment.SetEnvironmentVariable("GEMINI_MODEL", final, EnvironmentVariableTarget.User);
+                        }
                     }
                 }
                 catch { }
@@ -731,9 +781,21 @@ namespace AICAD.UI
                     }
                     else if (_cmbApiProvider.SelectedIndex == 0) // Google Gemini
                     {
-                        var model = _cmbApiModel?.SelectedItem?.ToString() ?? "";
-                        var url = "https://generativeai.googleapis.com/v1/models" + (string.IsNullOrEmpty(model) ? "" : $"/{model}") + "?key=" + Uri.EscapeDataString(key);
-                        resp = await http.GetAsync(url);
+                        var projectId = Environment.GetEnvironmentVariable("GEMINI_PROJECT_ID", EnvironmentVariableTarget.User) ?? "";
+                        var model = Environment.GetEnvironmentVariable("GEMINI_MODEL", EnvironmentVariableTarget.User) ?? "";
+                        // First, list models to validate key/project and available models
+                        var listUrl = "https://generativelanguage.googleapis.com/v1/models" + "?key=" + Uri.EscapeDataString(key);
+                        resp = await http.GetAsync(listUrl);
+                        if (resp != null && resp.IsSuccessStatusCode && !string.IsNullOrEmpty(model))
+                        {
+                            var body = await resp.Content.ReadAsStringAsync();
+                            if (!body.Contains("/" + model) && !body.Contains("\"name\": \"models/" + model + "\""))
+                            {
+                                _lblApiStatus.Text = "API key valid, but configured model not found: " + model;
+                                _lblApiStatus.ForeColor = Color.Orange;
+                                return;
+                            }
+                        }
                     }
                     else
                     {
@@ -772,11 +834,7 @@ namespace AICAD.UI
                 // Save API key
                 BtnSaveApiKey_Click(sender, e);
 
-                // Save selected model if Gemini
-                if (_cmbApiModel != null && _cmbApiModel.SelectedItem != null)
-                {
-                    Environment.SetEnvironmentVariable("GEMINI_MODEL", _cmbApiModel.SelectedItem.ToString(), EnvironmentVariableTarget.User);
-                }
+                // GEMINI_MODEL is managed externally (env var) or via Settings dialog input fields.
 
                 // Save project id (if set)
                 try

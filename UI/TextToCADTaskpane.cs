@@ -414,22 +414,22 @@ namespace AICAD.UI
         {
             if (_client == null)
             {
-                // WARNING: Storing API keys directly in code is not secure.
-                // This is for demonstration purposes only.
-                var key = "AIzaSyBUzKATKs5ea0mTSmGziZDnDdjaDK1RpjE"; // <-- IMPORTANT: This key is now hardcoded.
-
-                if (key == "REPLACE_WITH_YOUR_KEY_DO_NOT_COMMIT")
-                {
-                    AppendDetailedStatus("LLM", "API Key is not set. Please edit UI/TextToCADTaskpane.cs and replace the placeholder key.", null);
-                    throw new InvalidOperationException("API Key is not set in the source code. Please edit UI/TextToCADTaskpane.cs.");
-                }
+                // Prefer API keys provided by the environment; do not use hardcoded keys.
+                var key = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                          ?? null;
 
                 var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
-                                     ?? "gemini-1.0-pro"; // Updated to a more current model
+                                     ?? "gemini-1.0-pro";
+
                 _client = new GeminiClient(key, preferredModel);
-                AppendStatusLine("[LLM] Gemini client constructed with hardcoded API key.");
+                AppendStatusLine("[LLM] Gemini client constructed; apiKeySource=" + (string.IsNullOrEmpty(key) ? "none" : "env"));
                 
                 // Initialize logging and data stores
                 var baseDir = @"D:\SolidWorks API\9. SolidWorks Taskpane Text To CAD"; // workspace folder

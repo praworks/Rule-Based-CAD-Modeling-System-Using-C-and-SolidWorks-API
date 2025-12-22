@@ -1,0 +1,9 @@
+2025-12-22T12:57:31.1010288+05:30 WPF: build.Click invoked
+2025-12-22T12:57:31.1297559+05:30 Wrapper: BuildRequested forwarded
+2025-12-22T12:57:31.1558010+05:30 SwAddin: wrapper BuildRequested received
+2025-12-22T12:57:31.9094966+05:30 WPF: build.Click invoked
+2025-12-22T12:57:31.9396701+05:30 Wrapper: BuildRequested forwarded
+2025-12-22T12:57:31.9598154+05:30 SwAddin: wrapper BuildRequested received
+2025-12-22T12:57:42.9949634+05:30 WPF: build.Click invoked
+2025-12-22T12:57:43.0352296+05:30 Wrapper: BuildRequested forwarded
+2025-12-22T12:57:43.0553562+05:30 SwAddin: wrapper BuildRequested received

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -121,16 +121,9 @@ namespace AICAD.UI
             // Raise PromptTextChanged for external listeners
             prompt.TextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, new PromptChangedEventArgs(prompt.Text)); } catch { } };
 
-            // Build click: give immediate feedback, notify subscribers, then run internal build logic
+            // Build click: notify subscribers and then run internal build logic
             build.Click += async (s, e) =>
             {
-                try
-                {
-                    // Immediate visual feedback so users know the click was received
-                    SetRealTimeStatus("Build clicked", Colors.DodgerBlue);
-                    try { AICAD.Services.LocalLogger.Log("WPF: build.Click invoked"); } catch { }
-                }
-                catch { }
                 try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
                 await BuildFromPromptAsync();
             };
@@ -609,7 +602,7 @@ namespace AICAD.UI
                     };
                     var corrective =
                         "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
-                        errDoc.ToString() +
+                        errDoc.ToString(Newtonsoft.Json.Formatting.None) +
                         "\nRemember: output only JSON with steps; use Front Plane and mm units.";
                     try
                     {

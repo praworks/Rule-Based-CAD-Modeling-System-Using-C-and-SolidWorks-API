@@ -4,7 +4,7 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
-             d:DesignWidth="472" d:DesignHeight="800"
+             d:DesignWidth="472" d:DesignHeight="1200"
              Focusable="True">
 
     <Grid Margin="6">
@@ -111,30 +111,57 @@
         </StackPanel>
 
         <Label x:Name="lblRealTimeStatus" Grid.Row="2" 
-             Padding="2,0,0,2" Foreground="DimGray" 
-             Content="Ready" FontSize="11" HorizontalAlignment="Left"/>
+               Padding="2,0,0,2" Foreground="DimGray" 
+               Content="Ready" FontSize="11" HorizontalAlignment="Left"/>
         <Label x:Name="lblModified" Grid.Row="2"
-             Padding="0,0,2,2" Foreground="Firebrick"
-             Content="Modified" FontSize="11" HorizontalAlignment="Right"
-             Visibility="Collapsed"/>
+               Padding="0,0,2,2" Foreground="Firebrick"
+               Content="Modified" FontSize="11" HorizontalAlignment="Right"
+               Visibility="Collapsed"/>
 
-        <!-- Karaoke Status Bar above prompt input -->
-        <TextBlock x:Name="KaraokeStatus" Grid.Row="3"
-                   FontSize="20"
-                   FontWeight="Bold"
-                   Margin="0,0,0,5"
-                   TextWrapping="Wrap"/>
+        <Grid Grid.Row="3" Margin="0,5,0,10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
 
-        <Grid Grid.Row="3" Margin="0,0,0,10">
-            <TextBox x:Name="prompt" 
-                     AcceptsReturn="True" TextWrapping="Wrap" 
-                     VerticalScrollBarVisibility="Auto" Padding="8,8,105,8" 
-                     Text="Enter prompt..."
-                     BorderBrush="#FFCCCCCC" Margin="0,64,0,0" Height="125"/>
-            <Button x:Name="build" Content="Build 🚀" 
-                    HorizontalAlignment="Right" VerticalAlignment="Bottom" 
-                    Margin="0,0,10,10" Height="30" Width="85"
-                    Background="#FF007ACC" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+            <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
+                <StackPanel>
+                    <TextBlock Text="✓ Initializing Engine..." Foreground="#2E7D32" Margin="2"/>
+                    <TextBlock Text="✓ Parsing user input..." Foreground="#2E7D32" Margin="2"/>
+                    <TextBlock Text="⟳ Calculating geometric constraints..." Foreground="#005A9E" FontWeight="SemiBold" Margin="2"/>
+                    <TextBlock Text="•  Generating SolidWorks features..." Foreground="Gray" Margin="2"/>
+
+                    <TextBlock x:Name="KaraokeStatus"
+                               FontSize="16"
+                               FontWeight="Bold"
+                               TextWrapping="Wrap"
+                               Margin="0,10,0,0"
+                               Foreground="#005A9E"/>
+                </StackPanel>
+            </ScrollViewer>
+
+            <Grid Grid.Row="1" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Value="0" Height="8" 
+                             Foreground="#007ACC" Background="#E0E0E0" BorderThickness="0"/>
+                <TextBlock Grid.Column="1" Text="0%" Foreground="#007ACC" FontSize="11" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+            </Grid>
+
+            <Grid Grid.Row="2">
+                <TextBox x:Name="prompt" 
+                         AcceptsReturn="True" TextWrapping="Wrap" 
+                         VerticalScrollBarVisibility="Auto" Padding="8,8,105,8" 
+                         Text="Enter prompt..."
+                         BorderBrush="#FFCCCCCC" Margin="0,0,100,0" Height="125" VerticalAlignment="Center"/>
+                <Button x:Name="build" Content="Build 🚀" 
+                        HorizontalAlignment="Right" VerticalAlignment="Bottom" 
+                        Margin="0,0,10,10" Height="30" Width="85"
+                        Background="#FF007ACC" Foreground="White" FontWeight="SemiBold" BorderThickness="0"/>
+            </Grid>
         </Grid>
 
         <Grid Grid.Row="4" Margin="0,0,0,10">

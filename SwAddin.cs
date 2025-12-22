@@ -49,6 +49,21 @@ namespace AICAD
                 _textToCadTaskpaneView = _app.CreateTaskpaneView2(iconPath, "AI-CAD-December");
                 _textToCadControl = new UI.TextToCADTaskpaneWrapper(_app);
                 _textToCadTaskpaneView.DisplayWindowFromHandlex64(_textToCadControl.Handle.ToInt64());
+
+                // Subscribe to wrapper events for diagnostics and integration
+                try
+                {
+                    _textToCadControl.BuildRequested += (s, e) =>
+                    {
+                        try { AddinStatusLogger.Log("AICadAddin", "Build requested from Taskpane"); } catch { }
+                        try { AICAD.Services.LocalLogger.Log("SwAddin: wrapper BuildRequested received"); } catch { }
+                        try { _ = _textToCadControl.RunBuildFromPromptAsync(); } catch { }
+                    };
+                    _textToCadControl.PromptTextChanged += (s, e) => { try { AddinStatusLogger.Log("AICadAddin", $"Prompt changed (len={e.Text?.Length})"); } catch { } };
+                    _textToCadControl.ApplyPropertiesRequested += (s, e) => { try { AddinStatusLogger.Log("AICadAddin", "Apply properties requested from Taskpane"); } catch { } };
+                }
+                catch { }
+
                 try { AddinStatusLogger.Log("AICadAddin", "Created AI-CAD-December taskpane with WPF design"); } catch { }
 
                 // Hook SolidWorks application events

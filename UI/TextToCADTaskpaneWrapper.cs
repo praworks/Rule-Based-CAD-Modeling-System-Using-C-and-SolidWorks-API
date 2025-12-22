@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Forms.Integration;
 using System.Windows.Forms;
+using System.IO;
 using SolidWorks.Interop.sldworks;
 
 namespace AICAD.UI
@@ -14,7 +15,33 @@ namespace AICAD.UI
         private ElementHost _elementHost;
         private TextToCADTaskpaneWpf _wpfControl;
 
+        // Expose WPF control and events to host code
         public TextToCADTaskpaneWpf WpfControl => _wpfControl;
+
+        /// <summary>
+        /// Raised when the WPF control requests a build
+        /// </summary>
+        public event EventHandler BuildRequested;
+
+        /// <summary>
+        /// Raised when the prompt text changes in WPF
+        /// </summary>
+        public event EventHandler<TextToCADTaskpaneWpf.PromptChangedEventArgs> PromptTextChanged;
+
+        /// <summary>
+        /// Raised when Apply Properties is requested in WPF
+        /// </summary>
+        public event EventHandler ApplyPropertiesRequested;
+
+        /// <summary>
+        /// Proxy to read/set the prompt text on the WPF control
+        /// </summary>
+        public string PromptText { get => _wpfControl?.PromptText; set { if (_wpfControl != null) _wpfControl.PromptText = value; } }
+
+        /// <summary>
+        /// Proxy to trigger WPF build programmatically
+        /// </summary>
+        public System.Threading.Tasks.Task RunBuildFromPromptAsync() => _wpfControl?.RunBuildFromPromptAsync() ?? System.Threading.Tasks.Task.CompletedTask;
 
         public TextToCADTaskpaneWrapper(ISldWorks swApp)
         {
@@ -30,9 +57,48 @@ namespace AICAD.UI
                 TabStop = true
             };
 
-            // Create the WPF control
-            _wpfControl = new TextToCADTaskpaneWpf(swApp);
-            _elementHost.Child = _wpfControl;
+            // Create the WPF control. Guard against any exceptions during WPF initialization
+            // (some hosts/load orders can cause XAML/dispatcher errors). If WPF fails, provide
+            // a simple WinForms fallback so the add-in doesn't crash the host.
+            try
+            {
+                _wpfControl = new TextToCADTaskpaneWpf(swApp);
+                _elementHost.Child = _wpfControl;
+
+                // Forward WPF events to wrapper-level events so host (SwAddin) can subscribe
+                try
+                {
+                    _wpfControl.BuildRequested += (s, e) =>
+                    {
+                        try { AICAD.Services.LocalLogger.Log("Wrapper: BuildRequested forwarded"); } catch { }
+                        try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
+                    };
+                    _wpfControl.PromptTextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, e); } catch { } };
+                    _wpfControl.ApplyPropertiesRequested += (s, e) => { try { ApplyPropertiesRequested?.Invoke(this, EventArgs.Empty); } catch { } };
+                }
+                catch (Exception evtEx)
+                {
+                    try { AICAD.Services.LocalLogger.Log("Wrapper: WPF event hookup failed: " + evtEx.Message); } catch { }
+                }
+            }
+            catch (Exception wpfEx)
+            {
+                try { AICAD.Services.LocalLogger.Log("Wrapper: WPF initialization failed: " + wpfEx.Message); } catch { }
+
+                // Hide the ElementHost (it may be unusable) and show a simple WinForms fallback control
+                try
+                {
+                    _elementHost.Visible = false;
+                    var lbl = new System.Windows.Forms.Label
+                    {
+                        Text = "AI-CAD UI failed to initialize (WPF)\r\nSee %TEMP%\\AICAD_Unhandled.log for details",
+                        Dock = DockStyle.Fill,
+                        TextAlign = System.Drawing.ContentAlignment.MiddleCenter
+                    };
+                    this.Controls.Add(lbl);
+                }
+                catch { }
+            }
 
             // Enable keyboard interop so WPF controls inside ElementHost receive keyboard input reliably
             try
@@ -72,6 +138,6 @@ namespace AICAD.UI
             }
             catch { }
         }
+
         }
     }
-}

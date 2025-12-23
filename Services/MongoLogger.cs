@@ -74,7 +74,7 @@ namespace AICAD.Services
                     {
                         // Treat ping failure as not available for logging
                         _collection = null;
-                        _lastError = ex.Message;
+                        _lastError = ex.ToString();
                         try { AddinStatusLogger.Error("MongoLogger", "Ping failed", ex); } catch { }
                         return;
                     }
@@ -104,7 +104,7 @@ namespace AICAD.Services
             catch (Exception ex)
             {
                 _collection = null;
-                _lastError = ex.Message;
+                _lastError = ex.ToString();
                 try { AddinStatusLogger.Error("MongoLogger", "Constructor failed", ex); } catch { }
             }
         }
@@ -148,7 +148,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
-                _lastError = ex.Message;
+                _lastError = ex.ToString();
                 try { AddinStatusLogger.Error("MongoLogger", "InsertAsync failed", ex); } catch { }
                 return false;
             }
@@ -239,7 +239,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
-                lastErrProp?.SetValue(logger, ex.Message);
+                lastErrProp?.SetValue(logger, ex.ToString());
                 return false;
             }
         }

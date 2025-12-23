@@ -52,7 +52,18 @@ namespace AICAD.UI
             // Wire up event handlers
             shapePreset.SelectedIndexChanged += ShapePreset_SelectedIndexChanged;
             prompt.TextChanged += Prompt_TextChanged;
-            build.Click += async (s, e) => await BuildFromPromptAsync();
+            build.Click += async (s, e) =>
+            {
+                // Check if multiple builds are allowed
+                var allowMultiple = System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Machine);
+                if (string.IsNullOrEmpty(allowMultiple) || allowMultiple == "0" || allowMultiple.Equals("false", StringComparison.OrdinalIgnoreCase))
+                {
+                    try { build.Enabled = false; } catch { }
+                }
+                await BuildFromPromptAsync();
+            };
             btnHistory.Click += BtnHistory_Click;
             btnStatus.Click += BtnStatus_Click;
             btnSettings.Click += BtnSettings_Click;
@@ -547,7 +558,7 @@ namespace AICAD.UI
                 _lastModel = client?.Model;
                 SetRealTimeStatus("Applying few-shot examples…", Color.DarkOrange);
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
+                reply = await client.GenerateAsync(sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:");
                 llmSw.Stop();
                 llmMs = llmSw.Elapsed;
                 _lastReply = reply;
@@ -562,6 +573,7 @@ namespace AICAD.UI
                 var maxAttempts = 2;
                 string planJson = ExtractRawJson(reply);
                 Newtonsoft.Json.Linq.JObject planDoc = null;
+                string corrective = null;
                 for (; attempt < maxAttempts; attempt++)
                 {
                     try
@@ -572,28 +584,6 @@ namespace AICAD.UI
                     {
                         errText = "plan-parse: " + ex.Message;
                         break;
-                    }
-
-                    exec = Services.StepExecutor.Execute(planDoc, _swApp);
-                    if (exec.Success) break;
-
-                    // Build corrective prompt with error log for next attempt
-                    var errDoc = new JObject
-                    {
-                        ["last_plan"] = SafeJson(planJson),
-                        ["errors"] = new JArray(exec.Log)
-                    };
-                    var corrective =
-                        "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
-                        AICAD.Services.JsonUtils.SerializeCompact(errDoc) +
-                        "\nRemember: output only JSON with steps; use Front Plane and mm units.";
-                    // If we created a model this attempt and failed, close it before retry
-                    try
-                    {
-                        if (exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
-                        {
-                            _swApp.CloseDoc(exec.ModelTitle);
-                        }
                     }
                     catch { }
 

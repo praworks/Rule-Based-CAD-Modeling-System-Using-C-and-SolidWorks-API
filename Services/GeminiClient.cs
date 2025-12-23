@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace AICAD.Services
 {
-    public class GeminiClient : IDisposable
+    public class GeminiClient : IDisposable, ILlmClient
     {
         private readonly HttpClient _http;
         private readonly string _apiKey;

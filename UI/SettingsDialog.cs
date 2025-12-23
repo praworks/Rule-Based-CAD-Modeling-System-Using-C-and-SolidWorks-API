@@ -21,6 +21,7 @@ namespace AICAD.UI
         private TextBox _txtMongoUser;
         private TextBox _txtMongoPassword;
         private CheckBox _chkUseFewShot;
+        private CheckBox _chkAllowMultipleBuilds;
         private Button _btnToggleMongoPwVisibility;
         private Button _btnSaveMongo;
         private Button _btnLoadMongo;
@@ -28,14 +29,31 @@ namespace AICAD.UI
         
         // API Key Tab Controls
         private TextBox _txtApiKey;
-        private TextBox _txtProjectId;
-        private ComboBox _cmbApiModel;
         private Button _btnToggleApiKeyVisibility;
-        private ComboBox _cmbApiProvider;
+        private ComboBox _cmbCloudProvider;
         private Button _btnSaveApiKey;
         private Button _btnLoadApiKey;
         private Label _lblApiStatus;
         private Button _btnTestApi;
+        // Local LLM controls
+        private ComboBox _cmbLlmMode;
+        private TextBox _txtLocalEndpoint;
+        private TextBox _txtLocalModel;
+        private TextBox _txtLocalSystemPrompt;
+        // New controls for direct key entry
+        private TextBox _txtGeminiKey;
+        private TextBox _txtGroqKey;
+        // API/LLM labels (kept as fields so visibility can be toggled)
+        private Label _lblProvider;
+        private Label _lblLlmMode;
+        private Label _lblApiKeyLabel;
+        private Label _lblLocalEndpointLabel;
+        private Label _lblLocalModelLabel;
+        private Label _lblLocalSysLabel;
+        private Label _lblCloudProvider;
+        private Label _lblGeminiKey;
+        private Label _lblGroqKey;
+        
         
         // NameEasy Tab Controls
         private TextBox _txtNameEasyPath;
@@ -149,7 +167,7 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 7,
+                RowCount = 6,
                 Padding = new Padding(15)
             };
             
@@ -273,17 +291,7 @@ namespace AICAD.UI
             panel.SetColumnSpan(buttonPanel, 2);
             panel.Controls.Add(buttonPanel, 0, 4);
 
-            // Row 5: Few-shot checkbox
-            _chkUseFewShot = new CheckBox
-            {
-                Text = "Enable Few-Shot examples (use examples from DB)",
-                Dock = DockStyle.Fill,
-                Padding = new Padding(3, 8, 0, 0)
-            };
-            panel.SetColumnSpan(_chkUseFewShot, 2);
-            panel.Controls.Add(_chkUseFewShot, 0, 5);
-            
-            // Row 6: Status
+            // Row 5: Status
             _lblMongoStatus = new Label
             {
                 Text = "",
@@ -293,9 +301,9 @@ namespace AICAD.UI
                 Padding = new Padding(0, 5, 0, 5)
             };
             panel.SetColumnSpan(_lblMongoStatus, 2);
-            panel.Controls.Add(_lblMongoStatus, 0, 6);
+            panel.Controls.Add(_lblMongoStatus, 0, 5);
             
-            // Row 5: Help text
+            // Row 6: Help text
             var helpText = new Label
             {
                 Text = "Note: Settings are saved to user environment variables.\n" +
@@ -307,30 +315,29 @@ namespace AICAD.UI
                 Padding = new Padding(0, 10, 0, 0)
             };
             panel.SetColumnSpan(helpText, 2);
-            panel.Controls.Add(helpText, 0, 7);
-            
-            // Set row heights
+            panel.Controls.Add(helpText, 0, 6);
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // few-shot checkbox
             panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // status
             panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
             
+            // Set initial visibility now that all controls have been created
+
             tab.Controls.Add(panel);
             return tab;
         }
         
         private TabPage CreateApiKeyTab()
         {
-            var tab = new TabPage("API Key Settings");
+            var tab = new TabPage("LLM Settings");
             var panel = new TableLayoutPanel
             {
                 Dock = DockStyle.Fill,
                 ColumnCount = 2,
-                RowCount = 7,
+                RowCount = 14,
                 Padding = new Padding(15)
             };
             
@@ -338,43 +345,66 @@ namespace AICAD.UI
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
             panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             
-            // Row 0: API Provider
-            var lblProvider = new Label 
-            { 
-                Text = "API Provider:",
+            // Row 0: LLM Mode (Cloud / Local)
+            _lblLlmMode = new Label
+            {
+                Text = "LLM Mode:",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(0, 8, 0, 0)
             };
-            _cmbApiProvider = new ComboBox 
-            { 
+            _cmbLlmMode = new ComboBox
+            {
                 Dock = DockStyle.Fill,
                 DropDownStyle = ComboBoxStyle.DropDownList,
                 Margin = new Padding(0, 5, 0, 5)
             };
-            _cmbApiProvider.Items.AddRange(new object[] { "Google Gemini", "OpenAI", "Other" });
-            _cmbApiProvider.SelectedIndex = 0;
-            panel.Controls.Add(lblProvider, 0, 0);
-            panel.Controls.Add(_cmbApiProvider, 1, 0);
-            
-            // Row 1: API Key
-            var lblApiKey = new Label 
-            { 
-                Text = "API Key:",
+            _cmbLlmMode.Items.AddRange(new object[] { "Cloud (Gemini/Groq)", "Local" });
+            _cmbLlmMode.SelectedIndexChanged += (s, e) =>
+            {
+                var isLocal = _cmbLlmMode.SelectedIndex == 1;
+                _txtLocalEndpoint.Enabled = isLocal;
+                _txtLocalModel.Enabled = isLocal;
+                _txtLocalSystemPrompt.Enabled = isLocal;
+                _txtGeminiKey.Enabled = !isLocal;
+                _txtGroqKey.Enabled = !isLocal;
+            };
+            panel.Controls.Add(_lblLlmMode, 0, 0);
+            panel.Controls.Add(_cmbLlmMode, 1, 0);
+
+            // Row 1: Local LLM Endpoint
+            _lblLocalEndpointLabel = new Label
+            {
+                Text = "Local LLM Endpoint:",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(0, 8, 0, 0)
             };
-            _txtApiKey = new TextBox 
-            { 
+            _txtLocalEndpoint = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 5, 0, 5)
+            };
+            panel.Controls.Add(_lblLocalEndpointLabel, 0, 1);
+            panel.Controls.Add(_txtLocalEndpoint, 1, 1);
+            
+            // Row 1: Google Gemini API Key
+            _lblGeminiKey = new Label
+            {
+                Text = "Google Gemini API Key:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            _txtGeminiKey = new TextBox
+            {
                 Dock = DockStyle.Fill,
                 UseSystemPasswordChar = true,
                 Margin = new Padding(0, 5, 0, 5)
             };
-
-            // Panel to hold API key textbox + visibility toggle
-            var apiPanel = new Panel { Dock = DockStyle.Fill };
-            _btnToggleApiKeyVisibility = new Button
+            // Panel to hold Gemini key textbox + visibility toggle
+            var geminiPanel = new Panel { Dock = DockStyle.Fill };
+            var btnToggleGeminiVisibility = new Button
             {
                 Width = 30,
                 Height = 24,
@@ -383,46 +413,79 @@ namespace AICAD.UI
                 Text = "Show",
                 TabStop = false
             };
-            _btnToggleApiKeyVisibility.Click += ToggleApiKeyVisibility_Click;
-            apiPanel.Controls.Add(_btnToggleApiKeyVisibility);
-            apiPanel.Controls.Add(_txtApiKey);
-
-            panel.Controls.Add(lblApiKey, 0, 1);
-            panel.Controls.Add(apiPanel, 1, 1);
-
-            // Row 2: Project ID (for providers that require a project id, e.g., Google)
-            var lblProject = new Label
+            btnToggleGeminiVisibility.Click += (s, e) => ToggleApiKeyVisibility(s, e, _txtGeminiKey);
+            geminiPanel.Controls.Add(btnToggleGeminiVisibility);
+            geminiPanel.Controls.Add(_txtGeminiKey);
+            panel.Controls.Add(_lblGeminiKey, 0, 2);
+            panel.Controls.Add(geminiPanel, 1, 2);
+            
+            // Row 2: Groq API Key
+            _lblGroqKey = new Label
             {
-                Text = "Project ID:",
+                Text = "Groq API Key:",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(0, 8, 0, 0)
             };
-            _txtProjectId = new TextBox
+            _txtGroqKey = new TextBox
             {
                 Dock = DockStyle.Fill,
+                UseSystemPasswordChar = true,
                 Margin = new Padding(0, 5, 0, 5)
             };
-            panel.Controls.Add(lblProject, 0, 2);
-            panel.Controls.Add(_txtProjectId, 1, 2);
-
-            // Row 3: Model selection (populated asynchronously)
-            var lblModel = new Label
+            // Panel to hold Groq key textbox + visibility toggle
+            var groqPanel = new Panel { Dock = DockStyle.Fill };
+            var btnToggleGroqVisibility = new Button
             {
-                Text = "Model:",
+                Width = 30,
+                Height = 24,
+                Dock = DockStyle.Right,
+                FlatStyle = FlatStyle.Flat,
+                Text = "Show",
+                TabStop = false
+            };
+            btnToggleGroqVisibility.Click += (s, e) => ToggleApiKeyVisibility(s, e, _txtGroqKey);
+            groqPanel.Controls.Add(btnToggleGroqVisibility);
+            groqPanel.Controls.Add(_txtGroqKey);
+            panel.Controls.Add(_lblGroqKey, 0, 3);
+            panel.Controls.Add(groqPanel, 1, 3);
+
+            // Project ID removed from UI (managed externally via environment variables if needed)
+
+            // Row 3: Local model name
+            _lblLocalModelLabel = new Label
+            {
+                Text = "Local Model (identifier):",
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleLeft,
                 Padding = new Padding(0, 8, 0, 0)
             };
-            _cmbApiModel = new ComboBox
+            _txtLocalModel = new TextBox
             {
                 Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList,
                 Margin = new Padding(0, 5, 0, 5)
             };
-            _cmbApiModel.Items.Add("(not loaded)");
-            panel.Controls.Add(lblModel, 0, 3);
-            panel.Controls.Add(_cmbApiModel, 1, 3);
+            panel.Controls.Add(_lblLocalModelLabel, 0, 4);
+            panel.Controls.Add(_txtLocalModel, 1, 4);
+
+            // Row 4: Local system prompt
+            _lblLocalSysLabel = new Label
+            {
+                Text = "Local System Prompt:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            _txtLocalSystemPrompt = new TextBox
+            {
+                Dock = DockStyle.Fill,
+                Margin = new Padding(0, 5, 0, 5)
+            };
+            panel.Controls.Add(_lblLocalSysLabel, 0, 5);
+            panel.Controls.Add(_txtLocalSystemPrompt, 1, 5);
+
+            // initial visibility will be set after the rest of the controls are created
+            // Model selection removed from UI; GEMINI_MODEL is managed via environment variables.
 
             // Row 3: Buttons
             var buttonPanel = new FlowLayoutPanel
@@ -465,7 +528,22 @@ namespace AICAD.UI
             _btnTestApi.Click += (s, e) => { var _ = BtnTestApi_Click(s, e); };
             buttonPanel.Controls.Add(_btnTestApi);
             panel.SetColumnSpan(buttonPanel, 2);
-            panel.Controls.Add(buttonPanel, 0, 4);
+            panel.Controls.Add(buttonPanel, 0, 5);
+
+            // Duplicate Save button at bottom of dialog for discoverability
+            var btnSaveBottom = new Button
+            {
+                Text = "Save to Environment",
+                Width = 160,
+                Height = 30,
+                BackColor = Color.FromArgb(0, 120, 215),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Anchor = AnchorStyles.Bottom
+            };
+            btnSaveBottom.Click += BtnSaveApiKey_Click;
+            btnSaveBottom.Location = new Point((this.Width / 2) - 80, this.Height - 60);
+            Controls.Add(btnSaveBottom);
             
             // Row 5: Status
             _lblApiStatus = new Label
@@ -477,13 +555,14 @@ namespace AICAD.UI
                 Padding = new Padding(0, 5, 0, 5)
             };
             panel.SetColumnSpan(_lblApiStatus, 2);
-            panel.Controls.Add(_lblApiStatus, 0, 5);
+            panel.Controls.Add(_lblApiStatus, 0, 8);
             
             // Row 6: Help text
             var helpText = new Label
             {
-                Text = "Note: API keys are saved to user environment variables.\n" +
-                       "Variable name: GEMINI_API_KEY (for Google Gemini)\n" +
+                Text = "Note: Settings are saved to user environment variables.\n" +
+                       "Variables: LOCAL_LLM_ENDPOINT, GEMINI_API_KEY, GROQ_API_KEY,\n" +
+                       "LOCAL_LLM_MODEL, LOCAL_LLM_SYSTEM_PROMPT.\n" +
                        "You may need to restart SolidWorks for changes to take effect.",
                 Dock = DockStyle.Fill,
                 ForeColor = Color.Gray,
@@ -491,21 +570,50 @@ namespace AICAD.UI
                 Padding = new Padding(0, 10, 0, 0)
             };
             panel.SetColumnSpan(helpText, 2);
-            panel.Controls.Add(helpText, 0, 6);
+            panel.Controls.Add(helpText, 0, 9);
+            
+            // Row 7: Few-shot checkbox
+            _chkUseFewShot = new CheckBox
+            {
+                Text = "Enable Few-Shot examples (use examples from DB)",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(3, 8, 0, 0)
+            };
+            panel.SetColumnSpan(_chkUseFewShot, 2);
+            panel.Controls.Add(_chkUseFewShot, 0, 10);
+            
+            // Row 8: Allow multiple builds checkbox
+            _chkAllowMultipleBuilds = new CheckBox
+            {
+                Text = "Allow multiple build requests (disable button protection)",
+                Dock = DockStyle.Fill,
+                Padding = new Padding(3, 8, 0, 0)
+            };
+            panel.SetColumnSpan(_chkAllowMultipleBuilds, 2);
+            panel.Controls.Add(_chkAllowMultipleBuilds, 0, 11);
             
             // Set row heights
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // provider
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // key
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // project id
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // model
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); // buttons
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // status
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // help
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 0 llm mode
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 1 local endpoint
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 2 gemini key
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 3 groq key
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 4 local model
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 5 local sys
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); // 6 buttons
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 7 status
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // 8 help
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 9 placeholder
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 10 fewshot
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 11 allow
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // 10
             
             tab.Controls.Add(panel);
             return tab;
         }
+
+
+
+
 
         private TabPage CreateNameEasyTab()
         {
@@ -588,13 +696,6 @@ namespace AICAD.UI
                 _txtMongoUser.Text = Environment.GetEnvironmentVariable("MONGODB_USER", EnvironmentVariableTarget.User) ?? "";
                 _txtMongoPassword.Text = Environment.GetEnvironmentVariable("MONGODB_PW", EnvironmentVariableTarget.User) 
                     ?? "";
-                // Load few-shot flag from environment: AICAD_USE_FEWSHOT (1 = enabled)
-                try
-                {
-                    var fs = Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT");
-                    _chkUseFewShot.Checked = string.IsNullOrEmpty(fs) ? true : (fs == "1" || fs.Equals("true", StringComparison.OrdinalIgnoreCase));
-                }
-                catch { _chkUseFewShot.Checked = true; }
                 
                 _lblMongoStatus.Text = "Loaded from environment variables";
                 _lblMongoStatus.ForeColor = Color.DarkGreen;
@@ -614,12 +715,6 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("MONGODB_DB", _txtMongoDb.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_USER", _txtMongoUser.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_PW", _txtMongoPassword.Text, EnvironmentVariableTarget.User);
-                // Save few-shot checkbox state
-                try
-                {
-                    Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", _chkUseFewShot.Checked ? "1" : "0", EnvironmentVariableTarget.User);
-                }
-                catch { }
                 
                 _lblMongoStatus.Text = "Settings saved successfully! Restart SolidWorks to apply changes.";
                 _lblMongoStatus.ForeColor = Color.DarkGreen;
@@ -650,14 +745,41 @@ namespace AICAD.UI
         {
             try
             {
-                _txtApiKey.Text = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) 
-                    ?? "";
-                _txtProjectId.Text = Environment.GetEnvironmentVariable("GEMINI_PROJECT_ID", EnvironmentVariableTarget.User) ?? "";
+                // Load all LLM settings from environment variables
+                try
+                {
+                    _txtLocalEndpoint.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "";
+                    _txtGeminiKey.Text = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? "";
+                    _txtGroqKey.Text = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "";
+                    _txtLocalModel.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", EnvironmentVariableTarget.User) ?? "";
+                    _txtLocalSystemPrompt.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", EnvironmentVariableTarget.User) ?? "";
+
+                    var mode = Environment.GetEnvironmentVariable("AICAD_LLM_MODE", EnvironmentVariableTarget.User) ?? "";
+                    if (_cmbLlmMode != null)
+                    {
+                        _cmbLlmMode.SelectedIndex = (mode.Equals("local", StringComparison.OrdinalIgnoreCase)) ? 1 : 0;
+                    }
+                }
+                catch { }
+                
+                // Load few-shot flag from environment: AICAD_USE_FEWSHOT (1 = enabled)
+                try
+                {
+                    var fs = Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT");
+                    _chkUseFewShot.Checked = string.IsNullOrEmpty(fs) ? true : (fs == "1" || fs.Equals("true", StringComparison.OrdinalIgnoreCase));
+                }
+                catch { _chkUseFewShot.Checked = true; }
+                
+                // Load allow multiple builds flag from environment: AICAD_ALLOW_MULTIPLE_BUILDS (1 = enabled)
+                try
+                {
+                    var amb = Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS");
+                    _chkAllowMultipleBuilds.Checked = string.IsNullOrEmpty(amb) ? false : (amb == "1" || amb.Equals("true", StringComparison.OrdinalIgnoreCase));
+                }
+                catch { _chkAllowMultipleBuilds.Checked = false; }
                 
                 _lblApiStatus.Text = "Loaded from environment variables";
                 _lblApiStatus.ForeColor = Color.DarkGreen;
-                // Populate model dropdown asynchronously
-                try { await PopulateModelDropdownAsync(); } catch { }
             }
             catch (Exception ex)
             {
@@ -666,100 +788,40 @@ namespace AICAD.UI
             }
         }
 
-        private async Task PopulateModelDropdownAsync()
-        {
-            try
-            {
-                var key = _txtApiKey.Text;
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    key = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? "";
-                }
-
-                _cmbApiModel.Items.Clear();
-                _cmbApiModel.Items.Add("(loading)");
-                _cmbApiModel.SelectedIndex = 0;
-
-                var client = new AICAD.Services.GeminiClient(key);
-                var models = await client.ListAvailableModelsAsync(null).ConfigureAwait(false);
-                this.BeginInvoke((Action)(() =>
-                {
-                    _cmbApiModel.Items.Clear();
-                    if (models == null || models.Count == 0)
-                    {
-                        _cmbApiModel.Items.Add("(none)");
-                        _cmbApiModel.SelectedIndex = 0;
-                        return;
-                    }
-                    foreach (var m in models)
-                    {
-                        var display = m.StartsWith("models/") ? m.Substring("models/".Length) : m;
-                        _cmbApiModel.Items.Add(display);
-                    }
-
-                    var configured = Environment.GetEnvironmentVariable("GEMINI_MODEL", EnvironmentVariableTarget.User) ?? "";
-                    if (!string.IsNullOrEmpty(configured))
-                    {
-                        var simple = configured.StartsWith("models/") ? configured.Substring("models/".Length) : configured;
-                        var idx = _cmbApiModel.Items.IndexOf(simple);
-                        if (idx >= 0) _cmbApiModel.SelectedIndex = idx;
-                    }
-                    if (_cmbApiModel.SelectedIndex < 0 && _cmbApiModel.Items.Count > 0) _cmbApiModel.SelectedIndex = 0;
-                }));
-            }
-            catch { }
-        }
+        // Model list and population removed — model selection is managed via environment variables outside the UI.
         
         private void BtnSaveApiKey_Click(object sender, EventArgs e)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(_txtApiKey.Text))
-                {
-                    _lblApiStatus.Text = "Please enter an API key";
-                    _lblApiStatus.ForeColor = Color.Orange;
-                    return;
-                }
+                // Save all LLM settings to environment variables
+                Environment.SetEnvironmentVariable("LOCAL_LLM_ENDPOINT", _txtLocalEndpoint.Text, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("GEMINI_API_KEY", _txtGeminiKey.Text, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("GROQ_API_KEY", _txtGroqKey.Text, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("LOCAL_LLM_MODEL", _txtLocalModel.Text, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", _txtLocalSystemPrompt.Text, EnvironmentVariableTarget.User);
+                // Save LLM mode (local/cloud)
+                try { Environment.SetEnvironmentVariable("AICAD_LLM_MODE", (_cmbLlmMode != null && _cmbLlmMode.SelectedIndex == 1) ? "local" : "cloud", EnvironmentVariableTarget.User); } catch { }
                 
-                // Save based on provider
-                string envVarName = "GEMINI_API_KEY"; // Default to Gemini
-                if (_cmbApiProvider.SelectedIndex == 1) // OpenAI
-                {
-                    envVarName = "OPENAI_API_KEY";
-                }
-                
-                Environment.SetEnvironmentVariable(envVarName, _txtApiKey.Text, EnvironmentVariableTarget.User);
-
-                // Save project id for Google Gemini provider
+                // Save few-shot checkbox state
                 try
                 {
-                    if (_cmbApiProvider.SelectedIndex == 0)
-                    {
-                        Environment.SetEnvironmentVariable("GEMINI_PROJECT_ID", _txtProjectId.Text ?? "", EnvironmentVariableTarget.User);
-                    }
-                }
-                catch { }
-
-                // Save selected model if present
-                try
-                {
-                    if (_cmbApiModel != null && _cmbApiModel.SelectedItem != null)
-                    {
-                        var sel = _cmbApiModel.SelectedItem.ToString();
-                        if (!string.IsNullOrWhiteSpace(sel) && sel != "(none)" && sel != "(loading)")
-                        {
-                            var final = sel.StartsWith("models/") ? sel : "models/" + sel;
-                            Environment.SetEnvironmentVariable("GEMINI_MODEL", final, EnvironmentVariableTarget.User);
-                        }
-                    }
+                    Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", _chkUseFewShot.Checked ? "1" : "0", EnvironmentVariableTarget.User);
                 }
                 catch { }
                 
-                _lblApiStatus.Text = string.Format("API key saved to {0}! Restart SolidWorks to apply changes.", envVarName);
+                // Save allow multiple builds checkbox state
+                try
+                {
+                    Environment.SetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", _chkAllowMultipleBuilds.Checked ? "1" : "0", EnvironmentVariableTarget.User);
+                }
+                catch { }
+                
+                _lblApiStatus.Text = "Settings saved to environment variables! Restart SolidWorks to apply changes.";
                 _lblApiStatus.ForeColor = Color.DarkGreen;
                 
                 MessageBox.Show(
-                    string.Format("API key saved to {0}.\n\nPlease restart SolidWorks for changes to take effect.", envVarName),
+                    "Settings saved to environment variables.\n\nPlease restart SolidWorks for changes to take effect.",
                     "Settings Saved",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information
@@ -771,7 +833,7 @@ namespace AICAD.UI
                 _lblApiStatus.ForeColor = Color.Red;
                 
                 MessageBox.Show(
-                    "Failed to save API key: " + ex.Message,
+                    "Failed to save settings: " + ex.Message,
                     "Error",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Error
@@ -798,7 +860,7 @@ namespace AICAD.UI
                 _btnTestApi.Enabled = false;
                 try
                 {
-                    if (_cmbApiProvider.SelectedIndex == 0)
+                    if (_cmbCloudProvider.SelectedIndex == 0)
                     {
                         // Google Gemini: use GeminiClient.TestApiKeyAsync for detailed diagnostics
                         var client = new AICAD.Services.GeminiClient(key);
@@ -818,18 +880,7 @@ namespace AICAD.UI
                                 _lblApiStatus.Text = $"Gemini: OK — {res.ModelsFound} models (example: {sample})";
                                 _lblApiStatus.ForeColor = Color.DarkGreen;
 
-                                // Populate model dropdown with returned models
-                                try
-                                {
-                                    _cmbApiModel.Items.Clear();
-                                    foreach (var m in res.ModelNames)
-                                    {
-                                        var display = m.StartsWith("models/") ? m.Substring("models/".Length) : m;
-                                        _cmbApiModel.Items.Add(display);
-                                    }
-                                    if (_cmbApiModel.Items.Count > 0) _cmbApiModel.SelectedIndex = 0;
-                                }
-                                catch { }
+                                // Model dropdown population removed; models are managed externally via env var.
                             }
                             else
                             {
@@ -840,26 +891,26 @@ namespace AICAD.UI
                             }
                         }));
                     }
-                    else if (_cmbApiProvider.SelectedIndex == 1)
+                    else if (_cmbCloudProvider.SelectedIndex == 1)
                     {
-                        // OpenAI: simple models list check (improve if needed)
+                        // Groq: simple models list check
                         using (var http = new HttpClient())
                         {
                             http.Timeout = TimeSpan.FromSeconds(10);
                             http.DefaultRequestHeaders.Clear();
                             http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
-                            var resp = await http.GetAsync("https://api.openai.com/v1/models");
+                            var resp = await http.GetAsync("https://api.groq.com/v1/models");
                             var body = await resp.Content.ReadAsStringAsync();
                             this.BeginInvoke((Action)(() =>
                             {
                                 if (resp.IsSuccessStatusCode)
                                 {
-                                    _lblApiStatus.Text = $"OpenAI: OK — {((int)resp.StatusCode)}";
+                                    _lblApiStatus.Text = $"Groq: OK — {((int)resp.StatusCode)}";
                                     _lblApiStatus.ForeColor = Color.DarkGreen;
                                 }
                                 else
                                 {
-                                    _lblApiStatus.Text = $"OpenAI test failed: {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                                    _lblApiStatus.Text = $"Groq test failed: {(int)resp.StatusCode} {resp.ReasonPhrase}";
                                     _lblApiStatus.ForeColor = Color.Red;
                                 }
                             }));
@@ -867,9 +918,65 @@ namespace AICAD.UI
                     }
                     else
                     {
-                        _lblApiStatus.Text = "No test available for selected provider.";
+                        _lblApiStatus.Text = "Test not available for New provider.";
                         _lblApiStatus.ForeColor = Color.Gray;
                     }
+
+                        // If Local LLM mode selected, attempt a quick POST
+                        if (_cmbLlmMode != null && _cmbLlmMode.SelectedIndex == 1)
+                        {
+                            var endpoint = _txtLocalEndpoint.Text;
+                            if (string.IsNullOrWhiteSpace(endpoint))
+                            {
+                                this.BeginInvoke((Action)(() =>
+                                {
+                                    _lblApiStatus.Text = "Local endpoint is empty.";
+                                    _lblApiStatus.ForeColor = Color.Orange;
+                                }));
+                            }
+                            else
+                            {
+                                try
+                                {
+                                    using (var http = new HttpClient())
+                                    {
+                                        http.Timeout = TimeSpan.FromSeconds(10);
+                                        var payload = new
+                                        {
+                                            model = string.IsNullOrWhiteSpace(_txtLocalModel.Text) ? "" : _txtLocalModel.Text,
+                                            messages = new[] { new { role = "user", content = "Test: hello" } },
+                                            temperature = 0.0,
+                                            max_tokens = 10,
+                                            stream = false
+                                        };
+                                        var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+                                        var resp = http.PostAsync(endpoint, new StringContent(json, System.Text.Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
+                                        var body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+                                        this.BeginInvoke((Action)(() =>
+                                        {
+                                            if (resp.IsSuccessStatusCode)
+                                            {
+                                                _lblApiStatus.Text = "Local LLM: OK";
+                                                _lblApiStatus.ForeColor = Color.DarkGreen;
+                                            }
+                                            else
+                                            {
+                                                _lblApiStatus.Text = $"Local LLM test failed: {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                                                _lblApiStatus.ForeColor = Color.Red;
+                                            }
+                                        }));
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    this.BeginInvoke((Action)(() =>
+                                    {
+                                        _lblApiStatus.Text = "Local LLM test error: " + ex.Message;
+                                        _lblApiStatus.ForeColor = Color.Red;
+                                    }));
+                                }
+                            }
+                        }
                 }
                 finally
                 {
@@ -893,15 +1000,12 @@ namespace AICAD.UI
                 // Save API key
                 BtnSaveApiKey_Click(sender, e);
 
-                // GEMINI_MODEL is managed externally (env var) or via Settings dialog input fields.
+                // GEMINI_MODEL is managed externally (env var).
 
                 // Save project id (if set)
                 try
                 {
-                    if (_txtProjectId != null)
-                    {
-                        Environment.SetEnvironmentVariable("GEMINI_PROJECT_ID", _txtProjectId.Text ?? "", EnvironmentVariableTarget.User);
-                    }
+                    // Project ID field removed; no-op.
                 }
                 catch { }
 
@@ -976,6 +1080,19 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 MessageBox.Show("Error saving path: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void ToggleApiKeyVisibility(object sender, EventArgs e, TextBox txtBox)
+        {
+            if (txtBox != null)
+            {
+                txtBox.UseSystemPasswordChar = !txtBox.UseSystemPasswordChar;
+                var btn = sender as Button;
+                if (btn != null)
+                {
+                    btn.Text = txtBox.UseSystemPasswordChar ? "Show" : "Hide";
+                }
             }
         }
     }

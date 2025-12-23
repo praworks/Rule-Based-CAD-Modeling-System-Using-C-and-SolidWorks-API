@@ -460,15 +460,23 @@ namespace AICAD
                         custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                         try { AddinStatusLogger.Log("AICadAddin", $"Set Material: {material}"); } catch { }
 
-                        // Apply material to part model
+                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
                         try
                         {
-                            var partDoc = doc as PartDoc;
-                            if (partDoc != null)
+                            var applyMat = System.Environment.GetEnvironmentVariable("AICAD_APPLY_MATERIAL") ?? "1";
+                            if (applyMat != "0")
                             {
-                                string database = "solidworks materials.sldmat";
-                                partDoc.SetMaterialPropertyName2("", database, material);
-                                try { AddinStatusLogger.Log("AICadAddin", $"Applied material to model: {material}"); } catch { }
+                                var partDoc = doc as PartDoc;
+                                if (partDoc != null)
+                                {
+                                    string database = "solidworks materials.sldmat";
+                                    partDoc.SetMaterialPropertyName2("", database, material);
+                                    try { AddinStatusLogger.Log("AICadAddin", $"Applied material to model: {material}"); } catch { }
+                                }
+                            }
+                            else
+                            {
+                                try { AddinStatusLogger.Log("AICadAddin", "Skipping material application due to AICAD_APPLY_MATERIAL=0"); } catch { }
                             }
                         }
                         catch (Exception matEx)

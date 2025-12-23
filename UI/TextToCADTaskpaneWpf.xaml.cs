@@ -45,7 +45,7 @@ namespace AICAD.UI
         /// </summary>
         public event EventHandler ApplyPropertiesRequested;
         private bool _isModified = false;
-        private GeminiClient _client;
+        private AICAD.Services.ILlmClient _client;
         private FileDbLogger _fileLogger;
         private MongoLogger _mongoLogger;
         private IGoodFeedbackStore _goodStore;
@@ -63,6 +63,9 @@ namespace AICAD.UI
         private SeriesManager _seriesManager;
         private string _selectedSeries;
         private int _nextSequence;
+        // Temporary hard-coded behavior: force local-only mode and disable few-shot when using local LLM.
+        // Set to false to restore previous multi-provider behavior.
+        private const bool FORCE_LOCAL_ONLY = true;
 
         public TextToCADTaskpaneWpf(ISldWorks swApp)
         {
@@ -192,11 +195,20 @@ namespace AICAD.UI
             // Raise PromptTextChanged for external listeners
             prompt.TextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, new PromptChangedEventArgs(prompt.Text)); } catch { } };
 
-            // Build click: give immediate feedback, notify subscribers, then run internal build logic
+            // Build click: disable button immediately, give feedback, notify subscribers, then run internal build logic
             build.Click += async (s, e) =>
             {
                 try
                 {
+                    // Check if multiple builds are allowed
+                    var allowMultiple = System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.User)
+                                        ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Process)
+                                        ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Machine);
+                    if (string.IsNullOrEmpty(allowMultiple) || allowMultiple == "0" || allowMultiple.Equals("false", StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Disable immediately to prevent duplicate clicks
+                        build.IsEnabled = false;
+                    }
                     // Immediate visual feedback so users know the click was received
                     SetRealTimeStatus("Build clicked", Colors.DodgerBlue);
                     try { AICAD.Services.LocalLogger.Log("WPF: build.Click invoked"); } catch { }
@@ -406,6 +418,14 @@ namespace AICAD.UI
                 // Ctrl+Enter triggers a build, mirror intuitive behavior for the user
                 if (e.Key == System.Windows.Input.Key.Enter && (System.Windows.Input.Keyboard.Modifiers & System.Windows.Input.ModifierKeys.Control) == System.Windows.Input.ModifierKeys.Control)
                 {
+                    // Check if multiple builds are allowed
+                    var allowMultiple = System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.User)
+                                        ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Process)
+                                        ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Machine);
+                    if (string.IsNullOrEmpty(allowMultiple) || allowMultiple == "0" || allowMultiple.Equals("false", StringComparison.OrdinalIgnoreCase))
+                    {
+                        try { build.IsEnabled = false; } catch { }
+                    }
                     try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
                     _ = BuildFromPromptAsync();
                     e.Handled = true;
@@ -966,28 +986,199 @@ namespace AICAD.UI
             return sb.ToString();
         }
 
-        private GeminiClient GetClient()
+        private AICAD.Services.ILlmClient GetClient()
         {
             if (_client == null)
             {
-                // Prefer API keys from environment; do not hardcode keys in source.
-                var key = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
-                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
-                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
-                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
-                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
-                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
-                          ?? null;
+                // If a local LLM endpoint is configured, prefer it.
+                var llmMode = System.Environment.GetEnvironmentVariable("AICAD_LLM_MODE", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_MODE", System.EnvironmentVariableTarget.Process)
+                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_MODE", System.EnvironmentVariableTarget.Machine)
+                              ?? string.Empty;
 
-                var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine);
+
+                var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Machine)
+                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
-                                     ?? "gemini-1.0-pro";
+                                     ?? "google/functiongemma-270m";
 
-                _client = new GeminiClient(key, preferredModel);
-                AppendStatusLine("[LLM] Gemini client constructed; apiKeySource=" + (string.IsNullOrEmpty(key) ? "none" : "env"));
+                if (!string.IsNullOrWhiteSpace(llmMode) && llmMode.Equals("local", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(localEndpoint))
+                {
+                    var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                       ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                       ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
+                                       ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                    _client = new LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt);
+                    AppendStatusLine("[LLM] Local HTTP LLM client constructed; endpoint=" + localEndpoint + " model=" + preferredModel);
+                }
+                else
+                {
+                    // Prefer API keys from environment; do not hardcode keys in source.
+                    var key = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                              ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                              ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
+                              ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                              ?? null;
+
+                    _client = new GeminiClient(key, preferredModel);
+                    AppendStatusLine("[LLM] Gemini client constructed; apiKeySource=" + (string.IsNullOrEmpty(key) ? "none" : "env"));
+                }
             }
             return _client;
+        }
+
+        private async Task<string> GenerateWithFallbackAsync(string prompt)
+        {
+            Exception lastEx = null;
+
+            // Preferred model same logic as GetClient
+            var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Machine)
+                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
+                                 ?? "google/functiongemma-270m";
+
+            // 1) Try Local HTTP LLM if configured
+            try
+            {
+                var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
+                                    ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(localEndpoint))
+                {
+                    AppendStatusLine("[LLM] Trying Local HTTP LLM: " + localEndpoint);
+                    var systemPrompt2 = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
+                                        ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                    var localClient = new AICAD.Services.LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt2);
+                    try
+                    {
+                        var r = await localClient.GenerateAsync(prompt);
+                        _client = localClient;
+                        _lastModel = localClient.Model;
+                        AppendStatusLine("[LLM] Local LLM succeeded: " + localClient.Model);
+                        return r;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastEx = ex;
+                        AppendStatusLine("[LLM] Local LLM failed: " + ex.Message);
+                        try { localClient.Dispose(); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+                AppendStatusLine("[LLM] Local attempt error: " + ex.Message);
+            }
+
+            // If we've been instructed to force local-only, do not attempt cloud providers.
+            if (FORCE_LOCAL_ONLY)
+            {
+                if (lastEx != null)
+                {
+                    AppendStatusLine("[LLM] Force-local mode enabled; not attempting cloud providers.");
+                    throw new InvalidOperationException("Local LLM failed and cloud fallback is disabled.", lastEx);
+                }
+                else
+                {
+                    AppendStatusLine("[LLM] Force-local mode enabled but no LOCAL_LLM_ENDPOINT configured.");
+                    throw new InvalidOperationException("No local LLM endpoint configured and cloud fallback is disabled.");
+                }
+            }
+
+            // 2) Try Gemini (Google) if key available
+            if (!FORCE_LOCAL_ONLY)
+            {
+            try
+            {
+                var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                             ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                             ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
+                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
+                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                             ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(gemKey))
+                {
+                    AppendStatusLine("[LLM] Trying Gemini (API key from env)");
+                    var gemClient = new AICAD.Services.GeminiClient(gemKey, preferredModel);
+                    try
+                    {
+                        var r = await gemClient.GenerateAsync(prompt);
+                        _client = gemClient;
+                        _lastModel = gemClient.Model;
+                        AppendStatusLine("[LLM] Gemini succeeded: " + gemClient.Model);
+                        return r;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastEx = ex;
+                        AppendStatusLine("[LLM] Gemini failed: " + ex.Message);
+                        try { gemClient.Dispose(); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+                AppendStatusLine("[LLM] Gemini attempt error: " + ex.Message);
+            }
+            }
+
+                // 3) Try Groq if key available
+            try
+            {
+                var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                              ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Machine)
+                              ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(groqKey))
+                {
+                        AppendStatusLine("[LLM] Trying Groq (API key from env)");
+                        try
+                        {
+                            var groqAdapter = new AICAD.Services.GroqLlmAdapter(groqKey);
+                            var r = await groqAdapter.GenerateAsync(prompt);
+                            _client = groqAdapter;
+                            _lastModel = groqAdapter.Model;
+                            AppendStatusLine("[LLM] Groq succeeded: " + groqAdapter.Model);
+                            return r;
+                        }
+                        catch (Exception ex)
+                        {
+                            lastEx = ex;
+                            AppendStatusLine("[LLM] Groq failed: " + ex.Message);
+                        }
+                }
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+                AppendStatusLine("[LLM] Groq attempt error: " + ex.Message);
+            }
+
+            // All attempts failed
+            if (lastEx != null)
+            {
+                AppendStatusLine("[LLM] All providers failed: " + lastEx.Message);
+                throw new InvalidOperationException("All LLM providers failed. See status log for details.", lastEx);
+            }
+
+            throw new InvalidOperationException("No LLM provider configured (LOCAL_LLM_ENDPOINT, GEMINI_API_KEY or GROQ_API_KEY).");
         }
 
         private async Task BuildFromPromptAsync()
@@ -1031,6 +1222,12 @@ namespace AICAD.UI
                 }
                 catch { useFewShot = true; }
 
+                // If forcing local-only mode, do not feed few-shot examples to the local LLM.
+                if (FORCE_LOCAL_ONLY)
+                {
+                    useFewShot = false;
+                }
+
                 StringBuilder fewshot = null;
                 if (useFewShot)
                 {
@@ -1060,16 +1257,17 @@ namespace AICAD.UI
                     "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
                     "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
                     "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
-                var client = GetClient();
-                if (client == null)
-                {
-                    throw new InvalidOperationException("Gemini client could not be initialized. Check API key and settings.");
-                }
-                _lastModel = client.Model;
                 SetRealTimeStatus("Applying few-shot examples…", Colors.DarkOrange);
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
+                // If forcing local-only, do not include few-shot examples in the prompt.
+                var finalPrompt = sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:";
+                if (FORCE_LOCAL_ONLY)
+                {
+                    finalPrompt = sysPrompt + "\nNow generate plan for: " + text + "\nJSON:";
+                }
+                reply = await GenerateWithFallbackAsync(finalPrompt);
                 llmSw.Stop();
+                var client = _client ?? GetClient();
                 // LLM returned — advance progress realistically
                 StartProgressPhase("awaiting_response");
                 llmMs = llmSw.Elapsed;
@@ -1470,15 +1668,23 @@ namespace AICAD.UI
                         custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                         try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material: {material}"); } catch { }
 
-                        // Apply material to part model
+                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
                         try
                         {
-                            var partDoc = doc as PartDoc;
-                            if (partDoc != null)
+                            var applyMat = System.Environment.GetEnvironmentVariable("AICAD_APPLY_MATERIAL") ?? "1";
+                            if (applyMat != "0")
                             {
-                                string database = "solidworks materials.sldmat";
-                                partDoc.SetMaterialPropertyName2("", database, material);
-                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {material}"); } catch { }
+                                var partDoc = doc as PartDoc;
+                                if (partDoc != null)
+                                {
+                                    string database = "solidworks materials.sldmat";
+                                    partDoc.SetMaterialPropertyName2("", database, material);
+                                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {material}"); } catch { }
+                                }
+                            }
+                            else
+                            {
+                                try { AddinStatusLogger.Log("TaskpaneWpf", "Skipping material application due to AICAD_APPLY_MATERIAL=0"); } catch { }
                             }
                         }
                         catch (Exception matEx)

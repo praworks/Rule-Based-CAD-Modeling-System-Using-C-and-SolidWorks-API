@@ -96,6 +96,7 @@ namespace AICAD.Services
             catch { }
 
             var url = $"{BaseUrl}/models/{_model}:generateContent";
+            bool triedModelFallback = false;
             try { AddinStatusLogger.Log("GeminiClient", $"GenerateAsync: URL='{url}', Model='{_model}', HasBearerToken={!string.IsNullOrEmpty(bearer)}, HasApiKey={!string.IsNullOrEmpty(_apiKey)}"); } catch { }
             var req = new GenerateRequest
             {
@@ -116,13 +117,13 @@ namespace AICAD.Services
                 jsonBody = Encoding.UTF8.GetString(ms.ToArray());
             }
 
-            using (var content = new StringContent(jsonBody, Encoding.UTF8, "application/json"))
+            const int maxRetries = 3;
+            int attempt = 0;
+            while (true)
             {
-                const int maxRetries = 3;
-                int attempt = 0;
-                while (true)
+                attempt++;
+                using (var content = new StringContent(jsonBody, Encoding.UTF8, "application/json"))
                 {
-                    attempt++;
                     HttpResponseMessage resp = null;
                     if (!string.IsNullOrWhiteSpace(bearer))
                     {
@@ -170,6 +171,53 @@ namespace AICAD.Services
                         try { AddinStatusLogger.Log("GeminiClient", $"Transient HTTP {status} - retry {attempt}/{maxRetries} after {delaySeconds}s"); } catch { }
                         await Task.Delay(TimeSpan.FromSeconds(delaySeconds)).ConfigureAwait(false);
                         continue;
+                    }
+
+                    // If model not found (or API reports model issues), try a single automatic fallback before failing hard
+                    if (!triedModelFallback && (status == 404 || (!string.IsNullOrEmpty(respText) && respText.IndexOf("model", StringComparison.OrdinalIgnoreCase) >= 0)))
+                    {
+                        triedModelFallback = true;
+                        try { AddinStatusLogger.Log("GeminiClient", $"Model '{_model}' appears unavailable (HTTP {status}). Attempting automatic fallback."); } catch { }
+                        try
+                        {
+                            var available = await ListAvailableModelsAsync(bearer).ConfigureAwait(false);
+                            string pick = null;
+                            if (available != null && available.Count > 0)
+                            {
+                                foreach (var f in DefaultFallbackModels)
+                                {
+                                    if (available.Contains($"models/{f}"))
+                                    {
+                                        pick = f;
+                                        break;
+                                    }
+                                }
+                                if (pick == null)
+                                {
+                                    // take first available model name (strip "models/")
+                                    var first = available[0];
+                                    if (first.StartsWith("models/")) pick = first.Substring("models/".Length);
+                                }
+                            }
+                            if (pick == null)
+                            {
+                                // Last-resort: pick from our built-in fallback list
+                                pick = DefaultFallbackModels.Length > 0 ? DefaultFallbackModels[0] : _model;
+                            }
+                            if (!string.IsNullOrWhiteSpace(pick) && pick != _model)
+                            {
+                                try { AddinStatusLogger.Log("GeminiClient", $"Falling back from '{_model}' to '{pick}' and retrying request."); } catch { }
+                                _model = pick;
+                                url = $"{BaseUrl}/models/{_model}:generateContent";
+                                // reset attempt counter so we still honor retries for transient errors
+                                attempt = 0;
+                                continue;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            try { AddinStatusLogger.Error("GeminiClient", "Fallback attempt failed", ex); } catch { }
+                        }
                     }
 
                     // Non-retriable or exhausted retries — provide actionable hint
@@ -239,6 +287,116 @@ namespace AICAD.Services
             }
             catch { return null; }
         }
+
+        /// <summary>
+        /// Tests whether the configured API credentials (API key or provided bearer token)
+        /// can access the Generative Language Models list and returns detailed diagnostics.
+        /// </summary>
+        public async Task<ApiKeyTestResult> TestApiKeyAsync(string bearerToken = null)
+        {
+            try
+            {
+                var url = BaseUrlV1 + "/models";
+                HttpResponseMessage resp;
+                var usedBearer = !string.IsNullOrEmpty(bearerToken);
+                if (usedBearer)
+                {
+                    var req = new System.Net.Http.HttpRequestMessage(HttpMethod.Get, url);
+                    req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearerToken);
+                    resp = await _http.SendAsync(req).ConfigureAwait(false);
+                }
+                else
+                {
+                    var key = _apiKey;
+                    if (string.IsNullOrWhiteSpace(key))
+                    {
+                        return new ApiKeyTestResult
+                        {
+                            Success = false,
+                            StatusCode = null,
+                            Message = "No API key configured",
+                            Hint = "Set GEMINI_API_KEY or sign in with Google OAuth to obtain a bearer token.",
+                            UsedBearer = false
+                        };
+                    }
+                    resp = await _http.GetAsync(url + "?key=" + Uri.EscapeDataString(key)).ConfigureAwait(false);
+                }
+
+                var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                var result = new ApiKeyTestResult { StatusCode = (int)resp.StatusCode, UsedBearer = usedBearer };
+                if (resp.IsSuccessStatusCode)
+                {
+                    // parse model names similarly to ListAvailableModelsAsync
+                    var models = new System.Collections.Generic.List<string>();
+                    var idx = 0;
+                    while (true)
+                    {
+                        var nm = "\"name\": \"models/";
+                        var pos = body.IndexOf(nm, idx, StringComparison.OrdinalIgnoreCase);
+                        if (pos < 0) break;
+                        pos += nm.Length;
+                        var end = body.IndexOf('"', pos);
+                        if (end < 0) break;
+                        var modelName = body.Substring(pos, end - pos);
+                        models.Add("models/" + modelName);
+                        idx = end + 1;
+                    }
+                    result.Success = true;
+                    result.Message = "OK";
+                    result.ModelsFound = models.Count;
+                    result.ModelNames = models;
+                    return result;
+                }
+
+                // unsuccessful: provide actionable hint
+                string hint = string.Empty;
+                switch ((int)resp.StatusCode)
+                {
+                    case 403:
+                        hint = "Forbidden: check the API key, project/billing status, and key restrictions (API or application restrictions).";
+                        break;
+                    case 404:
+                        hint = "Not found: the API endpoint or model may be unavailable to this key or project.";
+                        break;
+                    case 429:
+                        hint = "Rate limited: quota may be exhausted or requests are too frequent.";
+                        break;
+                    default:
+                        hint = string.Empty;
+                        break;
+                }
+
+                result.Success = false;
+                result.Message = string.IsNullOrWhiteSpace(body) ? resp.ReasonPhrase : body;
+                result.Hint = hint;
+                return result;
+            }
+            catch (Exception ex)
+            {
+                return new ApiKeyTestResult
+                {
+                    Success = false,
+                    StatusCode = null,
+                    Message = ex.Message,
+                    Hint = "Exception while attempting to contact the Generative Language API.",
+                    UsedBearer = !string.IsNullOrEmpty(bearerToken)
+                };
+            }
+        }
+    }
+
+    /// <summary>
+    /// Result object returned by <see cref="GeminiClient.TestApiKeyAsync"/> with richer diagnostics.
+    /// </summary>
+    public class ApiKeyTestResult
+    {
+        public bool Success { get; set; }
+        public int? StatusCode { get; set; }
+        public string Message { get; set; }
+        public string Hint { get; set; }
+        public int ModelsFound { get; set; }
+        public System.Collections.Generic.List<string> ModelNames { get; set; }
+        public bool UsedBearer { get; set; }
     }
 
     [DataContract]

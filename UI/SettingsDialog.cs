@@ -794,52 +794,86 @@ namespace AICAD.UI
                     return;
                 }
 
-                using (var http = new HttpClient())
+                // Disable test button while running
+                _btnTestApi.Enabled = false;
+                try
                 {
-                    http.Timeout = TimeSpan.FromSeconds(10);
-                    HttpResponseMessage resp = null;
-                    if (_cmbApiProvider.SelectedIndex == 1) // OpenAI
+                    if (_cmbApiProvider.SelectedIndex == 0)
                     {
-                        http.DefaultRequestHeaders.Clear();
-                        http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
-                        resp = await http.GetAsync("https://api.openai.com/v1/models");
-                    }
-                    else if (_cmbApiProvider.SelectedIndex == 0) // Google Gemini
-                    {
-                        var projectId = Environment.GetEnvironmentVariable("GEMINI_PROJECT_ID", EnvironmentVariableTarget.User) ?? "";
-                        var model = Environment.GetEnvironmentVariable("GEMINI_MODEL", EnvironmentVariableTarget.User) ?? "";
-                        // First, list models to validate key/project and available models
-                        var listUrl = "https://generativelanguage.googleapis.com/v1/models" + "?key=" + Uri.EscapeDataString(key);
-                        resp = await http.GetAsync(listUrl);
-                        if (resp != null && resp.IsSuccessStatusCode && !string.IsNullOrEmpty(model))
+                        // Google Gemini: use GeminiClient.TestApiKeyAsync for detailed diagnostics
+                        var client = new AICAD.Services.GeminiClient(key);
+                        var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
+                        this.BeginInvoke((Action)(() =>
                         {
-                            var body = await resp.Content.ReadAsStringAsync();
-                            if (!body.Contains("/" + model) && !body.Contains("\"name\": \"models/" + model + "\""))
+                            if (res == null)
                             {
-                                _lblApiStatus.Text = "API key valid, but configured model not found: " + model;
-                                _lblApiStatus.ForeColor = Color.Orange;
+                                _lblApiStatus.Text = "API test returned no result.";
+                                _lblApiStatus.ForeColor = Color.Red;
                                 return;
                             }
+
+                            if (res.Success)
+                            {
+                                var sample = res.ModelNames != null && res.ModelNames.Count > 0 ? res.ModelNames[0] : "(none)";
+                                _lblApiStatus.Text = $"Gemini: OK — {res.ModelsFound} models (example: {sample})";
+                                _lblApiStatus.ForeColor = Color.DarkGreen;
+
+                                // Populate model dropdown with returned models
+                                try
+                                {
+                                    _cmbApiModel.Items.Clear();
+                                    foreach (var m in res.ModelNames)
+                                    {
+                                        var display = m.StartsWith("models/") ? m.Substring("models/".Length) : m;
+                                        _cmbApiModel.Items.Add(display);
+                                    }
+                                    if (_cmbApiModel.Items.Count > 0) _cmbApiModel.SelectedIndex = 0;
+                                }
+                                catch { }
+                            }
+                            else
+                            {
+                                var code = res.StatusCode.HasValue ? res.StatusCode.Value.ToString() : "?";
+                                var hint = string.IsNullOrWhiteSpace(res.Hint) ? string.Empty : " Hint: " + res.Hint;
+                                _lblApiStatus.Text = $"Gemini test failed: {code}. {res.Message}{hint}";
+                                _lblApiStatus.ForeColor = Color.Red;
+                            }
+                        }));
+                    }
+                    else if (_cmbApiProvider.SelectedIndex == 1)
+                    {
+                        // OpenAI: simple models list check (improve if needed)
+                        using (var http = new HttpClient())
+                        {
+                            http.Timeout = TimeSpan.FromSeconds(10);
+                            http.DefaultRequestHeaders.Clear();
+                            http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
+                            var resp = await http.GetAsync("https://api.openai.com/v1/models");
+                            var body = await resp.Content.ReadAsStringAsync();
+                            this.BeginInvoke((Action)(() =>
+                            {
+                                if (resp.IsSuccessStatusCode)
+                                {
+                                    _lblApiStatus.Text = $"OpenAI: OK — {((int)resp.StatusCode)}";
+                                    _lblApiStatus.ForeColor = Color.DarkGreen;
+                                }
+                                else
+                                {
+                                    _lblApiStatus.Text = $"OpenAI test failed: {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                                    _lblApiStatus.ForeColor = Color.Red;
+                                }
+                            }));
                         }
                     }
                     else
                     {
                         _lblApiStatus.Text = "No test available for selected provider.";
                         _lblApiStatus.ForeColor = Color.Gray;
-                        return;
                     }
-
-                    if (resp != null && resp.IsSuccessStatusCode)
-                    {
-                        _lblApiStatus.Text = "API test succeeded (" + ((int)resp.StatusCode).ToString() + ")";
-                        _lblApiStatus.ForeColor = Color.DarkGreen;
-                    }
-                    else if (resp != null)
-                    {
-                        var body = await resp.Content.ReadAsStringAsync();
-                        _lblApiStatus.Text = string.Format("API test failed: {0} {1}", (int)resp.StatusCode, resp.ReasonPhrase);
-                        _lblApiStatus.ForeColor = Color.Red;
-                    }
+                }
+                finally
+                {
+                    _btnTestApi.Enabled = true;
                 }
             }
             catch (Exception ex)

@@ -25,7 +25,7 @@ namespace AICAD.Services
             _model = model ?? throw new ArgumentNullException(nameof(model));
             _systemPrompt = systemPrompt;
             _http = new HttpClient();
-            _http.Timeout = TimeSpan.FromSeconds(60);
+            _http.Timeout = TimeSpan.FromSeconds(120);
         }
 
         public string Model => _model;
@@ -39,16 +39,15 @@ namespace AICAD.Services
                 messages.Add(new { role = "system", content = _systemPrompt });
             messages.Add(new { role = "user", content = prompt });
 
-            var payload = new
-            {
-                model = _model,
-                messages = messages,
-                temperature = 0.7,
-                max_tokens = -1,
-                stream = false
-            };
+            // Build payload dynamically so we can omit fields (some local servers dislike e.g. negative max_tokens)
+            var jPayload = new JObject();
+            if (!string.IsNullOrWhiteSpace(_model)) jPayload["model"] = _model;
+            jPayload["messages"] = JArray.FromObject(messages);
+            jPayload["temperature"] = 0.7;
+            jPayload["stream"] = false;
 
-            var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+            // Use JsonConvert.SerializeObject to avoid depending on JToken.ToString overloads
+            var json = Newtonsoft.Json.JsonConvert.SerializeObject(jPayload);
             HttpResponseMessage resp;
             try
             {
@@ -56,6 +55,11 @@ namespace AICAD.Services
                 {
                     resp = await _http.PostAsync(_endpoint, content).ConfigureAwait(false);
                 }
+            }
+            catch (TaskCanceledException tex)
+            {
+                AddinStatusLogger.Error("LocalHttpLlmClient", "Request timed out", tex);
+                throw new TimeoutException($"Local LLM request to {_endpoint} timed out after {_http.Timeout.TotalSeconds}s. Ensure the local LLM server is running and responsive.", tex);
             }
             catch (Exception ex)
             {
@@ -67,6 +71,11 @@ namespace AICAD.Services
             if (!resp.IsSuccessStatusCode)
             {
                 AddinStatusLogger.Error("LocalHttpLlmClient", $"HTTP {(int)resp.StatusCode} from {_endpoint}", new Exception(respText));
+                // Provide clearer guidance for common local-server errors
+                if (resp.StatusCode == System.Net.HttpStatusCode.BadRequest && respText != null && respText.IndexOf("No models loaded", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    throw new InvalidOperationException($"Local LLM returned 400: No models loaded. Please load a model in the local LLM instance or change the configured model. Response: {respText}");
+                }
                 throw new InvalidOperationException($"LLM HTTP error {(int)resp.StatusCode}: {respText}");
             }
 

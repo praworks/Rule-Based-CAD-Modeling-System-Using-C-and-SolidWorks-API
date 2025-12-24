@@ -64,9 +64,20 @@ namespace AICAD.Services
 
         for (int i = 0; i < steps.Count; i++)
                 {
-                    var s = (JObject)steps[i];
+                    var raw = steps[i];
+                    var s = NormalizeStep(raw);
                     string op = s.Value<string>("op") ?? string.Empty;
                     var log = new JObject { ["step"] = i, ["op"] = op };
+                    // Validate operation is present
+                    if (string.IsNullOrWhiteSpace(op))
+                    {
+                        log["success"] = false;
+                        log["error"] = "Missing or empty 'op' field";
+                        result.Log.Add(log);
+                        result.Success = false;
+                        try { AddinStatusLogger.Error("StepExecutor", $"Step {i} missing op"); } catch { }
+                        return result; // stop at first failure
+                    }
                     try
                     {
             try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: starting op='{op}'"); } catch { }
@@ -88,8 +99,35 @@ namespace AICAD.Services
                                 RequireModel(model);
                                 {
                                     string name = s.Value<string>("name") ?? "Front Plane";
-                                    bool sel = model.Extension.SelectByID2(name, "PLANE", 0, 0, 0, false, 0, null, 0);
-                                    if (!sel) throw new Exception($"Could not select plane '{name}'");
+                                    bool sel = false;
+                                    // Try the requested name first
+                                    try { AddinStatusLogger.Log("StepExecutor", $"Selecting plane: '{name}'"); } catch { }
+                                    sel = model.Extension.SelectByID2(name, "PLANE", 0, 0, 0, false, 0, null, 0);
+                                    // If initial selection fails, try common SolidWorks plane names and simple mappings
+                                    if (!sel)
+                                    {
+                                        var candidates = new System.Collections.Generic.List<string>();
+                                        // normalize
+                                        var n = (name ?? string.Empty).Trim();
+                                        if (!string.IsNullOrEmpty(n))
+                                        {
+                                            candidates.Add(n);
+                                            if (!n.EndsWith(" Plane", StringComparison.OrdinalIgnoreCase)) candidates.Add(n + " Plane");
+                                            // common plane name mappings
+                                            if (n.IndexOf("xy", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("x-y", StringComparison.OrdinalIgnoreCase) >= 0) candidates.Add("Top Plane");
+                                            if (n.IndexOf("xz", StringComparison.OrdinalIgnoreCase) >= 0) candidates.Add("Front Plane");
+                                            if (n.IndexOf("yz", StringComparison.OrdinalIgnoreCase) >= 0) candidates.Add("Right Plane");
+                                        }
+                                        candidates.AddRange(new[] { "Top Plane", "Front Plane", "Right Plane" });
+                                        foreach (var cand in candidates)
+                                        {
+                                            try { AddinStatusLogger.Log("StepExecutor", $"Trying plane candidate: '{cand}'"); } catch { }
+                                            if (string.IsNullOrWhiteSpace(cand)) continue;
+                                            sel = model.Extension.SelectByID2(cand, "PLANE", 0, 0, 0, false, 0, null, 0);
+                                            if (sel) break;
+                                        }
+                                    }
+                                    if (!sel) throw new Exception($"Could not select plane '{name}' (tried common alternatives)");
                                     log["success"] = true;
                                 }
                                 break;
@@ -196,9 +234,50 @@ namespace AICAD.Services
         {
             foreach (var s in steps)
             {
-        if (s is JObject jo && (jo.Value<string>("op") ?? string.Empty) == "new_part") return true;
+        var jo = NormalizeStep(s);
+        if ((jo.Value<string>("op") ?? string.Empty) == "new_part") return true;
             }
             return false;
+        }
+
+        // Accept either JObject steps or compact string steps like "select_plane{name='XY'}" or "new_part"
+        private static JObject NormalizeStep(JToken step)
+        {
+            if (step == null) return new JObject();
+            if (step.Type == JTokenType.Object) return (JObject)step;
+            if (step.Type == JTokenType.String || step.Type == JTokenType.Integer || step.Type == JTokenType.Float)
+            {
+                var s = step.ToString();
+                s = s.Trim();
+                if (string.IsNullOrEmpty(s)) return new JObject();
+                var jo = new JObject();
+                var braceIndex = s.IndexOf('{');
+                if (braceIndex < 0)
+                {
+                    jo["op"] = s;
+                    return jo;
+                }
+                var op = s.Substring(0, braceIndex).Trim();
+                jo["op"] = op;
+                var end = s.LastIndexOf('}');
+                if (end <= braceIndex) return jo;
+                var inner = s.Substring(braceIndex + 1, end - braceIndex - 1).Trim();
+                // split by commas not inside quotes (simple approach)
+                var parts = inner.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in parts)
+                {
+                    var kv = p.Split(new[] { '=' }, 2);
+                    if (kv.Length != 2) continue;
+                    var key = kv[0].Trim();
+                    var val = kv[1].Trim().Trim('"').Trim('\'');
+                    // try parse number
+                    if (double.TryParse(val, out var num)) jo[key] = num;
+                    else jo[key] = val;
+                }
+                return jo;
+            }
+            // fallback
+            return new JObject();
         }
 
         private static void RequireModel(IModelDoc2 model)

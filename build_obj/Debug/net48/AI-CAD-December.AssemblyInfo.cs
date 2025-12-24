@@ -14,7 +14,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("AI-CAD-December")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+96d12b10bea8d3f9a69c08c8492641accee9db36")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+50e471392038f71b0c2b99132605daec6e687598")]
 [assembly: System.Reflection.AssemblyProductAttribute("AI-CAD-December")]
 [assembly: System.Reflection.AssemblyTitleAttribute("AI-CAD-December")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

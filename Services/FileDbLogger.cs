@@ -53,15 +53,36 @@ namespace AICAD.Services
             try
             {
                 var line = AICAD.Services.JsonUtils.SerializeCompact(doc) + Environment.NewLine;
-                using (var fs = new FileStream(_dbFilePath, FileMode.Append, FileAccess.Write, FileShare.Read))
-                using (var sw = new StreamWriter(fs, Encoding.UTF8))
+                // Retry a few times to avoid transient file locks from other processes
+                const int maxAttempts = 5;
+                for (int attempt = 1; attempt <= maxAttempts; attempt++)
                 {
-                    await sw.WriteAsync(line).ConfigureAwait(false);
-                    await sw.FlushAsync().ConfigureAwait(false);
+                    try
+                    {
+                        using (var fs = new FileStream(_dbFilePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite))
+                        using (var sw = new StreamWriter(fs, Encoding.UTF8))
+                        {
+                            await sw.WriteAsync(line).ConfigureAwait(false);
+                            await sw.FlushAsync().ConfigureAwait(false);
+                        }
+                        _lastError = null;
+                        try { AddinStatusLogger.Log("FileDbLogger", $"Appended document to file (len={line.Length})"); } catch { }
+                        return true;
+                    }
+                    catch (IOException ioEx)
+                    {
+                        _lastError = ioEx.Message;
+                        if (attempt == maxAttempts)
+                        {
+                            try { AddinStatusLogger.Error("FileDbLogger", "AppendAsync failed", ioEx); } catch { }
+                            return false;
+                        }
+                        await Task.Delay(100 * attempt).ConfigureAwait(false);
+                        continue;
+                    }
                 }
-                _lastError = null;
-                try { AddinStatusLogger.Log("FileDbLogger", $"Appended document to file (len={line.Length})"); } catch { }
-                return true;
+                // Shouldn't get here
+                return false;
             }
             catch (Exception ex)
             {

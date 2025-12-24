@@ -106,8 +106,8 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
-                BackColor = Color.FromArgb(220, 245, 220),
-                ForeColor = Color.Black,
+                BackColor = Color.Black,
+                ForeColor = Color.Gainsboro,
                 Font = new Font("Consolas", 9f, FontStyle.Regular),
                 BorderStyle = BorderStyle.FixedSingle,
                 WordWrap = false,

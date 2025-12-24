@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using MongoDB.Driver.Core.Configuration;
+using System.Security.Authentication;
 using System.Threading.Tasks;
 
 namespace AICAD.Services
@@ -45,6 +47,8 @@ namespace AICAD.Services
                 if (!string.IsNullOrWhiteSpace(_connectionString))
                 {
                     var settings = MongoClientSettings.FromConnectionString(_connectionString);
+                    // Force TLS 1.2 to avoid SSPI/SChannel handshake failures on some Windows hosts
+                    try { settings.SslSettings = new SslSettings { EnabledSslProtocols = SslProtocols.Tls12 }; } catch { }
                     // Align with Node sample: Stable API v1 + strict + deprecationErrors
                     settings.ServerApi = new ServerApi(ServerApiVersion.V1, strict: true, deprecationErrors: true);
                     // Make initial server selection/ping snappy

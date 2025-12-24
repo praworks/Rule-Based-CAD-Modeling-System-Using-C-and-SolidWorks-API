@@ -507,6 +507,10 @@ namespace AICAD.UI
                 SetLlmStatus("Sending…", Color.DarkOrange);
                 SetLastError(null);
                 SetTimes(null, null);
+                // Start a run section so the status console groups this build attempt
+                var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                _lastRunId = runId;
+                AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----");
 
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
                 bool useFewShot = true;
@@ -601,6 +605,8 @@ namespace AICAD.UI
                     SetSwStatus("OK", Color.DarkGreen);
                     // Clear modified state after successful create/save
                     try { SetModified(false); } catch { }
+                    // Do NOT auto-apply material/description/mass here — user should apply manually
+                    AppendStatusLine("[Status] Model created. Please set Material and Description manually and click 'Apply Properties' to finalize Mass (will remain 0.000 until linked).");
                 }
                 else
                 {
@@ -729,6 +735,12 @@ namespace AICAD.UI
                     _lastDbLogged = logged;
                     SetDbStatus(logged ? "Logged" : "Log error", logged ? Color.DarkGreen : Color.Firebrick);
                     SetRealTimeStatus(logged ? "Completed" : "Error logging", logged ? Color.DarkGreen : Color.Firebrick);
+                    // Close the run section with a footer summarizing the attempt
+                    try
+                    {
+                        AppendStatusLine($"[Run:{_lastRunId}] ----- Build End: success={(exec?.Success ?? false)} totalMs={(long)totalSw.Elapsed.TotalMilliseconds} error={(errText ?? string.Empty).Replace("\r", " ").Replace("\n", " ")} -----");
+                    }
+                    catch { }
                 }
                 catch
                 {
@@ -1173,7 +1185,36 @@ namespace AICAD.UI
                 {
                     var ts = DateTime.Now.ToString("HH:mm:ss");
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                    _statusWindow.StatusConsole.SelectionColor = Color.Gainsboro;
+                    // Colorize certain categories for readability
+                    var color = Color.Gainsboro;
+                    try
+                    {
+                        var l = (line ?? string.Empty);
+                        if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            color = Color.OrangeRed; // high-contrast red
+                        }
+                        else if (l.StartsWith("[FewShot", StringComparison.OrdinalIgnoreCase) || l.IndexOf("FewShot", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            color = Color.DodgerBlue; // bright blue
+                        }
+                        else if (l.StartsWith("[Status]", StringComparison.OrdinalIgnoreCase))
+                        {
+                            color = Color.Gold; // visible orange/gold
+                        }
+                        else if (l.StartsWith("[Run:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            color = Color.Cyan; // run headers in cyan
+                        }
+                        else if (l.StartsWith("[LLM]", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (l.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0) color = Color.LimeGreen;
+                            else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) color = Color.OrangeRed;
+                            else color = Color.LightSkyBlue;
+                        }
+                    }
+                    catch { }
+                    _statusWindow.StatusConsole.SelectionColor = color;
                     _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
                     _statusWindow.StatusConsole.ScrollToCaret();

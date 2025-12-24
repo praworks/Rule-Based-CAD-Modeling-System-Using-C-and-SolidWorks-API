@@ -72,7 +72,8 @@ namespace AICAD.Services
                     if (string.IsNullOrWhiteSpace(op))
                     {
                         log["success"] = false;
-                        log["error"] = "Missing or empty 'op' field";
+                        // Include raw step for diagnostics when possible. Use JsonConvert to avoid runtime method binding on JToken.ToString(Formatting).
+                        try { log["error"] = "Missing or empty 'op' field; raw=" + (raw == null ? "<null>" : Newtonsoft.Json.JsonConvert.SerializeObject(raw, Newtonsoft.Json.Formatting.None)); } catch { log["error"] = "Missing or empty 'op' field"; }
                         result.Log.Add(log);
                         result.Success = false;
                         try { AddinStatusLogger.Error("StepExecutor", $"Step {i} missing op"); } catch { }
@@ -244,7 +245,25 @@ namespace AICAD.Services
         private static JObject NormalizeStep(JToken step)
         {
             if (step == null) return new JObject();
-            if (step.Type == JTokenType.Object) return (JObject)step;
+            if (step.Type == JTokenType.Object)
+            {
+                // Normalize common alternate field names produced by some LLMs
+                var jo = (JObject)step;
+                // map 'operation' -> 'op' if present
+                try
+                {
+                    if (jo.Property("op") == null)
+                    {
+                        var opProp = jo.Property("operation") ?? jo.Property("Operation");
+                        if (opProp != null)
+                        {
+                            jo["op"] = opProp.Value;
+                        }
+                    }
+                }
+                catch { }
+                return jo;
+            }
             if (step.Type == JTokenType.String || step.Type == JTokenType.Integer || step.Type == JTokenType.Float)
             {
                 var s = step.ToString();

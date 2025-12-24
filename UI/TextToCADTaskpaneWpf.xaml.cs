@@ -59,6 +59,7 @@ namespace AICAD.UI
         private string _lastDbStatus;
         private bool? _lastDbLogged;
         private string _lastRunId;
+        private bool _isBuilding = false;
         private IStepStore _stepStore;
         private SeriesManager _seriesManager;
         private string _selectedSeries;
@@ -1190,6 +1191,14 @@ namespace AICAD.UI
                 return;
             }
 
+            // Prevent re-entry if a build is already running
+            if (_isBuilding)
+            {
+                AppendStatusLine("[Status] Build already in progress — re-entry prevented");
+                return;
+            }
+            _isBuilding = true;
+
             var totalSw = System.Diagnostics.Stopwatch.StartNew();
             string reply = null;
             string errText = null;
@@ -1197,12 +1206,19 @@ namespace AICAD.UI
             StepExecutionResult exec = null;
             try
             {
-                build.IsEnabled = false;
+                // Disable build UI immediately for this run
+                try { build.IsEnabled = false; } catch { }
                 _lastPrompt = text;
                 AppendStatusLine("> " + text);
                 // Kick off progress bar animation (realistic phase)
                 StartProgressPhase("communicating");
+                // Start a run section so status console groups this build attempt
+                var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                _lastRunId = runId;
+                AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----");
                 SetRealTimeStatus("Communicating with LLM…", Colors.DarkOrange);
+                    // Do NOT auto-apply material/description/mass here — user should apply manually
+                    AppendStatusLine("[Status] Model created. Please set Material and Description manually and click 'Apply Properties' to finalize Mass (will remain 0.000 until linked).");
                         ShowKaraokeScenario("communicating");
                     SetLlmStatus("Sending…", Colors.DarkOrange);
                 SetLastError(null);
@@ -1228,6 +1244,17 @@ namespace AICAD.UI
                     useFewShot = false;
                 }
 
+                // Optional override to force using only the hardcoded static few-shot examples
+                bool forceStaticFewShot = false;
+                try
+                {
+                    var vs = System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.User)
+                             ?? System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.Process)
+                             ?? System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.Machine);
+                    if (!string.IsNullOrEmpty(vs) && (vs == "1" || vs.Equals("true", StringComparison.OrdinalIgnoreCase))) forceStaticFewShot = true;
+                }
+                catch { }
+
                 StringBuilder fewshot = null;
                 if (useFewShot)
                 {
@@ -1238,18 +1265,49 @@ namespace AICAD.UI
                         .Append("\nInput: Cylinder 40 dia x 80 mm")
                         .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
 
-                    if (_goodStore != null)
+                    // Signal we're applying few-shot examples so the status console can group them underneath
+                    SetRealTimeStatus("Applying few-shot examples…", Colors.DarkOrange);
+
+                    if (forceStaticFewShot)
                     {
-                        var extras = _goodStore.GetRecentFewShots(2);
-                        foreach (var s in extras)
-                        {
-                            fewshot.Append(s);
-                        }
+                        AddinStatusLogger.Log("FewShot", "Forced static few-shot mode enabled; skipping DB examples");
                     }
-                    if (_stepStore != null)
+                    else
                     {
-                        var more = _stepStore.GetRelevantFewShots(text, 3);
-                        foreach (var s in more) fewshot.Append(s);
+                        if (_goodStore != null)
+                        {
+                            var extras = _goodStore.GetRecentFewShots(2);
+                            try
+                            {
+                                AddinStatusLogger.Log("FewShot", $"GoodStore returned {extras.Count} examples");
+                                int i = 0;
+                                foreach (var s in extras)
+                                {
+                                    i++;
+                                    AddinStatusLogger.Log("FewShot", $"GoodStore example {i}:");
+                                    AddinStatusLogger.Log("FewShot", s);
+                                    fewshot.Append(s);
+                                }
+                            }
+                            catch (Exception ex) { AddinStatusLogger.Error("FewShot", "GoodStore logging failed", ex); }
+                        }
+                        if (_stepStore != null)
+                        {
+                            var more = _stepStore.GetRelevantFewShots(text, 3);
+                            try
+                            {
+                                AddinStatusLogger.Log("FewShot", $"StepStore returned {more.Count} examples");
+                                int j = 0;
+                                foreach (var s in more)
+                                {
+                                    j++;
+                                    AddinStatusLogger.Log("FewShot", $"StepStore example {j}:");
+                                    AddinStatusLogger.Log("FewShot", s);
+                                    fewshot.Append(s);
+                                }
+                            }
+                            catch (Exception ex) { AddinStatusLogger.Error("FewShot", "StepStore logging failed", ex); }
+                        }
                     }
                 }
 
@@ -1257,7 +1315,7 @@ namespace AICAD.UI
                     "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
                     "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
                     "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
-                SetRealTimeStatus("Applying few-shot examples…", Colors.DarkOrange);
+                try { AddinStatusLogger.Log("FewShot", $"Final few-shot prompt length={(fewshot==null?0:fewshot.Length)}"); } catch { }
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 // If forcing local-only, do not include few-shot examples in the prompt.
                 var finalPrompt = sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:";
@@ -1468,6 +1526,12 @@ namespace AICAD.UI
                     _lastDbLogged = logged;
                     SetDbStatus(logged ? "Logged" : "Log error", logged ? Colors.DarkGreen : Colors.Firebrick);
                     SetRealTimeStatus(logged ? "Completed" : "Error logging", logged ? Colors.DarkGreen : Colors.Firebrick);
+                    // Close the run section with a footer summarizing the attempt
+                    try
+                    {
+                        AppendStatusLine($"[Run:{_lastRunId}] ----- Build End: success={(exec?.Success ?? false)} totalMs={(long)totalSw.Elapsed.TotalMilliseconds} error={(errText ?? string.Empty).Replace("\r", " ").Replace("\n", " ")} -----");
+                    }
+                    catch { }
                     UpdateGenerationProgress(logged ? 100 : 0);
                     // Smoothly animate karaoke color: blue on success, gray on failure
                     try { AnimateKaraokeToColor(logged ? Colors.DodgerBlue : Colors.Gray, 600); } catch { }
@@ -1477,7 +1541,9 @@ namespace AICAD.UI
                     SetDbStatus("Log error (exception)", Colors.Firebrick);
                     SetRealTimeStatus("Error logging", Colors.Firebrick);
                 }
-                build.IsEnabled = true;
+                // Re-enable build UI and clear re-entry guard
+                try { _isBuilding = false; } catch { }
+                try { build.IsEnabled = true; } catch { }
             }
         }
 
@@ -2258,6 +2324,36 @@ namespace AICAD.UI
                 if (_statusWindow != null && !_statusWindow.IsDisposed)
                 {
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
+                    // Colorize certain categories for readability on dark background
+                    try
+                    {
+                        var color = System.Drawing.Color.Gainsboro;
+                        var l = (line ?? string.Empty);
+                        if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            color = System.Drawing.Color.OrangeRed; // high-contrast red
+                        }
+                        else if (l.StartsWith("[FewShot", StringComparison.OrdinalIgnoreCase) || l.IndexOf("FewShot", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            color = System.Drawing.Color.DodgerBlue; // bright blue
+                        }
+                        else if (l.StartsWith("[Status]", StringComparison.OrdinalIgnoreCase))
+                        {
+                            color = System.Drawing.Color.Gold; // visible gold/orange
+                        }
+                        else if (l.StartsWith("[Run:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            color = System.Drawing.Color.Cyan; // run headers in cyan
+                        }
+                        else if (l.StartsWith("[LLM]", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (l.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.LimeGreen;
+                            else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.OrangeRed;
+                            else color = System.Drawing.Color.LightSkyBlue;
+                        }
+                        _statusWindow.StatusConsole.SelectionColor = color;
+                    }
+                    catch { }
                     _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
                     _statusWindow.StatusConsole.ScrollToCaret();

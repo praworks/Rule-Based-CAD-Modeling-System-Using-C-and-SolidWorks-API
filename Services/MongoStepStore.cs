@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using MongoDB.Bson;
 using MongoDB.Bson.Serialization;
 using MongoDB.Driver;
+using MongoDB.Driver.Core.Configuration;
+using System.Security.Authentication;
 using Newtonsoft.Json.Linq;
 
 namespace AICAD.Services
@@ -23,6 +25,8 @@ namespace AICAD.Services
             {
                 AddinStatusLogger.Log("MongoStepStore", "ctor: connecting to " + databaseName);
                 var settings = MongoClientSettings.FromConnectionString(connectionString);
+                // Force TLS 1.2 to avoid SSPI/SChannel handshake failures on some Windows hosts
+                try { settings.SslSettings = new SslSettings { EnabledSslProtocols = SslProtocols.Tls12 }; } catch { }
                 settings.ServerApi = new ServerApi(ServerApiVersion.V1);
                 settings.ConnectTimeout = TimeSpan.FromSeconds(6);
                 settings.ServerSelectionTimeout = TimeSpan.FromSeconds(6);

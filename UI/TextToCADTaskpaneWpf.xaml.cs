@@ -411,6 +411,24 @@ namespace AICAD.UI
             get => prompt.Text;
             set => prompt.Text = value ?? string.Empty;
         }
+        
+        private string MakeProgressBar(int pct, int width = 20)
+        {
+            try
+            {
+                if (pct < 0) pct = 0;
+                if (pct > 100) pct = 100;
+                int filled = (int)Math.Round(pct / 100.0 * width);
+                if (filled < 0) filled = 0;
+                if (filled > width) filled = width;
+                int empty = width - filled;
+                return new string('■', filled) + new string('□', empty);
+            }
+            catch
+            {
+                return new string('■', width);
+            }
+        }
 
         // Backwards-compatible helpers for older code that referenced GetPromptText/SetPromptText
         public string GetPromptText() => PromptText;
@@ -1468,10 +1486,7 @@ namespace AICAD.UI
                             var pct = (int)Math.Floor((elapsed / _llmAverageSeconds) * 100.0);
                             if (pct < 0) pct = 0;
                             if (pct > 99) pct = 99; // cap at 99% until LLM responds
-                            int filled = (int)Math.Round(pct / 100.0 * 20.0);
-                            if (filled < 0) filled = 0; if (filled > 20) filled = 20;
-                            int empty = 20 - filled;
-                            var bar = new string('■', filled) + new string('□', empty);
+                            var bar = MakeProgressBar(pct, 20);
                             AppendStatusLine($"[Progress] {bar} {pct}%");
                         }
                         catch { }
@@ -1504,7 +1519,7 @@ namespace AICAD.UI
                             }
                             catch { }
                             int pct = 100;
-                            var bar = new string('■', 20);
+                            var bar = MakeProgressBar(pct, 20);
                             AppendStatusLine($"[Progress] {bar} {pct}% Done");
                         }
                     }
@@ -1779,7 +1794,7 @@ namespace AICAD.UI
                     if (_llmProgressStopwatch != null)
                     {
                         try { _llmProgressStopwatch.Stop(); } catch { }
-                        try { AppendStatusLine("[Progress] " + new string('■', 20) + " 100% Done"); } catch { }
+                        try { AppendStatusLine("[Progress] " + MakeProgressBar(100, 20) + " 100% Done"); } catch { }
                         _llmProgressStopwatch = null;
                     }
                 }
@@ -2589,6 +2604,8 @@ namespace AICAD.UI
                 // If the external status window exists, write there as before
                 if (_statusWindow != null && !_statusWindow.IsDisposed)
                 {
+                    Action write = () =>
+                    {
                         var rtb = _statusWindow.StatusConsole;
                         // Colorize certain categories for readability on dark background
                         try
@@ -2642,7 +2659,7 @@ namespace AICAD.UI
                                         rtb.SelectionStart = rtb.TextLength;
                                         rtb.ScrollToCaret();
                                         // already written
-                                        goto SKIP_APPEND;
+                                        return;
                                     }
                                 }
                             }
@@ -2652,7 +2669,14 @@ namespace AICAD.UI
                         rtb.AppendText($"{ts} {line}\n");
                         rtb.SelectionStart = rtb.TextLength;
                         rtb.ScrollToCaret();
-                    SKIP_APPEND: ;
+                    };
+
+                    try
+                    {
+                        if (_statusWindow.InvokeRequired) _statusWindow.Invoke((Action)write);
+                        else write();
+                    }
+                    catch { }
                 }
             }
             catch { }

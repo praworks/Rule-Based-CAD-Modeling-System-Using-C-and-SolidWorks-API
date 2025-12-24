@@ -146,7 +146,13 @@ namespace AICAD.UI
             "— none —",
             "Box 100x50x25 mm",
             "Cylinder Ø40 x 80 mm",
-            "Box 10x10x10 mm"});
+            "Box 10x10x10 mm",
+            "Plate 200x100x5 mm",
+            "Cylinder Ø20 x 10 mm",
+            "Box 50x50x10 mm",
+            "Cylinder Ø100 x 20 mm",
+            "Box 150x75x50 mm",
+            "Cylinder Ø12 x 60 mm"});
             this.shapePreset.Location = new System.Drawing.Point(43, 0);
             this.shapePreset.Margin = new System.Windows.Forms.Padding(2, 2, 2, 2);
             this.shapePreset.Name = "shapePreset";

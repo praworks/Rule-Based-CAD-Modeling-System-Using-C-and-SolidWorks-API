@@ -8,3 +8,27 @@ obj/
 build_obj/
 *.user
 *.suo
+
+# Visual Studio / VSCode
+.vs/
+*.userosscache
+*.userprefs
+*.db
+
+# Generated / intermediate files
+*.g.cs
+*.g.i.cs
+*.baml
+*.sourcelink.json
+
+# Logs
+aicad_log.txt
+*.log
+
+# NuGet / packages
+packages/
+*.nupkg
+
+# OS files
+Thumbs.db
+.DS_Store

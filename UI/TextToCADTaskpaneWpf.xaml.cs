@@ -70,7 +70,8 @@ namespace AICAD.UI
         // LLM progress timer and stopwatch (single-line progress updates)
         private System.Windows.Forms.Timer _llmProgressTimer = null;
         private System.Diagnostics.Stopwatch _llmProgressStopwatch = null;
-        private readonly double _llmAverageSeconds = 32.0; // seconds used for ETA
+        private double _llmAverageSeconds = 32.0; // seconds used for ETA (loaded from settings)
+        private const double _llmEmaAlpha = 0.2; // EMA smoothing factor
         // Force using only good_feedback from a specific MongoDB (when true)
         private readonly bool _forceUseOnlyGoodFeedback = true;
         private readonly string _forcedGoodFeedbackMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
@@ -82,6 +83,15 @@ namespace AICAD.UI
         {
             InitializeComponent();
             _swApp = swApp;
+
+            // Load adaptive LLM average from settings (persisted between runs)
+            try
+            {
+                var saved = Services.SettingsManager.GetDouble("LLM_AvgSeconds", 32.0);
+                _llmAverageSeconds = saved > 0 ? saved : 32.0;
+                AddinStatusLogger.Log("TaskpaneWpf", $"Loaded LLM average seconds={_llmAverageSeconds}");
+            }
+            catch { }
 
             // Make sure TextBoxes are focusable and accept keyboard input when the host is clicked
             try
@@ -1409,16 +1419,33 @@ namespace AICAD.UI
                 }
                 catch { }
                 reply = await GenerateWithFallbackAsync(finalPrompt);
-                // LLM responded; finalize progress line to Done (100%)
+                // LLM responded; finalize progress line to Done (100%) and update EMA
                 try
                 {
                     try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); _llmProgressTimer = null; } catch { }
                     try
                     {
-                        _llmProgressStopwatch?.Stop();
-                        int pct = 100;
-                        var bar = new string('■', 20);
-                        AppendStatusLine($"[Progress] {bar} {pct}% Done");
+                        if (_llmProgressStopwatch != null)
+                        {
+                            _llmProgressStopwatch.Stop();
+                            var observed = _llmProgressStopwatch.Elapsed.TotalSeconds;
+                            // Update EMA: new = alpha*observed + (1-alpha)*old
+                            try
+                            {
+                                var old = _llmAverageSeconds;
+                                var nw = _llmEmaAlpha * observed + (1.0 - _llmEmaAlpha) * old;
+                                if (nw > 0 && !double.IsNaN(nw) && !double.IsInfinity(nw))
+                                {
+                                    _llmAverageSeconds = nw;
+                                    try { Services.SettingsManager.SetDouble("LLM_AvgSeconds", _llmAverageSeconds); } catch { }
+                                    AddinStatusLogger.Log("TaskpaneWpf", $"Updated LLM average: observed={observed:F1}s newAvg={_llmAverageSeconds:F2}s");
+                                }
+                            }
+                            catch { }
+                            int pct = 100;
+                            var bar = new string('■', 20);
+                            AppendStatusLine($"[Progress] {bar} {pct}% Done");
+                        }
                     }
                     catch { }
                     _llmProgressStopwatch = null;

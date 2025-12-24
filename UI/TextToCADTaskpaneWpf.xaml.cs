@@ -18,6 +18,7 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swcommands;
 using AICAD.Services;
+using Services;
 using Newtonsoft.Json.Linq;
 
 namespace AICAD.UI
@@ -308,7 +309,78 @@ namespace AICAD.UI
             SetLastError(null);
                 // Ensure karaoke status starts gray (animated to initial color)
                 try { AnimateKaraokeToColor(Colors.Gray, 0); } catch { }
-                try { InitProgressPanel(); } catch { }
+                    try { InitProgressPanel(); } catch { }
+
+                // Initialize karaoke-style status service and wire UI updates
+                try
+                {
+                    _karaokeService = new KaraokeStyleStatus();
+
+                    _karaokeService.ProgressChanged += (idx, msg, state, pct) =>
+                    {
+                        try
+                        {
+                            // Update the karaoke status text and animate
+                            UpdateKaraokeStatus(msg);
+                            try { AnimateKaraokeToColor(Colors.DodgerBlue, 250); } catch { }
+
+                            // Ensure UI list contains enough entries and update the indexed step
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    if (idx <= 0) return;
+                                    // grow list to include this index
+                                    while (_steps.Count < idx)
+                                    {
+                                        var label = $"Step {_steps.Count + 1}";
+                                        _steps.Add(new StepViewModel { Label = label, State = StepState.Pending, Percent = null, Message = string.Empty });
+                                    }
+
+                                    var vm = _steps[idx - 1];
+                                    vm.Message = msg ?? vm.Message;
+                                    try
+                                    {
+                                        var name = state.ToString();
+                                        if (name.Equals("Running", StringComparison.OrdinalIgnoreCase)) vm.State = StepState.Running;
+                                        else if (name.Equals("Success", StringComparison.OrdinalIgnoreCase)) vm.State = StepState.Success;
+                                        else if (name.Equals("Error", StringComparison.OrdinalIgnoreCase)) vm.State = StepState.Error;
+                                    }
+                                    catch { }
+                                    vm.Percent = pct;
+
+                                    // Update header counter
+                                    try
+                                    {
+                                        var completed = _steps.Count(s => s.State == StepState.Success);
+                                        if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
+                                    }
+                                    catch { }
+
+                                    // Update overall progress bar if percent present
+                                    try { if (pct.HasValue) UpdateGenerationProgress(pct.Value); } catch { }
+                                }
+                                catch { }
+                            }), System.Windows.Threading.DispatcherPriority.Background);
+                        }
+                        catch { }
+                    };
+
+                    // Minimal CAD action handler: log request on UI thread. Replace with real SolidWorks calls when available.
+                    _karaokeService.OnCadActionRequested += (stepIndex, swApp2, swModel2, ct2) =>
+                    {
+                        try
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try { AppendStatusLine($"[Karaoke] CAD action requested for step {stepIndex}"); } catch { }
+                            }));
+                        }
+                        catch { }
+                        return Task.CompletedTask;
+                    };
+                }
+                catch { }
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
             try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
             try { InitNameEasy(); } catch (Exception ex) { AppendDetailedStatus("NameEasy", "init failed", ex); }
@@ -677,38 +749,16 @@ namespace AICAD.UI
 
         private CancellationTokenSource _karaokeCts;
         private CancellationTokenSource _progressCts;
-        private CancellationTokenSource _presetSequenceCts;
         private TextBlock _taskCountText;
         private readonly Random _rand = new Random();
         private readonly System.Windows.Media.Color[] _karaokeColors = new[] { Colors.Gray, Colors.DarkOrange, Colors.DodgerBlue, Colors.DarkGreen };
-        // Line-based karaoke controls: highlight preset TextBlocks top-to-bottom
+
+        // Karaoke status service instance (produces step progress events)
+        private KaraokeStyleStatus _karaokeService;
+        // Line-based karaoke controls
         private System.Collections.Generic.List<TextBlock> _karaokeLineBlocks;
         private int _karaokeLineIndex;
         private bool _karaokeStopOnError;
-
-        // Progressive status UI controls
-        private System.Collections.Generic.List<Grid> _progressItems = new System.Collections.Generic.List<Grid>();
-        private int _activeProgressIndex = -1;
-        private readonly object _progressLock = new object();
-        // Simplified preset status lines in simple English
-        private readonly string[] _presetStatusLines = new[]
-        {
-            "Got your request",
-            "Preparing inputs",
-            "Connecting to AI",
-            "Sending request to AI",
-            "Waiting for AI response",
-            "AI responded",
-            "Reading AI response",
-            "Checking parameters",
-            "Building sketch",
-            "Adding features",
-            "Applying constraints",
-            "Running checks",
-            "Saving model",
-            "Updating UI",
-            "Complete"
-        };
 
         // Animate progress toward a target percent smoothly.
         private void UpdateGenerationProgressAnimated(int target)
@@ -1528,8 +1578,10 @@ namespace AICAD.UI
                     }
                     catch { }
 
-                    // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
-                    exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
+                        // Preset sequence removed; UI will update from real execution progress
+
+                        // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
+                        exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
                     {
                         try
                         {
@@ -1559,6 +1611,21 @@ namespace AICAD.UI
                                     }
                                 }
                             }
+
+                            // Update header counter based on dynamic steps
+                            try
+                            {
+                                Dispatcher.BeginInvoke(new Action(() =>
+                                {
+                                    try
+                                    {
+                                        var completed = _steps.Count(s => s.State == StepState.Success);
+                                        if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
+                                    }
+                                    catch { }
+                                }));
+                            }
+                            catch { }
                         }
                         catch { }
                     }));
@@ -2469,38 +2536,9 @@ namespace AICAD.UI
         }
 
         // --- Progressive status UI helpers ---
-        private Grid CreateProgressItem(string text)
-        {
-            var grid = new Grid { Opacity = 0.0, Margin = new Thickness(2, 2, 2, 2) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(28) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-
-            var icon = new TextBlock
-            {
-                Text = "○",
-                FontSize = 16,
-                FontFamily = new FontFamily("Segoe UI Symbol"),
-                VerticalAlignment = VerticalAlignment.Center,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                Width = 20,
-                RenderTransformOrigin = new Point(0.5, 0.5)
-            };
-            try { icon.Foreground = new SolidColorBrush(Colors.DimGray); } catch { }
-            icon.RenderTransform = new RotateTransform(0);
-            Grid.SetColumn(icon, 0);
-
-            var tb = new TextBlock
-            {
-                Text = text ?? string.Empty,
-                Foreground = new SolidColorBrush(Colors.DimGray),
-                TextWrapping = TextWrapping.Wrap
-            };
-            Grid.SetColumn(tb, 1);
-
-            grid.Children.Add(icon);
-            grid.Children.Add(tb);
-            return grid;
-        }
+        // Preset-based visual progress removed. UI now uses the dynamic `_steps` collection
+        // driven by `KaraokeStyleStatus.ProgressChanged` events. Header counter updated
+        // elsewhere to reflect completed steps.
 
         private void InitProgressPanel()
         {
@@ -2510,19 +2548,10 @@ namespace AICAD.UI
                 {
                     try
                     {
-                        _progressItems.Clear();
                         if (ProgressStatusPanel == null) return;
                         ProgressStatusPanel.Children.Clear();
-                        foreach (var line in _presetStatusLines)
-                        {
-                            var item = CreateProgressItem(line);
-                            _progressItems.Add(item);
-                            ProgressStatusPanel.Children.Add(item);
-                            var da = new DoubleAnimation(1, new Duration(TimeSpan.FromMilliseconds(220)));
-                            item.BeginAnimation(UIElement.OpacityProperty, da);
-                        }
-                        if (KaraokeStatus != null) ProgressStatusPanel.Children.Add(KaraokeStatus);
-                        // Insert header with Task label and completed/total counter
+
+                        // Header with task counter
                         try
                         {
                             var headerGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
@@ -2530,167 +2559,21 @@ namespace AICAD.UI
                             headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
                             var heading = new TextBlock { Text = "Task", FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.DarkSlateGray) };
                             Grid.SetColumn(heading, 0);
-                            _taskCountText = new TextBlock { Text = $"0/{_presetStatusLines.Length}", HorizontalAlignment = HorizontalAlignment.Right, Foreground = new SolidColorBrush(Colors.DimGray) };
+                            _taskCountText = new TextBlock { Text = $"0/{_steps.Count}", HorizontalAlignment = HorizontalAlignment.Right, Foreground = new SolidColorBrush(Colors.DimGray) };
                             Grid.SetColumn(_taskCountText, 1);
                             headerGrid.Children.Add(heading);
                             headerGrid.Children.Add(_taskCountText);
-                            // Insert header at the top of the panel
-                            ProgressStatusPanel.Children.Insert(0, headerGrid);
+                            ProgressStatusPanel.Children.Add(headerGrid);
                         }
                         catch { }
-                        // Start slow preset sequence (one-by-one color change) at 1 minute interval (single pass)
-                        try { StartPresetSlowSequence(60000); } catch { }
+
+                        // Ensure the dynamic steps ItemsControl is present
+                        try { ProgressStatusPanel.Children.Add(StepsItemsControl); } catch { }
+                        // KaraokeStatus text block follows the step list
+                        try { if (KaraokeStatus != null) ProgressStatusPanel.Children.Add(KaraokeStatus); } catch { }
                     }
                     catch { }
                 }), System.Windows.Threading.DispatcherPriority.Background);
-            }
-            catch { }
-        }
-
-        private void StartPresetSlowSequence(int intervalMs)
-        {
-            try
-            {
-                try { _presetSequenceCts?.Cancel(); } catch { }
-                _presetSequenceCts = new CancellationTokenSource();
-                var token = _presetSequenceCts.Token;
-                // Run on background thread and marshal UI updates
-                #pragma warning disable CS4014
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        // single pass top-to-bottom: fill each circle in blue and update count
-                        for (int i = 0; i < _progressItems.Count; i++)
-                        {
-                            if (token.IsCancellationRequested) break;
-                            var idx = i;
-                            Dispatcher.BeginInvoke(new Action(() =>
-                            {
-                                try
-                                {
-                                    int filled = idx + 1;
-                                    for (int j = 0; j < _progressItems.Count; j++)
-                                    {
-                                        var item = _progressItems[j];
-                                        var texts = item.Children.OfType<TextBlock>().ToArray();
-                                        if (texts.Length < 2) continue;
-                                        var icon = texts[0];
-                                        var tb = texts[1];
-                                        if (j <= idx)
-                                        {
-                                            // filled state (blue circle)
-                                            icon.Text = "\u25CF"; // filled circle
-                                            icon.Foreground = new SolidColorBrush(Colors.DodgerBlue);
-                                            tb.Foreground = new SolidColorBrush(Colors.DodgerBlue);
-                                        }
-                                        else
-                                        {
-                                            // unfilled
-                                            icon.Text = "○";
-                                            icon.Foreground = new SolidColorBrush(Colors.DimGray);
-                                            tb.Foreground = new SolidColorBrush(Colors.DimGray);
-                                        }
-                                    }
-                                    // update count display
-                                    try { if (_taskCountText != null) _taskCountText.Text = $"{filled}/{_progressItems.Count}"; } catch { }
-                                }
-                                catch { }
-                            }));
-
-                            try { await Task.Delay(Math.Max(0, intervalMs), token).ConfigureAwait(false); } catch { break; }
-                        }
-                    }
-                    catch { }
-                }, token);
-                #pragma warning restore CS4014
-            }
-            catch { }
-        }
-
-        private void StopPresetSlowSequence()
-        {
-            try
-            {
-                if (_presetSequenceCts != null && !_presetSequenceCts.IsCancellationRequested)
-                {
-                    try { _presetSequenceCts.Cancel(); } catch { }
-                    try { _presetSequenceCts.Dispose(); } catch { }
-                }
-                _presetSequenceCts = null;
-            }
-            catch { }
-        }
-
-        private void StartSpinnerFor(Grid item)
-        {
-            try
-            {
-                if (item == null) return;
-                var texts = item.Children.OfType<TextBlock>().ToArray();
-                if (texts.Length == 0) return;
-                var icon = texts[0];
-                var tb = texts.Length > 1 ? texts[1] : texts[0];
-                icon.Text = "⟳";
-                var rt = icon.RenderTransform as RotateTransform;
-                if (rt == null)
-                {
-                    rt = new RotateTransform(0);
-                    icon.RenderTransform = rt;
-                    icon.RenderTransformOrigin = new Point(0.5, 0.5);
-                }
-                var da = new DoubleAnimation(0, 360, new Duration(TimeSpan.FromMilliseconds(900))) { RepeatBehavior = RepeatBehavior.Forever };
-                rt.BeginAnimation(RotateTransform.AngleProperty, da);
-                try { tb.Foreground = new SolidColorBrush(Colors.DarkOrange); } catch { }
-            }
-            catch { }
-        }
-
-        private void StopSpinner(Grid item)
-        {
-            try
-            {
-                if (item == null) return;
-                var texts = item.Children.OfType<TextBlock>().ToArray();
-                if (texts.Length == 0) return;
-                var icon = texts[0];
-                var rt = icon.RenderTransform as RotateTransform;
-                if (rt != null) rt.BeginAnimation(RotateTransform.AngleProperty, null);
-            }
-            catch { }
-        }
-
-        private void MarkProgressComplete(Grid item)
-        {
-            try
-            {
-                if (item == null) return;
-                StopSpinner(item);
-                var texts = item.Children.OfType<TextBlock>().ToArray();
-                if (texts.Length == 0) return;
-                var icon = texts[0];
-                var tb = texts.Length > 1 ? texts[1] : texts[0];
-                try { icon.FontFamily = new FontFamily("Segoe UI Symbol"); } catch { }
-                icon.Text = "\u25CF"; // filled circle when step completes
-                try { icon.Foreground = new SolidColorBrush(Colors.DarkGreen); } catch { }
-                try { tb.Foreground = new SolidColorBrush(Colors.DarkGreen); } catch { }
-            }
-            catch { }
-        }
-
-        private void MarkProgressError(Grid item)
-        {
-            try
-            {
-                if (item == null) return;
-                StopSpinner(item);
-                var texts = item.Children.OfType<TextBlock>().ToArray();
-                if (texts.Length == 0) return;
-                var icon = texts[0];
-                var tb = texts.Length > 1 ? texts[1] : texts[0];
-                icon.Text = "⚠";
-                try { icon.Foreground = new SolidColorBrush(Colors.Firebrick); } catch { }
-                try { tb.Foreground = new SolidColorBrush(Colors.Firebrick); } catch { }
             }
             catch { }
         }
@@ -2774,100 +2657,23 @@ namespace AICAD.UI
             }
             catch { }
 
-            // Also render into the taskpane progressive status panel
+            // Also render into the taskpane progressive status panel (karaoke-driven)
             try
             {
                 Dispatcher.BeginInvoke(new Action(() =>
                 {
                     try
                     {
-                        lock (_progressLock)
+                        if (string.IsNullOrWhiteSpace(line)) return;
+                        // Mirror simple karaoke status text to the taskpane
+                        UpdateKaraokeStatus(line);
+                        // Update header counter if present
+                        try
                         {
-                            // mark previous active complete unless it already shows an error
-                            if (_activeProgressIndex >= 0 && _activeProgressIndex < _progressItems.Count)
-                            {
-                                var prev = _progressItems[_activeProgressIndex];
-                                var texts = prev.Children.OfType<TextBlock>().ToArray();
-                                var prevText = texts.Length > 1 ? texts[1].Text : texts[0].Text;
-                                if (prevText.IndexOf("Error", StringComparison.OrdinalIgnoreCase) < 0)
-                                {
-                                    MarkProgressComplete(prev);
-                                }
-                            }
-
-                            // Only update the visual progress panel for known preset lines.
-                            // Ignore live logger output (e.g. lines starting with '[' or unrelated service logs).
-                            if (string.IsNullOrWhiteSpace(line)) return;
-
-                            // Ensure preset items exist in the panel
-                            if (_progressItems.Count == 0 && ProgressStatusPanel != null)
-                            {
-                                ProgressStatusPanel.Children.Clear();
-                                foreach (var preset in _presetStatusLines)
-                                {
-                                    var pitem = CreateProgressItem(preset);
-                                    _progressItems.Add(pitem);
-                                    ProgressStatusPanel.Children.Add(pitem);
-                                }
-                                if (KaraokeStatus != null) ProgressStatusPanel.Children.Add(KaraokeStatus);
-                            }
-
-                            // Try to find the incoming line among the preset lines (case-insensitive exact match)
-                            int matched = -1;
-                            for (int i = 0; i < _presetStatusLines.Length; i++)
-                            {
-                                if (string.Equals(_presetStatusLines[i], line, StringComparison.OrdinalIgnoreCase))
-                                {
-                                    matched = i;
-                                    break;
-                                }
-                            }
-
-                            if (matched < 0)
-                            {
-                                // Not a preset progress line: ignore for the taskpane panel (do not add new items)
-                                return;
-                            }
-
-                            // mark the matched item as the active step (or complete/error depending on wording)
-                            var matchedItem = (matched >= 0 && matched < _progressItems.Count) ? _progressItems[matched] : null;
-                            if (matchedItem == null) return;
-
-                            var lower = line.ToLowerInvariant();
-                            bool isError = lower.Contains("error") || lower.Contains("failed");
-                            bool isComplete = lower.Contains("complete") || lower.Contains("completed") || lower.Contains("success") || lower.Contains("saved") || lower.Contains("ai responded");
-
-                            // mark previous active complete unless it already shows an error
-                            if (_activeProgressIndex >= 0 && _activeProgressIndex < _progressItems.Count && _activeProgressIndex != matched)
-                            {
-                                var prev = _progressItems[_activeProgressIndex];
-                                var textsPrev = prev.Children.OfType<TextBlock>().ToArray();
-                                var prevText = textsPrev.Length > 1 ? textsPrev[1].Text : textsPrev[0].Text;
-                                if (prevText.IndexOf("Error", StringComparison.OrdinalIgnoreCase) < 0)
-                                {
-                                    MarkProgressComplete(prev);
-                                }
-                            }
-
-                            // Ensure visible
-                            try { matchedItem.Opacity = 1.0; } catch { }
-
-                            if (isError)
-                            {
-                                MarkProgressError(matchedItem);
-                                _activeProgressIndex = -1;
-                            }
-                            else if (isComplete)
-                            {
-                                MarkProgressComplete(matchedItem);
-                                _activeProgressIndex = -1;
-                            }
-                            else
-                            {
-                                _activeProgressIndex = matched;
-                                StartSpinnerFor(matchedItem);
-                            }
+                            var completed = _steps.Count(s => s.State == StepState.Success);
+                            if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
                         }
+                        catch { }
                     }
                     catch { }
                 }), System.Windows.Threading.DispatcherPriority.Background);

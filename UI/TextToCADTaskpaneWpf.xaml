@@ -126,10 +126,9 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <TextBlock Grid.Row="0" Text="Generation Status" FontSize="13" FontWeight="SemiBold" Foreground="#005A9E" Margin="0,0,0,6"/>
+             <!-- <TextBlock Grid.Row="0" Text="Generation Status" FontSize="13" FontWeight="SemiBold" Foreground="#005A9E" Margin="0,0,0,6"/>  -->
 
-            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
-                    <Border Background="#FFFFFF" CornerRadius="6" Padding="12" Margin="0,0,0,6">
+                <Border Grid.Row="1" Background="Transparent" CornerRadius="6" Padding="12" Margin="0,0,0,6">
                     <StackPanel x:Name="ProgressStatusPanel">
                         <!-- Dynamic step list (bound at runtime) -->
                         <ItemsControl x:Name="StepsItemsControl" Margin="0,0,0,8">
@@ -172,7 +171,6 @@
                                    Foreground="#333333"/>
                     </StackPanel>
                 </Border>
-            </ScrollViewer>
 
             <Grid Grid.Row="2" Margin="0,0,0,8">
                 <Grid.ColumnDefinitions>

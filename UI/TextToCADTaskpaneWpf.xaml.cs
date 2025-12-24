@@ -235,7 +235,7 @@ namespace AICAD.UI
                         {
                             Dispatcher.Invoke(() =>
                             {
-                                try { build.Content = "Build"; build.ClearValue(Button.BackgroundProperty); build.IsEnabled = true; } catch { }
+                                try { build.Content = "Build"; build.Background = new SolidColorBrush(Colors.DodgerBlue); build.Foreground = new SolidColorBrush(Colors.White); build.IsEnabled = true; } catch { }
                             });
                         }
                         catch { }
@@ -1531,6 +1531,18 @@ namespace AICAD.UI
                     StartProgressPhase("success");
                     SetSwStatus("OK", Colors.DarkGreen);
                     try { SetModified(false); } catch { }
+                    // Reset prompt and UI so user can enter a new prompt immediately
+                    try
+                    {
+                        Dispatcher.Invoke(() =>
+                        {
+                            try { prompt.Text = string.Empty; } catch { }
+                            try { FocusPrompt(); } catch { }
+                            try { build.Content = "Build"; build.Background = new SolidColorBrush(Colors.DodgerBlue); build.Foreground = new SolidColorBrush(Colors.White); build.IsEnabled = true; } catch { }
+                        });
+                        try { _isBuilding = false; } catch { }
+                    }
+                    catch { }
                 }
                 else
                 {
@@ -1716,7 +1728,7 @@ namespace AICAD.UI
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        try { build.Content = "Build"; build.ClearValue(Button.BackgroundProperty); } catch { }
+                        try { build.Content = "Build"; build.Background = new SolidColorBrush(Colors.DodgerBlue); build.Foreground = new SolidColorBrush(Colors.White); } catch { }
                         try { build.IsEnabled = true; } catch { }
                     });
                 }
@@ -2392,20 +2404,22 @@ namespace AICAD.UI
 
             var icon = new TextBlock
             {
-                Text = string.Empty,
-                FontSize = 14,
+                Text = "○",
+                FontSize = 16,
+                FontFamily = new FontFamily("Segoe UI Symbol"),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Center,
                 Width = 20,
                 RenderTransformOrigin = new Point(0.5, 0.5)
             };
+            try { icon.Foreground = new SolidColorBrush(Colors.DimGray); } catch { }
             icon.RenderTransform = new RotateTransform(0);
             Grid.SetColumn(icon, 0);
 
             var tb = new TextBlock
             {
                 Text = text ?? string.Empty,
-                Foreground = new SolidColorBrush(Colors.Gray),
+                Foreground = new SolidColorBrush(Colors.DimGray),
                 TextWrapping = TextWrapping.Wrap
             };
             Grid.SetColumn(tb, 1);
@@ -2490,7 +2504,8 @@ namespace AICAD.UI
                 if (texts.Length == 0) return;
                 var icon = texts[0];
                 var tb = texts.Length > 1 ? texts[1] : texts[0];
-                icon.Text = "✔";
+                try { icon.FontFamily = new FontFamily("Segoe UI Symbol"); } catch { }
+                icon.Text = "\u25CF"; // filled circle when step completes
                 try { icon.Foreground = new SolidColorBrush(Colors.DarkGreen); } catch { }
                 try { tb.Foreground = new SolidColorBrush(Colors.DarkGreen); } catch { }
             }

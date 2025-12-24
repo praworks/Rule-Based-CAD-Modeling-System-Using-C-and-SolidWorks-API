@@ -562,45 +562,8 @@ namespace AICAD.UI
                 _lastModel = client?.Model;
                 SetRealTimeStatus("Applying few-shot examples…", Color.DarkOrange);
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                // Start a UI timer to render a single-line animated progress bar while waiting for LLM
-                System.Windows.Forms.Timer progressTimer = null;
-                try
-                {
-                    progressTimer = new System.Windows.Forms.Timer();
-                    progressTimer.Interval = 500; // 500ms ticks
-                    progressTimer.Tick += (s, e) =>
-                    {
-                        try
-                        {
-                            var elapsed = llmSw.Elapsed.TotalSeconds;
-                            var pct = (elapsed / 32.0) * 100.0;
-                            if (pct >= 99.0) pct = 99.0; // cap until LLM responds
-                            if (pct < 0) pct = 0;
-                            var pctInt = (int)Math.Round(pct);
-                            // 20 blocks total -> each block = 5%
-                            var filled = Math.Min(20, Math.Max(0, (int)Math.Round(pct / 5.0)));
-                            var bar = new string('■', filled) + new string('□', 20 - filled);
-                            AppendStatusLine($"[Progress] [{bar}] {pctInt}%");
-                        }
-                        catch { }
-                    };
-                    progressTimer.Start();
-                    reply = await client.GenerateAsync(sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:");
-                }
-                finally
-                {
-                    try { llmSw.Stop(); } catch { }
-                    try
-                    {
-                        if (progressTimer != null)
-                        {
-                            progressTimer.Stop();
-                            AppendStatusLine("[Progress] [■■■■■■■■■■■■■■■■■■] Done");
-                            progressTimer.Dispose();
-                        }
-                    }
-                    catch { }
-                }
+                reply = await client.GenerateAsync(sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:");
+                llmSw.Stop();
                 llmMs = llmSw.Elapsed;
                 _lastReply = reply;
                 Log(reply);
@@ -1251,50 +1214,8 @@ namespace AICAD.UI
                         }
                     }
                     catch { }
-                        _statusWindow.StatusConsole.SelectionColor = color;
-                        // If this is a progress line, attempt to overwrite the previous progress line instead of appending
-                        var trimmed = (line ?? string.Empty).TrimStart();
-                        if (trimmed.StartsWith("[Progress]", StringComparison.OrdinalIgnoreCase))
-                        {
-                            try
-                            {
-                                if (_statusWindow.StatusConsole.TextLength == 0)
-                                {
-                                    _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
-                                }
-                                else
-                                {
-                                    int lastChar = Math.Max(0, _statusWindow.StatusConsole.TextLength - 1);
-                                    int lastLine = _statusWindow.StatusConsole.GetLineFromCharIndex(lastChar);
-                                    int firstCharIndex = _statusWindow.StatusConsole.GetFirstCharIndexFromLine(lastLine);
-                                    if (firstCharIndex >= 0)
-                                    {
-                                        _statusWindow.StatusConsole.Select(firstCharIndex, _statusWindow.StatusConsole.TextLength - firstCharIndex);
-                                        var existing = _statusWindow.StatusConsole.SelectedText ?? string.Empty;
-                                        if (existing.IndexOf("[Progress]", StringComparison.OrdinalIgnoreCase) >= 0)
-                                        {
-                                            // Overwrite the last progress line
-                                            _statusWindow.StatusConsole.SelectionColor = color;
-                                            _statusWindow.StatusConsole.SelectedText = $"{ts} {line}\n";
-                                            _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                                            _statusWindow.StatusConsole.ScrollToCaret();
-                                            try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
-                                            return;
-                                        }
-                                    }
-                                    // Fallback: append if no progress line found
-                                    _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
-                                }
-                            }
-                            catch
-                            {
-                                _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
-                            }
-                        }
-                        else
-                        {
-                            _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
-                        }
+                    _statusWindow.StatusConsole.SelectionColor = color;
+                    _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
                     _statusWindow.StatusConsole.ScrollToCaret();
                     try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }

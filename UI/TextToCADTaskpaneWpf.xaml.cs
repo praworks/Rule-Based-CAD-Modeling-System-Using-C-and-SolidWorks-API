@@ -61,13 +61,16 @@ namespace AICAD.UI
         private string _lastRunId;
         private bool _isBuilding = false;
         private System.Threading.CancellationTokenSource _buildCts;
-        private System.Windows.Forms.Timer _llmProgressTimer;
         private bool _lastRunCreatedModel = false;
         private string _lastCreatedModelTitle = null;
         private IStepStore _stepStore;
         private SeriesManager _seriesManager;
         private string _selectedSeries;
         private int _nextSequence;
+        // LLM progress timer and stopwatch (single-line progress updates)
+        private System.Windows.Forms.Timer _llmProgressTimer = null;
+        private System.Diagnostics.Stopwatch _llmProgressStopwatch = null;
+        private readonly double _llmAverageSeconds = 32.0; // seconds used for ETA
         // Force using only good_feedback from a specific MongoDB (when true)
         private readonly bool _forceUseOnlyGoodFeedback = true;
         private readonly string _forcedGoodFeedbackMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
@@ -1373,56 +1376,57 @@ namespace AICAD.UI
                 }
                 catch { }
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                // Start a WinForms timer to update a single-line LLM progress indicator
-                try
-                {
-                    try { _llmProgressTimer?.Stop(); _llmProgressTimer = null; } catch { }
-                    _llmProgressTimer = new System.Windows.Forms.Timer();
-                    _llmProgressTimer.Interval = 500;
-                    _llmProgressTimer.Tick += (s, ev) =>
-                    {
-                        try
-                        {
-                            var elapsed = llmSw.Elapsed.TotalSeconds;
-                            var pct = (int)Math.Floor((elapsed / 32.0) * 100.0);
-                            if (pct < 0) pct = 0;
-                            if (pct > 99) pct = 99; // cap until response
-                            int blocks = (int)Math.Round(pct / 10.0);
-                            if (blocks < 0) blocks = 0; if (blocks > 10) blocks = 10;
-                            var bar = new System.Text.StringBuilder();
-                            bar.Append('[');
-                            for (int i = 0; i < blocks; i++) bar.Append('■');
-                            for (int i = blocks; i < 10; i++) bar.Append('□');
-                            bar.Append(']');
-                            var msg = $"[Progress] {bar} {pct}%";
-                            try { AppendStatusLine(msg); } catch { }
-                        }
-                        catch { }
-                    };
-                    try { _llmProgressTimer.Start(); } catch { }
-                }
-                catch { }
                 // If forcing local-only, do not include few-shot examples in the prompt.
                 var finalPrompt = sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:";
                 if (FORCE_LOCAL_ONLY)
                 {
                     finalPrompt = sysPrompt + "\nNow generate plan for: " + text + "\nJSON:";
                 }
+                // Start LLM progress estimation timer (500ms interval) so status console shows an animated single-line progress
+                try
+                {
+                    try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); } catch { }
+                    _llmProgressStopwatch = System.Diagnostics.Stopwatch.StartNew();
+                    _llmProgressTimer = new System.Windows.Forms.Timer();
+                    _llmProgressTimer.Interval = 500;
+                    _llmProgressTimer.Tick += (s, ev) =>
+                    {
+                        try
+                        {
+                            var elapsed = _llmProgressStopwatch?.Elapsed.TotalSeconds ?? 0.0;
+                            var pct = (int)Math.Floor((elapsed / _llmAverageSeconds) * 100.0);
+                            if (pct < 0) pct = 0;
+                            if (pct > 99) pct = 99; // cap at 99% until LLM responds
+                            int filled = (int)Math.Round(pct / 100.0 * 20.0);
+                            if (filled < 0) filled = 0; if (filled > 20) filled = 20;
+                            int empty = 20 - filled;
+                            var bar = new string('■', filled) + new string('□', empty);
+                            AppendStatusLine($"[Progress] {bar} {pct}%");
+                        }
+                        catch { }
+                    };
+                    try { _llmProgressTimer.Start(); } catch { }
+                }
+                catch { }
                 reply = await GenerateWithFallbackAsync(finalPrompt);
+                // LLM responded; finalize progress line to Done (100%)
+                try
+                {
+                    try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); _llmProgressTimer = null; } catch { }
+                    try
+                    {
+                        _llmProgressStopwatch?.Stop();
+                        int pct = 100;
+                        var bar = new string('■', 20);
+                        AppendStatusLine($"[Progress] {bar} {pct}% Done");
+                    }
+                    catch { }
+                    _llmProgressStopwatch = null;
+                }
+                catch { }
                 // Respect user Stop requests (cancellation) after LLM returns
                 if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
                 llmSw.Stop();
-                try
-                {
-                    if (_llmProgressTimer != null)
-                    {
-                        try { _llmProgressTimer.Stop(); } catch { }
-                        try { AppendStatusLine("[Progress] [■■■■■■■■■■] Done"); } catch { }
-                        try { _llmProgressTimer.Dispose(); } catch { }
-                        _llmProgressTimer = null;
-                    }
-                }
-                catch { }
                 var client = _client ?? GetClient();
                 // LLM returned — advance progress realistically
                 StartProgressPhase("awaiting_response");
@@ -1584,15 +1588,20 @@ namespace AICAD.UI
             }
             finally
             {
-                // Ensure LLM progress timer is stopped and finalize progress line
+                // Ensure LLM progress timer is stopped and mark progress Done/cleared
                 try
                 {
                     if (_llmProgressTimer != null)
                     {
                         try { _llmProgressTimer.Stop(); } catch { }
-                        try { AppendStatusLine("[Progress] [■■■■■■■■■■] Done"); } catch { }
                         try { _llmProgressTimer.Dispose(); } catch { }
                         _llmProgressTimer = null;
+                    }
+                    if (_llmProgressStopwatch != null)
+                    {
+                        try { _llmProgressStopwatch.Stop(); } catch { }
+                        try { AppendStatusLine("[Progress] " + new string('■', 20) + " 100% Done"); } catch { }
+                        _llmProgressStopwatch = null;
                     }
                 }
                 catch { }
@@ -2489,75 +2498,70 @@ namespace AICAD.UI
                 // If the external status window exists, write there as before
                 if (_statusWindow != null && !_statusWindow.IsDisposed)
                 {
-                    _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                        // Single-line progress overwrite: if incoming line starts with [Progress] and the last console line contains [Progress], replace it
+                        var rtb = _statusWindow.StatusConsole;
+                        // Colorize certain categories for readability on dark background
                         try
                         {
+                            var color = System.Drawing.Color.Gainsboro;
                             var l = (line ?? string.Empty);
-                            if (l.StartsWith("[Progress]", StringComparison.OrdinalIgnoreCase))
+                            if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
                             {
-                                try
+                                color = System.Drawing.Color.OrangeRed; // high-contrast red
+                            }
+                            else if (l.StartsWith("[FewShot", StringComparison.OrdinalIgnoreCase) || l.IndexOf("FewShot", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                color = System.Drawing.Color.DodgerBlue; // bright blue
+                            }
+                            else if (l.StartsWith("[Status]", StringComparison.OrdinalIgnoreCase))
+                            {
+                                color = System.Drawing.Color.Gold; // visible gold/orange
+                            }
+                            else if (l.StartsWith("[Run:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                color = System.Drawing.Color.Cyan; // run headers in cyan
+                            }
+                            else if (l.StartsWith("[LLM]", StringComparison.OrdinalIgnoreCase))
+                            {
+                                if (l.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.LimeGreen;
+                                else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.OrangeRed;
+                                else color = System.Drawing.Color.LightSkyBlue;
+                            }
+                            else if (l.StartsWith("[Progress]", StringComparison.OrdinalIgnoreCase))
+                            {
+                                color = System.Drawing.Color.LightGreen;
+                            }
+                            rtb.SelectionColor = color;
+                        }
+                        catch { }
+
+                        // If this is a progress line and the last line is also a progress line, overwrite it inline
+                        try
+                        {
+                            if ((line ?? string.Empty).StartsWith("[Progress]", StringComparison.OrdinalIgnoreCase) && rtb.Lines.Length > 0)
+                            {
+                                var last = rtb.Lines[rtb.Lines.Length - 1] ?? string.Empty;
+                                if (last.IndexOf("[Progress]", StringComparison.OrdinalIgnoreCase) >= 0)
                                 {
-                                    var rtb = _statusWindow.StatusConsole;
-                                    var lines = rtb.Lines;
-                                    if (lines != null && lines.Length > 0)
+                                    int firstChar = rtb.GetFirstCharIndexFromLine(rtb.Lines.Length - 1);
+                                    if (firstChar >= 0)
                                     {
-                                        var last = lines[lines.Length - 1] ?? string.Empty;
-                                        if (last.IndexOf("[Progress]", StringComparison.OrdinalIgnoreCase) >= 0)
-                                        {
-                                            int start = rtb.GetFirstCharIndexFromLine(lines.Length - 1);
-                                            if (start >= 0)
-                                            {
-                                                rtb.SelectionStart = start;
-                                                // Replace the last line (selection length equals remaining text length starting at line)
-                                                rtb.SelectionLength = rtb.TextLength - start;
-                                                rtb.SelectedText = DateTime.Now.ToString("HH:mm:ss") + " " + line + "\n";
-                                                rtb.SelectionStart = rtb.TextLength;
-                                                rtb.ScrollToCaret();
-                                                // We already updated the console; skip normal append below
-                                                goto SkipAppend;
-                                            }
-                                        }
+                                        rtb.SelectionStart = firstChar;
+                                        rtb.SelectionLength = rtb.TextLength - firstChar;
+                                        rtb.SelectedText = $"{ts} {line}\n";
+                                        rtb.SelectionStart = rtb.TextLength;
+                                        rtb.ScrollToCaret();
+                                        // already written
+                                        goto SKIP_APPEND;
                                     }
                                 }
-                                catch { }
                             }
                         }
                         catch { }
-                        // Colorize certain categories for readability on dark background
-                        try
-                    {
-                        var color = System.Drawing.Color.Gainsboro;
-                            var l = (line ?? string.Empty);
-                        if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            color = System.Drawing.Color.OrangeRed; // high-contrast red
-                        }
-                        else if (l.StartsWith("[FewShot", StringComparison.OrdinalIgnoreCase) || l.IndexOf("FewShot", StringComparison.OrdinalIgnoreCase) >= 0)
-                        {
-                            color = System.Drawing.Color.DodgerBlue; // bright blue
-                        }
-                        else if (l.StartsWith("[Status]", StringComparison.OrdinalIgnoreCase))
-                        {
-                            color = System.Drawing.Color.Gold; // visible gold/orange
-                        }
-                        else if (l.StartsWith("[Run:", StringComparison.OrdinalIgnoreCase))
-                        {
-                            color = System.Drawing.Color.Cyan; // run headers in cyan
-                        }
-                        else if (l.StartsWith("[LLM]", StringComparison.OrdinalIgnoreCase))
-                        {
-                            if (l.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.LimeGreen;
-                            else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.OrangeRed;
-                            else color = System.Drawing.Color.LightSkyBlue;
-                        }
-                        _statusWindow.StatusConsole.SelectionColor = color;
-                    }
-                    catch { }
-                    _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
-                SkipAppend:;
-                    _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                    _statusWindow.StatusConsole.ScrollToCaret();
+
+                        rtb.AppendText($"{ts} {line}\n");
+                        rtb.SelectionStart = rtb.TextLength;
+                        rtb.ScrollToCaret();
+                    SKIP_APPEND: ;
                 }
             }
             catch { }

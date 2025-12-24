@@ -1,7 +1,12 @@
 {
   "Version": 1,
   "WorkspaceRootPath": "D:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\",
-  "Documents": [],
+  "Documents": [
+    {
+      "AbsoluteMoniker": "D:0:0:{4ED36076-EBCF-42EF-90D8-21BEAF2A523D}|AI-CAD-December.csproj|d:\\solidworks project\\rule-based-cad-modeling-system-using-c-and-solidworks-api\\ui\\texttocadtaskpanewpf.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}",
+      "RelativeMoniker": "D:0:0:{4ED36076-EBCF-42EF-90D8-21BEAF2A523D}|AI-CAD-December.csproj|solutionrelative:ui\\texttocadtaskpanewpf.xaml||{F11ACC28-31D1-4C80-A34B-F4E09D3D753C}"
+    }
+  ],
   "DocumentGroupContainers": [
     {
       "Orientation": 0,
@@ -9,11 +14,23 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": -1,
+          "SelectedChildIndex": 1,
           "Children": [
             {
               "$type": "Bookmark",
               "Name": "ST:0:0:{55f480fa-fbef-4386-8c1c-ea8d10c9f542}"
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 0,
+              "Title": "TextToCADTaskpaneWpf.xaml",
+              "DocumentMoniker": "D:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\UI\\TextToCADTaskpaneWpf.xaml",
+              "RelativeDocumentMoniker": "UI\\TextToCADTaskpaneWpf.xaml",
+              "ToolTip": "D:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\UI\\TextToCADTaskpaneWpf.xaml",
+              "RelativeToolTip": "UI\\TextToCADTaskpaneWpf.xaml",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.003549|",
+              "WhenOpened": "2025-12-24T11:15:13.468Z",
+              "EditorCaption": ""
             }
           ]
         }

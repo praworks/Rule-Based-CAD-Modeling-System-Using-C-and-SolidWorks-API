@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Collections.ObjectModel;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
@@ -23,6 +24,7 @@ namespace AICAD.UI
 {
     public partial class TextToCADTaskpaneWpf : UserControl
     {
+        private ObservableCollection<StepViewModel> _steps = new ObservableCollection<StepViewModel>();
         private readonly ISldWorks _swApp;
         public class PromptChangedEventArgs : EventArgs
         {
@@ -83,6 +85,13 @@ namespace AICAD.UI
         {
             InitializeComponent();
             _swApp = swApp;
+
+            // Bind steps collection to the UI ItemsControl
+            try
+            {
+                StepsItemsControl.ItemsSource = _steps;
+            }
+            catch { }
 
             // Load adaptive LLM average from settings (persisted between runs)
             try
@@ -668,6 +677,8 @@ namespace AICAD.UI
 
         private CancellationTokenSource _karaokeCts;
         private CancellationTokenSource _progressCts;
+        private CancellationTokenSource _presetSequenceCts;
+        private TextBlock _taskCountText;
         private readonly Random _rand = new Random();
         private readonly System.Windows.Media.Color[] _karaokeColors = new[] { Colors.Gray, Colors.DarkOrange, Colors.DodgerBlue, Colors.DarkGreen };
         // Line-based karaoke controls: highlight preset TextBlocks top-to-bottom
@@ -679,7 +690,7 @@ namespace AICAD.UI
         private System.Collections.Generic.List<Grid> _progressItems = new System.Collections.Generic.List<Grid>();
         private int _activeProgressIndex = -1;
         private readonly object _progressLock = new object();
-        // Simplified preset status lines (15 plain-English steps)
+        // Simplified preset status lines in simple English
         private readonly string[] _presetStatusLines = new[]
         {
             "Got your request",
@@ -1487,8 +1498,70 @@ namespace AICAD.UI
 
                     // Honor Stop requests before executing plan
                     if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
+
+                    // Prepare dynamic step list for UI from plan
+                    try
+                    {
+                        _steps.Clear();
+                        var stepsToken = planDoc.ContainsKey("steps") && planDoc["steps"] is Newtonsoft.Json.Linq.JArray ? (Newtonsoft.Json.Linq.JArray)planDoc["steps"] : null;
+                        if (stepsToken != null)
+                        {
+                            for (int si = 0; si < stepsToken.Count; si++)
+                            {
+                                var t = stepsToken[si];
+                                string label = null;
+                                if (t.Type == Newtonsoft.Json.Linq.JTokenType.Object)
+                                {
+                                    var jo = (Newtonsoft.Json.Linq.JObject)t;
+                                    label = (string)(jo["op"] ?? jo["operation"] ?? jo["Operation"] ?? jo["Op"]);
+                                }
+                                else
+                                {
+                                    var s = t.ToString();
+                                    var brace = s.IndexOf('{');
+                                    label = brace > 0 ? s.Substring(0, brace).Trim() : s.Trim();
+                                }
+                                if (string.IsNullOrWhiteSpace(label)) label = "step " + si;
+                                _steps.Add(new StepViewModel { Label = label, State = StepState.Pending, Percent = 0 });
+                            }
+                        }
+                    }
+                    catch { }
+
                     // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
-                    exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp));
+                    exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
+                    {
+                        try
+                        {
+                            // update overall progress bar
+                            try { generationProgressBar.Value = Math.Max(0, Math.Min(100, pct)); } catch { }
+                            try { generationProgressText.Text = pct.ToString() + "%"; } catch { }
+
+                            // Update step entry if available
+                            if (idx.HasValue && idx.Value >= 0 && idx.Value < _steps.Count)
+                            {
+                                var vm = _steps[idx.Value];
+                                vm.Percent = pct;
+                                vm.State = pct >= 100 ? StepState.Success : StepState.Running;
+                                vm.Timestamp = DateTime.Now;
+                            }
+                            else
+                            {
+                                // If no index, mark nearest running step by matching op
+                                for (int i = 0; i < _steps.Count; i++)
+                                {
+                                    if (string.Equals(_steps[i].Label, op, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        _steps[i].Percent = pct;
+                                        _steps[i].State = pct >= 100 ? StepState.Success : StepState.Running;
+                                        _steps[i].Timestamp = DateTime.Now;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        catch { }
+                    }));
                     if (exec.Success) break;
 
                     var errDoc = new JObject
@@ -2449,9 +2522,102 @@ namespace AICAD.UI
                             item.BeginAnimation(UIElement.OpacityProperty, da);
                         }
                         if (KaraokeStatus != null) ProgressStatusPanel.Children.Add(KaraokeStatus);
+                        // Insert header with Task label and completed/total counter
+                        try
+                        {
+                            var headerGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
+                            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+                            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
+                            var heading = new TextBlock { Text = "Task", FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.DarkSlateGray) };
+                            Grid.SetColumn(heading, 0);
+                            _taskCountText = new TextBlock { Text = $"0/{_presetStatusLines.Length}", HorizontalAlignment = HorizontalAlignment.Right, Foreground = new SolidColorBrush(Colors.DimGray) };
+                            Grid.SetColumn(_taskCountText, 1);
+                            headerGrid.Children.Add(heading);
+                            headerGrid.Children.Add(_taskCountText);
+                            // Insert header at the top of the panel
+                            ProgressStatusPanel.Children.Insert(0, headerGrid);
+                        }
+                        catch { }
+                        // Start slow preset sequence (one-by-one color change) at 1 minute interval (single pass)
+                        try { StartPresetSlowSequence(60000); } catch { }
                     }
                     catch { }
                 }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        private void StartPresetSlowSequence(int intervalMs)
+        {
+            try
+            {
+                try { _presetSequenceCts?.Cancel(); } catch { }
+                _presetSequenceCts = new CancellationTokenSource();
+                var token = _presetSequenceCts.Token;
+                // Run on background thread and marshal UI updates
+                #pragma warning disable CS4014
+                _ = Task.Run(async () =>
+                {
+                    try
+                    {
+                        // single pass top-to-bottom: fill each circle in blue and update count
+                        for (int i = 0; i < _progressItems.Count; i++)
+                        {
+                            if (token.IsCancellationRequested) break;
+                            var idx = i;
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try
+                                {
+                                    int filled = idx + 1;
+                                    for (int j = 0; j < _progressItems.Count; j++)
+                                    {
+                                        var item = _progressItems[j];
+                                        var texts = item.Children.OfType<TextBlock>().ToArray();
+                                        if (texts.Length < 2) continue;
+                                        var icon = texts[0];
+                                        var tb = texts[1];
+                                        if (j <= idx)
+                                        {
+                                            // filled state (blue circle)
+                                            icon.Text = "\u25CF"; // filled circle
+                                            icon.Foreground = new SolidColorBrush(Colors.DodgerBlue);
+                                            tb.Foreground = new SolidColorBrush(Colors.DodgerBlue);
+                                        }
+                                        else
+                                        {
+                                            // unfilled
+                                            icon.Text = "○";
+                                            icon.Foreground = new SolidColorBrush(Colors.DimGray);
+                                            tb.Foreground = new SolidColorBrush(Colors.DimGray);
+                                        }
+                                    }
+                                    // update count display
+                                    try { if (_taskCountText != null) _taskCountText.Text = $"{filled}/{_progressItems.Count}"; } catch { }
+                                }
+                                catch { }
+                            }));
+
+                            try { await Task.Delay(Math.Max(0, intervalMs), token).ConfigureAwait(false); } catch { break; }
+                        }
+                    }
+                    catch { }
+                }, token);
+                #pragma warning restore CS4014
+            }
+            catch { }
+        }
+
+        private void StopPresetSlowSequence()
+        {
+            try
+            {
+                if (_presetSequenceCts != null && !_presetSequenceCts.IsCancellationRequested)
+                {
+                    try { _presetSequenceCts.Cancel(); } catch { }
+                    try { _presetSequenceCts.Dispose(); } catch { }
+                }
+                _presetSequenceCts = null;
             }
             catch { }
         }

@@ -19,7 +19,7 @@ namespace AICAD.Services
     {
         // Supported ops: new_part, select_plane{name}, sketch_begin, sketch_end,
         // rectangle_center{cx,cy,w,h}, circle_center{cx,cy,r|diameter}, extrude{depth,type?:boss}
-    public static StepExecutionResult Execute(JObject plan, ISldWorks swApp)
+    public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null)
         {
             var result = new StepExecutionResult();
             try { AddinStatusLogger.Log("StepExecutor", $"Execute: invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
@@ -62,12 +62,19 @@ namespace AICAD.Services
                     sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
                 }
 
-        for (int i = 0; i < steps.Count; i++)
+                for (int i = 0; i < steps.Count; i++)
                 {
                     var raw = steps[i];
                     var s = NormalizeStep(raw);
                     string op = s.Value<string>("op") ?? string.Empty;
                     var log = new JObject { ["step"] = i, ["op"] = op };
+                    try
+                    {
+                        // Report progress before executing this step: overall percent and current op
+                        var beforePct = (int)(i * 100 / Math.Max(1, steps.Count));
+                        try { progressCallback?.Invoke(beforePct, op, i); } catch { }
+                    }
+                    catch { }
                     // Validate operation is present
                     if (string.IsNullOrWhiteSpace(op))
                     {
@@ -216,6 +223,13 @@ namespace AICAD.Services
                         return result; // stop at first failure
                     }
                     result.Log.Add(log);
+                    try
+                    {
+                        // Report progress after completing this step
+                        var afterPct = (int)((i + 1) * 100 / Math.Max(1, steps.Count));
+                        try { progressCallback?.Invoke(afterPct, op, i); } catch { }
+                    }
+                    catch { }
                     try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: completed op='{op}' success={log.Value<bool?>("success")}" ); } catch { }
                 }
 

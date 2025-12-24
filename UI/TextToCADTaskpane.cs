@@ -315,6 +315,14 @@ namespace AICAD.UI
             {
                 lblRealTimeStatus.Text = text ?? string.Empty;
                 lblRealTimeStatus.ForeColor = color;
+                try
+                {
+                    // Force immediate repaint so intermediate "In Progress" states are visible
+                    lblRealTimeStatus.Refresh();
+                    // Process pending UI messages to ensure the control repaints even if long work follows
+                    try { System.Windows.Forms.Application.DoEvents(); } catch { }
+                }
+                catch { }
             }
             AppendStatusLine($"[Status] {text}");
         }

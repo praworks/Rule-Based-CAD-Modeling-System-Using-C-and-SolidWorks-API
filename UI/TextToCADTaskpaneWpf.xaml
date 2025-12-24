@@ -1,11 +1,17 @@
 <UserControl x:Class="AICAD.UI.TextToCADTaskpaneWpf"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="clr-namespace:AICAD.UI"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
              d:DesignWidth="472" d:DesignHeight="1200"
              Focusable="True">
+
+    <UserControl.Resources>
+        <ui:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
+        <ui:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter" />
+    </UserControl.Resources>
 
     <Grid Margin="6">
         <Grid.RowDefinitions>
@@ -125,6 +131,38 @@
             <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Margin="0,0,0,8">
                     <Border Background="#FFFFFF" CornerRadius="6" Padding="12" Margin="0,0,0,6">
                     <StackPanel x:Name="ProgressStatusPanel">
+                        <!-- Dynamic step list (bound at runtime) -->
+                        <ItemsControl x:Name="StepsItemsControl" Margin="0,0,0,8">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,4,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="28"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="80"/>
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="●" Foreground="Gray"
+                                                   Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Pending}"/>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="⟳" Foreground="#FFC107"
+                                                   Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Running}"/>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="✔" Foreground="#28A745"
+                                                   Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Success}"/>
+                                        <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="⚠" Foreground="#DC3545"
+                                                   Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Error}"/>
+
+                                        <StackPanel Grid.Column="1">
+                                            <TextBlock Text="{Binding Label}" FontWeight="SemiBold"/>
+                                            <TextBlock Text="{Binding Message}" FontSize="11" Foreground="Gray"/>
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                            <ProgressBar Width="60" Height="10" Value="{Binding Percent}" Maximum="100" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                            <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="6,0,0,0" VerticalAlignment="Center" Foreground="#007ACC" FontWeight="SemiBold"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
                         <!-- Status lines are injected at runtime. -->
                         <TextBlock x:Name="KaraokeStatus"
                                    FontSize="14"

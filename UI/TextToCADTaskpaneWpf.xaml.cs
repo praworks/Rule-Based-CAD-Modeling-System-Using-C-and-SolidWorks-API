@@ -60,13 +60,20 @@ namespace AICAD.UI
         private bool? _lastDbLogged;
         private string _lastRunId;
         private bool _isBuilding = false;
+        private System.Threading.CancellationTokenSource _buildCts;
+        private System.Windows.Forms.Timer _llmProgressTimer;
+        private bool _lastRunCreatedModel = false;
+        private string _lastCreatedModelTitle = null;
         private IStepStore _stepStore;
         private SeriesManager _seriesManager;
         private string _selectedSeries;
         private int _nextSequence;
+        // Force using only good_feedback from a specific MongoDB (when true)
+        private readonly bool _forceUseOnlyGoodFeedback = true;
+        private readonly string _forcedGoodFeedbackMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
         // Temporary hard-coded behavior: force local-only mode and disable few-shot when using local LLM.
         // Set to false to restore previous multi-provider behavior.
-        private const bool FORCE_LOCAL_ONLY = true;
+        private const bool FORCE_LOCAL_ONLY = false;
 
         public TextToCADTaskpaneWpf(ISldWorks swApp)
         {
@@ -196,7 +203,7 @@ namespace AICAD.UI
             // Raise PromptTextChanged for external listeners
             prompt.TextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, new PromptChangedEventArgs(prompt.Text)); } catch { } };
 
-            // Build click: disable button immediately, give feedback, notify subscribers, then run internal build logic
+            // Build click: if building, treat as Stop request; otherwise start build
             build.Click += async (s, e) =>
             {
                 try
@@ -205,11 +212,37 @@ namespace AICAD.UI
                     var allowMultiple = System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.User)
                                         ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Process)
                                         ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Machine);
+                    if (_isBuilding)
+                    {
+                        // User clicked Stop
+                        try { _buildCts?.Cancel(); } catch { }
+                        AppendStatusLine("[Status] Stop requested by user");
+                        // Reset UI immediately so user can prepare a new prompt
+                        try
+                        {
+                            Dispatcher.Invoke(() =>
+                            {
+                                try { build.Content = "Build"; build.ClearValue(Button.BackgroundProperty); build.IsEnabled = true; } catch { }
+                            });
+                        }
+                        catch { }
+                        try { _isBuilding = false; } catch { }
+                        // Clear any pending created-model state since run was stopped
+                        try { _lastRunCreatedModel = false; _lastCreatedModelTitle = null; Dispatcher.Invoke(()=>{ try{ applyPropertiesButton.IsEnabled = false; } catch{} }); } catch { }
+                        try { SetRealTimeStatus("Stopped", Colors.DodgerBlue); } catch { }
+                        return;
+                    }
                     if (string.IsNullOrEmpty(allowMultiple) || allowMultiple == "0" || allowMultiple.Equals("false", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Disable immediately to prevent duplicate clicks
-                        build.IsEnabled = false;
+                        // Do not disable fully; we'll switch to Stop state instead
                     }
+                    // Initialize cancellation token for this run and update UI to Stop state
+                    try { _buildCts?.Dispose(); } catch { }
+                    _buildCts = new System.Threading.CancellationTokenSource();
+                    Dispatcher.Invoke(() =>
+                    {
+                        try { build.Content = "Stop"; build.Background = new SolidColorBrush(Colors.IndianRed); } catch { }
+                    });
                     // Immediate visual feedback so users know the click was received
                     SetRealTimeStatus("Build clicked", Colors.DodgerBlue);
                     try { AICAD.Services.LocalLogger.Log("WPF: build.Click invoked"); } catch { }
@@ -487,6 +520,11 @@ namespace AICAD.UI
                 var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI")
                                ?? System.Environment.GetEnvironmentVariable("MONGO_LOG_CONN")
                                ?? string.Empty;
+                // If forced mode is enabled, override any env var and use the provided Mongo URI
+                if (_forceUseOnlyGoodFeedback && string.IsNullOrWhiteSpace(mongoUri))
+                {
+                    mongoUri = _forcedGoodFeedbackMongoUri;
+                }
                 var mongoDb = System.Environment.GetEnvironmentVariable("MONGODB_DB") ?? "TaskPaneAddin";
                 var mongoCol = System.Environment.GetEnvironmentVariable("MONGODB_COLLECTION") ?? "SW";
                 if (!string.IsNullOrWhiteSpace(mongoUri))
@@ -505,15 +543,19 @@ namespace AICAD.UI
                     catch (Exception ex) { AppendStatusLine("[DB:init] SqliteFeedbackStore ctor exception: " + ex.Message); _goodStore = new FileGoodFeedbackStore(baseDir); }
                 }
 
-                if (!string.IsNullOrWhiteSpace(mongoUri))
+                // If forcing only good_feedback, do not initialize StepStore (we'll use only the good feedback store)
+                if (!_forceUseOnlyGoodFeedback)
                 {
-                    try { _stepStore = new MongoStepStore(mongoUri, mongoDb); }
-                    catch (Exception ex) { AppendDetailedStatus("DB:init", "MongoStepStore ctor exception", ex); }
-                }
-                if (_stepStore == null)
-                {
-                    try { _stepStore = new SqliteStepStore(baseDir); }
-                    catch (Exception ex) { AppendStatusLine("[DB:init] SqliteStepStore ctor exception: " + ex.Message); }
+                    if (!string.IsNullOrWhiteSpace(mongoUri))
+                    {
+                        try { _stepStore = new MongoStepStore(mongoUri, mongoDb); }
+                        catch (Exception ex) { AppendDetailedStatus("DB:init", "MongoStepStore ctor exception", ex); }
+                    }
+                    if (_stepStore == null)
+                    {
+                        try { _stepStore = new SqliteStepStore(baseDir); }
+                        catch (Exception ex) { AppendStatusLine("[DB:init] SqliteStepStore ctor exception: " + ex.Message); }
+                    }
                 }
 
                 if (_mongoLogger != null && _mongoLogger.IsAvailable)
@@ -1206,8 +1248,8 @@ namespace AICAD.UI
             StepExecutionResult exec = null;
             try
             {
-                // Disable build UI immediately for this run
-                try { build.IsEnabled = false; } catch { }
+                // Keep Build button enabled so the user can request Stop
+                try { build.IsEnabled = true; } catch { }
                 _lastPrompt = text;
                 AppendStatusLine("> " + text);
                 // Kick off progress bar animation (realistic phase)
@@ -1291,7 +1333,8 @@ namespace AICAD.UI
                             }
                             catch (Exception ex) { AddinStatusLogger.Error("FewShot", "GoodStore logging failed", ex); }
                         }
-                        if (_stepStore != null)
+                        // If configured to use only the good_feedback store, skip step-store few-shots
+                        if (!_forceUseOnlyGoodFeedback && _stepStore != null)
                         {
                             var more = _stepStore.GetRelevantFewShots(text, 3);
                             try
@@ -1316,7 +1359,49 @@ namespace AICAD.UI
                     "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
                     "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
                 try { AddinStatusLogger.Log("FewShot", $"Final few-shot prompt length={(fewshot==null?0:fewshot.Length)}"); } catch { }
+                // Notify user when few-shot examples are not being included
+                try
+                {
+                    if (!useFewShot)
+                    {
+                        AppendStatusLine("[FewShot] Final few-shot prompt length=0 — feature disabled in settings");
+                    }
+                    else if (fewshot == null || fewshot.Length == 0)
+                    {
+                        AppendStatusLine("[FewShot] Final few-shot prompt length=0 — no few-shot examples available");
+                    }
+                }
+                catch { }
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
+                // Start a WinForms timer to update a single-line LLM progress indicator
+                try
+                {
+                    try { _llmProgressTimer?.Stop(); _llmProgressTimer = null; } catch { }
+                    _llmProgressTimer = new System.Windows.Forms.Timer();
+                    _llmProgressTimer.Interval = 500;
+                    _llmProgressTimer.Tick += (s, ev) =>
+                    {
+                        try
+                        {
+                            var elapsed = llmSw.Elapsed.TotalSeconds;
+                            var pct = (int)Math.Floor((elapsed / 32.0) * 100.0);
+                            if (pct < 0) pct = 0;
+                            if (pct > 99) pct = 99; // cap until response
+                            int blocks = (int)Math.Round(pct / 10.0);
+                            if (blocks < 0) blocks = 0; if (blocks > 10) blocks = 10;
+                            var bar = new System.Text.StringBuilder();
+                            bar.Append('[');
+                            for (int i = 0; i < blocks; i++) bar.Append('■');
+                            for (int i = blocks; i < 10; i++) bar.Append('□');
+                            bar.Append(']');
+                            var msg = $"[Progress] {bar} {pct}%";
+                            try { AppendStatusLine(msg); } catch { }
+                        }
+                        catch { }
+                    };
+                    try { _llmProgressTimer.Start(); } catch { }
+                }
+                catch { }
                 // If forcing local-only, do not include few-shot examples in the prompt.
                 var finalPrompt = sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:";
                 if (FORCE_LOCAL_ONLY)
@@ -1324,7 +1409,20 @@ namespace AICAD.UI
                     finalPrompt = sysPrompt + "\nNow generate plan for: " + text + "\nJSON:";
                 }
                 reply = await GenerateWithFallbackAsync(finalPrompt);
+                // Respect user Stop requests (cancellation) after LLM returns
+                if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
                 llmSw.Stop();
+                try
+                {
+                    if (_llmProgressTimer != null)
+                    {
+                        try { _llmProgressTimer.Stop(); } catch { }
+                        try { AppendStatusLine("[Progress] [■■■■■■■■■■] Done"); } catch { }
+                        try { _llmProgressTimer.Dispose(); } catch { }
+                        _llmProgressTimer = null;
+                    }
+                }
+                catch { }
                 var client = _client ?? GetClient();
                 // LLM returned — advance progress realistically
                 StartProgressPhase("awaiting_response");
@@ -1356,6 +1454,8 @@ namespace AICAD.UI
                         break;
                     }
 
+                    // Honor Stop requests before executing plan
+                    if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
                     // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
                     exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp));
                     if (exec.Success) break;
@@ -1380,7 +1480,9 @@ namespace AICAD.UI
                     catch { }
 
                     var llmFixSw = System.Diagnostics.Stopwatch.StartNew();
+                    if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
                     var fixedPlan = await client.GenerateAsync(corrective);
+                    if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
                     llmFixSw.Stop();
                     llmMs += llmFixSw.Elapsed;
                     planJson = ExtractRawJson(fixedPlan);
@@ -1389,6 +1491,9 @@ namespace AICAD.UI
                 if (exec != null && exec.Success)
                 {
                     AppendStatusLine("Model created.");
+                    // Record that a model was created by this run so properties may be applied
+                    try { _lastRunCreatedModel = exec.CreatedNewPart; _lastCreatedModelTitle = exec.ModelTitle; } catch { }
+                    try { Dispatcher.Invoke(()=>{ applyPropertiesButton.IsEnabled = (exec.CreatedNewPart); }); } catch { }
                     StopKaraoke();
                     ShowKaraokeScenario("success");
                     SetRealTimeStatus("Creating model…", Colors.DarkOrange);
@@ -1444,6 +1549,22 @@ namespace AICAD.UI
                 }
                 catch { }
             }
+            catch (OperationCanceledException)
+            {
+                errText = "Build cancelled by user";
+                AppendStatusLine("Error: Build cancelled by user");
+                SetRealTimeStatus("Cancelled", Colors.Firebrick);
+                SetLlmStatus("Cancelled", Colors.Firebrick);
+                SetSwStatus("Cancelled", Colors.Firebrick);
+                SetLastError(errText);
+                _lastLlm = llmMs;
+                _lastTotal = totalSw.Elapsed;
+                SetTimes(llmMs, totalSw.Elapsed);
+                if (_fileLogger != null)
+                {
+                    await _fileLogger.LogAsync(text, reply, _lastModel ?? "gemini", llmMs, totalSw.Elapsed, errText);
+                }
+            }
             catch (Exception ex)
             {
                 errText = ex.Message + "\n" + ex.StackTrace;
@@ -1463,6 +1584,18 @@ namespace AICAD.UI
             }
             finally
             {
+                // Ensure LLM progress timer is stopped and finalize progress line
+                try
+                {
+                    if (_llmProgressTimer != null)
+                    {
+                        try { _llmProgressTimer.Stop(); } catch { }
+                        try { AppendStatusLine("[Progress] [■■■■■■■■■■] Done"); } catch { }
+                        try { _llmProgressTimer.Dispose(); } catch { }
+                        _llmProgressTimer = null;
+                    }
+                }
+                catch { }
                 totalSw.Stop();
                 try
                 {
@@ -1543,7 +1676,16 @@ namespace AICAD.UI
                 }
                 // Re-enable build UI and clear re-entry guard
                 try { _isBuilding = false; } catch { }
-                try { build.IsEnabled = true; } catch { }
+                try
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        try { build.Content = "Build"; build.ClearValue(Button.BackgroundProperty); } catch { }
+                        try { build.IsEnabled = true; } catch { }
+                    });
+                }
+                catch { }
+                try { _buildCts?.Dispose(); _buildCts = null; } catch { }
             }
         }
 
@@ -1674,6 +1816,30 @@ namespace AICAD.UI
                     SetRealTimeStatus("No active document", Colors.Firebrick);
                     return;
                 }
+
+                // Enforce: properties may only be applied to a model created by the add-in's last successful run
+                try
+                {
+                    if (!_lastRunCreatedModel)
+                    {
+                        SetRealTimeStatus("No created model to apply properties to", Colors.Firebrick);
+                        return;
+                    }
+                    if (!string.IsNullOrWhiteSpace(_lastCreatedModelTitle))
+                    {
+                        try
+                        {
+                            var title = doc.GetTitle();
+                            if (!string.Equals(title, _lastCreatedModelTitle, StringComparison.OrdinalIgnoreCase))
+                            {
+                                SetRealTimeStatus("Active document does not match the created model", Colors.Firebrick);
+                                return;
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
 
                 // Use SaveFileDialog
                 var sfd = new System.Windows.Forms.SaveFileDialog
@@ -2324,11 +2490,45 @@ namespace AICAD.UI
                 if (_statusWindow != null && !_statusWindow.IsDisposed)
                 {
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                    // Colorize certain categories for readability on dark background
-                    try
+                        // Single-line progress overwrite: if incoming line starts with [Progress] and the last console line contains [Progress], replace it
+                        try
+                        {
+                            var l = (line ?? string.Empty);
+                            if (l.StartsWith("[Progress]", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try
+                                {
+                                    var rtb = _statusWindow.StatusConsole;
+                                    var lines = rtb.Lines;
+                                    if (lines != null && lines.Length > 0)
+                                    {
+                                        var last = lines[lines.Length - 1] ?? string.Empty;
+                                        if (last.IndexOf("[Progress]", StringComparison.OrdinalIgnoreCase) >= 0)
+                                        {
+                                            int start = rtb.GetFirstCharIndexFromLine(lines.Length - 1);
+                                            if (start >= 0)
+                                            {
+                                                rtb.SelectionStart = start;
+                                                // Replace the last line (selection length equals remaining text length starting at line)
+                                                rtb.SelectionLength = rtb.TextLength - start;
+                                                rtb.SelectedText = DateTime.Now.ToString("HH:mm:ss") + " " + line + "\n";
+                                                rtb.SelectionStart = rtb.TextLength;
+                                                rtb.ScrollToCaret();
+                                                // We already updated the console; skip normal append below
+                                                goto SkipAppend;
+                                            }
+                                        }
+                                    }
+                                }
+                                catch { }
+                            }
+                        }
+                        catch { }
+                        // Colorize certain categories for readability on dark background
+                        try
                     {
                         var color = System.Drawing.Color.Gainsboro;
-                        var l = (line ?? string.Empty);
+                            var l = (line ?? string.Empty);
                         if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             color = System.Drawing.Color.OrangeRed; // high-contrast red
@@ -2355,6 +2555,7 @@ namespace AICAD.UI
                     }
                     catch { }
                     _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
+                SkipAppend:;
                     _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
                     _statusWindow.StatusConsole.ScrollToCaret();
                 }

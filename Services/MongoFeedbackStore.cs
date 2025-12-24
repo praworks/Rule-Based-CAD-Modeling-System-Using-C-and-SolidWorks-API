@@ -97,28 +97,71 @@ namespace AICAD.Services
             if (_collection == null) return shots;
             try
             {
-                var opts = new FindOptions<BsonDocument>
+                // Allow forcing only "key" shots when environment requests it
+                var forceKey = (System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS") ?? "").Equals("1", StringComparison.OrdinalIgnoreCase)
+                               || (System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS") ?? "").Equals("true", StringComparison.OrdinalIgnoreCase);
+
+                // First try to fetch key-marked examples (comment contains 'key')
+                var keyFilter = Builders<BsonDocument>.Filter.Regex("comment", new BsonRegularExpression("key", "i"));
+                var baseSort = Builders<BsonDocument>.Sort.Descending("ts");
+                if (forceKey)
                 {
-                    Sort = Builders<BsonDocument>.Sort.Descending("ts"),
-                    Limit = max,
-                    Projection = Builders<BsonDocument>.Projection.Include("prompt").Include("plan")
-                };
-                using (var cursor = _collection.FindSync(FilterDefinition<BsonDocument>.Empty, opts))
-                {
+                    var optsKey = new FindOptions<BsonDocument> { Sort = baseSort, Limit = max, Projection = Builders<BsonDocument>.Projection.Include("prompt").Include("plan").Include("comment") };
+                    using (var cursor = _collection.FindSync(keyFilter, optsKey))
+                    {
                         foreach (var doc in cursor.ToEnumerable())
                         {
                             var prompt = doc.GetValue("prompt", string.Empty).AsString;
                             var plan = AICAD.Services.JsonUtils.SerializeCompact(doc.GetValue("plan", "{}"));
-                            shots.Add("\\nInput: " + prompt + "\\nOutput:" + plan);
+                            shots.Add("\nInput: " + prompt + "\nOutput:" + plan);
                         }
-                }
+                    }
                     LastError = null;
-                    AddinStatusLogger.Log("MongoFeedbackStore", "GetRecentFewShots succeeded count=" + shots.Count);
+                    AddinStatusLogger.Log("MongoFeedbackStore", "GetRecentFewShots (key-only) succeeded count=" + shots.Count);
+                    return shots;
+                }
+
+                // Otherwise prefer key shots but fill with recent if not enough
+                var optsAll = new FindOptions<BsonDocument> { Sort = baseSort, Limit = Math.Max(max * 3, max), Projection = Builders<BsonDocument>.Projection.Include("prompt").Include("plan").Include("comment") };
+                var candidates = new List<BsonDocument>();
+                using (var cursor = _collection.FindSync(FilterDefinition<BsonDocument>.Empty, optsAll))
+                {
+                    foreach (var doc in cursor.ToEnumerable()) candidates.Add(doc);
+                }
+
+                // Select key-marked first
+                foreach (var doc in candidates)
+                {
+                    if (shots.Count >= max) break;
+                    var comment = doc.GetValue("comment", string.Empty).AsString ?? string.Empty;
+                    if (!string.IsNullOrEmpty(comment) && comment.IndexOf("key", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        var prompt = doc.GetValue("prompt", string.Empty).AsString;
+                        var plan = AICAD.Services.JsonUtils.SerializeCompact(doc.GetValue("plan", "{}"));
+                        shots.Add("\nInput: " + prompt + "\nOutput:" + plan);
+                    }
+                }
+
+                // Fill remaining with non-key recent
+                if (shots.Count < max)
+                {
+                    foreach (var doc in candidates)
+                    {
+                        if (shots.Count >= max) break;
+                        var prompt = doc.GetValue("prompt", string.Empty).AsString;
+                        var plan = AICAD.Services.JsonUtils.SerializeCompact(doc.GetValue("plan", "{}"));
+                        var entry = "\nInput: " + prompt + "\nOutput:" + plan;
+                        if (!shots.Contains(entry)) shots.Add(entry);
+                    }
+                }
+
+                LastError = null;
+                AddinStatusLogger.Log("MongoFeedbackStore", "GetRecentFewShots succeeded count=" + shots.Count);
             }
             catch (Exception ex)
             {
-                    LastError = ex.Message;
-                    AddinStatusLogger.Error("MongoFeedbackStore", "GetRecentFewShots failed", ex);
+                LastError = ex.Message;
+                AddinStatusLogger.Error("MongoFeedbackStore", "GetRecentFewShots failed", ex);
             }
             return shots;
         }

@@ -80,7 +80,7 @@ namespace AICAD.UI
         private readonly string _forcedGoodFeedbackMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
         // Temporary hard-coded behavior: force local-only mode and disable few-shot when using local LLM.
         // Set to false to restore previous multi-provider behavior.
-        private const bool FORCE_LOCAL_ONLY = false;
+        private readonly bool FORCE_LOCAL_ONLY = false;
 
         public TextToCADTaskpaneWpf(ISldWorks swApp)
         {
@@ -1494,6 +1494,34 @@ namespace AICAD.UI
                     try { _llmProgressTimer.Start(); } catch { }
                 }
                 catch { }
+                // mark formal run-level step states and initialize fixed UI steps
+                try
+                {
+                    InitializeStepProgress(new[] {
+                        "Got your request",
+                        "Preparing inputs",
+                        "Connecting to AI",
+                        "Sending request to AI",
+                        "Waiting for AI response",
+                        "AI responded",
+                        "Reading AI response",
+                        "Checking parameters",
+                        "Building sketch",
+                        "Adding features",
+                        "Applying constraints",
+                        "Running checks",
+                        "Saving model",
+                        "Updating UI",
+                        "Complete"
+                    });
+                    SetStepProgress("Got your request", 100, StepState.Success);
+                    SetStepProgress("Preparing inputs", 100, StepState.Success);
+                    SetStepProgress("Connecting to AI", 70, StepState.Running);
+                    SetStepProgress("Sending request to AI", 0, StepState.Pending);
+                    SetStepProgress("Waiting for AI response", 0, StepState.Pending);
+                }
+                catch { }
+
                 reply = await GenerateWithFallbackAsync(finalPrompt);
                 // LLM responded; finalize progress line to Done (100%) and update EMA
                 try
@@ -1525,6 +1553,15 @@ namespace AICAD.UI
                     }
                     catch { }
                     _llmProgressStopwatch = null;
+                }
+                catch { }
+                // Update step UI to reflect LLM response
+                try
+                {
+                    SetStepProgress("Sending request to AI", 100, StepState.Success);
+                    SetStepProgress("Waiting for AI response", 100, StepState.Success);
+                    SetStepProgress("AI responded", 100, StepState.Success);
+                    SetStepProgress("Reading AI response", 30, StepState.Running);
                 }
                 catch { }
                 // Respect user Stop requests (cancellation) after LLM returns
@@ -1593,6 +1630,9 @@ namespace AICAD.UI
                     }
                     catch { }
 
+                    // mark read/checked progress
+                    try { SetStepProgress("Reading AI response", 100, StepState.Success); SetStepProgress("Checking parameters", 50, StepState.Running); } catch { }
+
                         // Preset sequence removed; UI will update from real execution progress
 
                         // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
@@ -1626,6 +1666,9 @@ namespace AICAD.UI
                                     }
                                 }
                             }
+
+                            // Also update higher-level fixed steps based on op name
+                            try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
 
                             // Update header counter based on dynamic steps
                             try
@@ -2589,6 +2632,81 @@ namespace AICAD.UI
                     }
                     catch { }
                 }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        // Initialize a fixed ordered list of high-level steps for the taskpane progress UI.
+        private void InitializeStepProgress(IEnumerable<string> labels)
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        _steps.Clear();
+                        foreach (var l in labels ?? Array.Empty<string>())
+                        {
+                            _steps.Add(new StepViewModel { Label = l, State = StepState.Pending, Percent = null, Message = string.Empty });
+                        }
+                        try { if (_taskCountText != null) _taskCountText.Text = $"0/{_steps.Count}"; } catch { }
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        // Set a named step's percent and optional state (thread-safe)
+        private void SetStepProgress(string label, int? percent = null, StepState? state = null)
+        {
+            if (string.IsNullOrWhiteSpace(label)) return;
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        var vm = _steps.FirstOrDefault(s => string.Equals(s.Label, label, StringComparison.OrdinalIgnoreCase));
+                        if (vm == null) return;
+                        if (percent.HasValue) vm.Percent = Math.Max(0, Math.Min(100, percent.Value));
+                        if (state.HasValue) vm.State = state.Value;
+                        try { var completed = _steps.Count(s => s.State == StepState.Success); if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}"; } catch { }
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        // Simple mapping from low-level op names to our high-level step labels
+        private void UpdateHigherLevelFromOp(string op, int pct)
+        {
+            if (string.IsNullOrWhiteSpace(op)) return;
+            var o = op.ToLowerInvariant();
+            try
+            {
+                if (o.Contains("sketch") || o.Contains("rectangle") || o.Contains("circle"))
+                {
+                    SetStepProgress("Building sketch", pct, pct >= 100 ? StepState.Success : StepState.Running);
+                }
+                else if (o.Contains("extrude") || o.Contains("boss") || o.Contains("feature"))
+                {
+                    SetStepProgress("Adding features", pct, pct >= 100 ? StepState.Success : StepState.Running);
+                }
+                else if (o.Contains("select_plane") || o.Contains("plane"))
+                {
+                    SetStepProgress("Checking parameters", pct, pct >= 100 ? StepState.Success : StepState.Running);
+                }
+                else if (o.Contains("constraint") || o.Contains("mate"))
+                {
+                    SetStepProgress("Applying constraints", pct, pct >= 100 ? StepState.Success : StepState.Running);
+                }
+                else if (o.Contains("save") || o.Contains("saveas") || o.Contains("save_part"))
+                {
+                    SetStepProgress("Saving model", pct, pct >= 100 ? StepState.Success : StepState.Running);
+                }
             }
             catch { }
         }

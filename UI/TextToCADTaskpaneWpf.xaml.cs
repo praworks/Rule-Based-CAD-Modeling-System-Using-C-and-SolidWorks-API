@@ -199,16 +199,9 @@ namespace AICAD.UI
                             typeDescriptionTextBox.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.GotKeyboardFocus"); EnsureNativeFocus(typeDescriptionTextBox); } catch { } };
                             typeDescriptionTextBox.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.LostKeyboardFocus"); } catch { } };
 
-                            // Stronger focus acquisition: handle mouse enter and mouse down (even if host swallows events)
-                            typeDescriptionTextBox.MouseEnter += (s, e) => { try { FocusTypeDescription(); } catch { } };
-                            // Register PreviewMouseLeftButtonDown with handledEventsToo so we catch it even if routed
-                            typeDescriptionTextBox.AddHandler(UIElement.PreviewMouseLeftButtonDownEvent,
-                                new System.Windows.Input.MouseButtonEventHandler((s, e) => { try { FocusTypeDescription(); e.Handled = true; } catch { } }),
-                                true);
-                            // Also try touch
-                            typeDescriptionTextBox.AddHandler(UIElement.PreviewTouchDownEvent,
-                                new System.EventHandler<System.Windows.Input.TouchEventArgs>((s, e) => { try { FocusTypeDescription(); } catch { } }),
-                                true);
+                            // Avoid aggressive mouse/touch-driven focus grabs which can steal
+                            // keyboard input from the main prompt when hosted in SolidWorks.
+                            // Rely on normal focus behavior and explicit focus helpers instead.
                         }
                         catch { }
                 }
@@ -239,7 +232,7 @@ namespace AICAD.UI
                     {
                         // User clicked Stop
                         try { _buildCts?.Cancel(); } catch { }
-                        AppendStatusLine("[Status] Stop requested by user");
+                        AppendStatusLine(StatusConsole.StatusPrefix + " Stop requested by user");
                         // Reset UI immediately so user can prepare a new prompt
                         try
                         {
@@ -704,7 +697,7 @@ namespace AICAD.UI
         private void SetRealTimeStatus(string text, Color color)
         {
             // `lblRealTimeStatus` removed from UI; mirror status to logs instead.
-            AppendStatusLine($"[Status] {text}");
+            AppendStatusLine(StatusConsole.StatusPrefix + " " + (text ?? string.Empty));
         }
 
         private void UpdateGenerationProgress(int percent)
@@ -1084,7 +1077,7 @@ namespace AICAD.UI
                 _statusWindow.ErrorTextBox.Text = string.IsNullOrWhiteSpace(err) ? "—" : err;
                 // _statusWindow.ErrorTextBox.ForeColor handled in StatusWindow
             }
-            if (!string.IsNullOrWhiteSpace(err)) AppendStatusLine($"[Error] {err}");
+            if (!string.IsNullOrWhiteSpace(err)) AppendStatusLine(StatusConsole.ErrorPrefix + " " + err);
         }
 
         private string BuildErrorCopyText()
@@ -1183,7 +1176,45 @@ namespace AICAD.UI
                                  ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
                                  ?? "google/functiongemma-270m";
 
-            // 1) Try Local HTTP LLM if configured
+            // 1) Try Ollama at localhost:11434 first (user preference)
+            try
+            {
+                var ollamaEndpoint = System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                     ?? System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.Machine)
+                                     ?? "http://localhost:11434/v1/chat/completions";
+
+                if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
+                {
+                    AppendStatusLine("[LLM] Trying Ollama endpoint: " + ollamaEndpoint);
+                    var systemPrompt2 = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
+                                        ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                    var ollamaClient = new AICAD.Services.LocalHttpLlmClient(ollamaEndpoint, preferredModel, systemPrompt2);
+                    try
+                    {
+                        var r = await ollamaClient.GenerateAsync(prompt);
+                        _client = ollamaClient;
+                        _lastModel = ollamaClient.Model;
+                        AppendStatusLine("[LLM] Ollama succeeded: " + ollamaClient.Model);
+                        return r;
+                    }
+                    catch (Exception ex)
+                    {
+                        lastEx = ex;
+                        AppendStatusLine("[LLM] Ollama failed: " + ex.Message);
+                        try { ollamaClient.Dispose(); } catch { }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                lastEx = ex;
+                AppendStatusLine("[LLM] Ollama attempt error: " + ex.Message);
+            }
+
+            // 2) Try Local HTTP LLM if explicitly configured via LOCAL_LLM_ENDPOINT
             try
             {
                 var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -1328,7 +1359,7 @@ namespace AICAD.UI
             // Prevent re-entry if a build is already running
             if (_isBuilding)
             {
-                AppendStatusLine("[Status] Build already in progress — re-entry prevented");
+                AppendStatusLine(StatusConsole.StatusPrefix + " Build already in progress — re-entry prevented");
                 return;
             }
             _isBuilding = true;
@@ -1352,7 +1383,7 @@ namespace AICAD.UI
                 AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----");
                 SetRealTimeStatus("Communicating with LLM…", Colors.DarkOrange);
                     // Do NOT auto-apply material/description/mass here — user should apply manually
-                    AppendStatusLine("[Status] Model created. Please set Material and Description manually and click 'Apply Properties' to finalize Mass (will remain 0.000 until linked).");
+                    AppendStatusLine(StatusConsole.StatusPrefix + " Model created. Please set Material and Description manually and click 'Apply Properties' to finalize Mass (will remain 0.000 until linked).");
                         ShowKaraokeScenario("communicating");
                     SetLlmStatus("Sending…", Colors.DarkOrange);
                 SetLastError(null);
@@ -1487,7 +1518,7 @@ namespace AICAD.UI
                             if (pct < 0) pct = 0;
                             if (pct > 99) pct = 99; // cap at 99% until LLM responds
                             var bar = MakeProgressBar(pct, 20);
-                            AppendStatusLine($"[Progress] {bar} {pct}%");
+                            AppendStatusLine(StatusConsole.FormatProgress(bar, pct));
                         }
                         catch { }
                     };
@@ -1514,11 +1545,23 @@ namespace AICAD.UI
                         "Updating UI",
                         "Complete"
                     });
-                    SetStepProgress("Got your request", 100, StepState.Success);
-                    SetStepProgress("Preparing inputs", 100, StepState.Success);
-                    SetStepProgress("Connecting to AI", 70, StepState.Running);
-                    SetStepProgress("Sending request to AI", 0, StepState.Pending);
-                    SetStepProgress("Waiting for AI response", 0, StepState.Pending);
+                    // Initialize step entries without hardcoded percent values.
+                    // Percents will be updated from runtime events (LLM timer, op callbacks, executor updates).
+                    SetStepProgress("Got your request", null, StepState.Pending);
+                    SetStepProgress("Preparing inputs", null, StepState.Pending);
+                    SetStepProgress("Connecting to AI", null, StepState.Pending);
+                    SetStepProgress("Sending request to AI", null, StepState.Pending);
+                    SetStepProgress("Waiting for AI response", null, StepState.Pending);
+                    SetStepProgress("AI responded", null, StepState.Pending);
+                    SetStepProgress("Reading AI response", null, StepState.Pending);
+                    SetStepProgress("Checking parameters", null, StepState.Pending);
+                    SetStepProgress("Building sketch", null, StepState.Pending);
+                    SetStepProgress("Adding features", null, StepState.Pending);
+                    SetStepProgress("Applying constraints", null, StepState.Pending);
+                    SetStepProgress("Running checks", null, StepState.Pending);
+                    SetStepProgress("Saving model", null, StepState.Pending);
+                    SetStepProgress("Updating UI", null, StepState.Pending);
+                    SetStepProgress("Complete", null, StepState.Pending);
                 }
                 catch { }
 
@@ -1548,7 +1591,7 @@ namespace AICAD.UI
                             catch { }
                             int pct = 100;
                             var bar = MakeProgressBar(pct, 20);
-                            AppendStatusLine($"[Progress] {bar} {pct}% Done");
+                            AppendStatusLine(StatusConsole.FormatProgressDone(bar, pct));
                         }
                     }
                     catch { }
@@ -1562,6 +1605,15 @@ namespace AICAD.UI
                     SetStepProgress("Waiting for AI response", 100, StepState.Success);
                     SetStepProgress("AI responded", 100, StepState.Success);
                     SetStepProgress("Reading AI response", 30, StepState.Running);
+                    SetStepProgress("Checking parameters", null, StepState.Pending);
+                    SetStepProgress("Building sketch", null, StepState.Pending);
+                    SetStepProgress("Adding features", null, StepState.Pending);
+                    SetStepProgress("Applying constraints", null, StepState.Pending);
+                    SetStepProgress("Running checks", null, StepState.Pending);
+                    SetStepProgress("Saving model", null, StepState.Pending);
+                    SetStepProgress("Updating UI", null, StepState.Pending);
+                    SetStepProgress("Complete", null, StepState.Pending);
+
                 }
                 catch { }
                 // Respect user Stop requests (cancellation) after LLM returns
@@ -1603,7 +1655,7 @@ namespace AICAD.UI
 
                     // Keep the fixed pipeline steps only. Do NOT replace the taskpane step list
                     // with the detailed plan steps returned by the LLM. The application relies
-                    // on the high-level 15-step pipeline initialized earlier (e.g. "Got your request",
+                    // on the high-level pipeline initialized earlier (e.g. "Got your request",
                     // "Preparing inputs", ..., "Complete"). Per-user request we leave that list
                     // intact so the taskpane never shows low-level ops such as "new_part" or
                     // "select_plane". Individual plan ops will still update the high-level
@@ -1816,7 +1868,7 @@ namespace AICAD.UI
                     if (_llmProgressStopwatch != null)
                     {
                         try { _llmProgressStopwatch.Stop(); } catch { }
-                        try { AppendStatusLine("[Progress] " + MakeProgressBar(100, 20) + " 100% Done"); } catch { }
+                        try { AppendStatusLine(StatusConsole.FormatProgressDone(MakeProgressBar(100, 20), 100)); } catch { }
                         _llmProgressStopwatch = null;
                     }
                 }
@@ -2717,7 +2769,7 @@ namespace AICAD.UI
                             {
                                 color = System.Drawing.Color.DodgerBlue; // bright blue
                             }
-                            else if (l.StartsWith("[Status]", StringComparison.OrdinalIgnoreCase))
+                            else if (l.StartsWith(StatusConsole.StatusPrefix, StringComparison.OrdinalIgnoreCase))
                             {
                                 color = System.Drawing.Color.Gold; // visible gold/orange
                             }
@@ -2731,7 +2783,7 @@ namespace AICAD.UI
                                 else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.OrangeRed;
                                 else color = System.Drawing.Color.LightSkyBlue;
                             }
-                            else if (l.StartsWith("[Progress]", StringComparison.OrdinalIgnoreCase))
+                            else if (l.StartsWith(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase))
                             {
                                 color = System.Drawing.Color.LightGreen;
                             }
@@ -2742,10 +2794,10 @@ namespace AICAD.UI
                         // If this is a progress line and the last line is also a progress line, overwrite it inline
                         try
                         {
-                            if ((line ?? string.Empty).StartsWith("[Progress]", StringComparison.OrdinalIgnoreCase) && rtb.Lines.Length > 0)
+                            if ((line ?? string.Empty).StartsWith(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) && rtb.Lines.Length > 0)
                             {
                                 var last = rtb.Lines[rtb.Lines.Length - 1] ?? string.Empty;
-                                if (last.IndexOf("[Progress]", StringComparison.OrdinalIgnoreCase) >= 0)
+                                if (last.IndexOf(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) >= 0)
                                 {
                                     int firstChar = rtb.GetFirstCharIndexFromLine(rtb.Lines.Length - 1);
                                     if (firstChar >= 0)

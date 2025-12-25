@@ -144,8 +144,8 @@
                                         <TextBlock Text="{Binding Message}" FontSize="10" Foreground="Gray"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <ProgressBar Width="50" Height="8" Value="{Binding Percent}" Maximum="100" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
-                                        <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="4,0,0,0" FontSize="10" VerticalAlignment="Center" Foreground="#007ACC" FontWeight="SemiBold"/>
+                                        <TextBlock Text="{Binding BarString}" FontFamily="Consolas" FontSize="12" VerticalAlignment="Center" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                        <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="6,0,0,0" FontSize="10" VerticalAlignment="Center" Foreground="#007ACC" FontWeight="SemiBold" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>
@@ -160,8 +160,8 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Value="0" Height="6" Foreground="#007ACC" Background="#E0E0E0" BorderThickness="0"/>
-                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="0%" Foreground="#007ACC" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="6" Foreground="#007ACC" Background="#E0E0E0" BorderThickness="0"/>
+                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="#007ACC" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
             </Grid>
 
             <Grid Grid.Row="3">

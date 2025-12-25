@@ -61,6 +61,15 @@ namespace AICAD.UI
         private Button _btnSaveNameEasy;
         private Label _lblNameEasyInfo;
         
+        // Samples Tab Controls
+        private RadioButton _rbZeroShot;
+        private RadioButton _rbOneShot;
+        private RadioButton _rbFewShot;
+        private TextBox _txtSamplesDbPath;
+        private Button _btnBrowseSamples;
+        private Button _btnSaveSamples;
+        private Label _lblSamplesInfo;
+        
         public SettingsDialog()
         {
             InitializeComponents();
@@ -74,8 +83,141 @@ namespace AICAD.UI
             {
                 BtnLoadMongo_Click(this, EventArgs.Empty);
                 BtnLoadApiKey_Click(this, EventArgs.Empty);
+                // Load samples tab settings
+                try { BtnLoadSamples_Click(this, EventArgs.Empty); } catch { }
 
                 // Model selection is configured via environment (`GEMINI_MODEL`) not the UI.
+            }
+            catch { }
+        }
+
+        private TabPage CreateSamplesTab()
+        {
+            var tab = new TabPage("Samples");
+            var panel = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 3,
+                RowCount = 4,
+                Padding = new Padding(15)
+            };
+
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
+
+            // Radio buttons for sample mode
+            var lblMode = new Label
+            {
+                Text = "Sample Mode:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            var rbPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
+            _rbZeroShot = new RadioButton { Text = "Zero-Shot", AutoSize = true };
+            _rbOneShot = new RadioButton { Text = "One-Shot", AutoSize = true };
+            _rbFewShot = new RadioButton { Text = "Few-Shot", AutoSize = true };
+            rbPanel.Controls.Add(_rbZeroShot);
+            rbPanel.Controls.Add(_rbOneShot);
+            rbPanel.Controls.Add(_rbFewShot);
+
+            panel.Controls.Add(lblMode, 0, 0);
+            panel.SetColumnSpan(rbPanel, 2);
+            panel.Controls.Add(rbPanel, 1, 0);
+
+            // Samples DB path
+            var lblPath = new Label
+            {
+                Text = "Samples DB Path:",
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleLeft,
+                Padding = new Padding(0, 8, 0, 0)
+            };
+            _txtSamplesDbPath = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 5, 0, 5) };
+            _btnBrowseSamples = new Button { Text = "Browse...", Width = 80, Height = 26 };
+            _btnBrowseSamples.Click += BtnBrowseSamples_Click;
+
+            panel.Controls.Add(lblPath, 0, 1);
+            panel.Controls.Add(_txtSamplesDbPath, 1, 1);
+            panel.Controls.Add(_btnBrowseSamples, 2, 1);
+
+            // Save button
+            _btnSaveSamples = new Button { Text = "Save", Width = 100, Height = 30, Anchor = AnchorStyles.Right };
+            _btnSaveSamples.Click += BtnSaveSamples_Click;
+            panel.SetColumnSpan(_btnSaveSamples, 3);
+            panel.Controls.Add(_btnSaveSamples, 0, 2);
+
+            _lblSamplesInfo = new Label
+            {
+                Text = "Choose how example shots are provided to the LLM and where they are stored.",
+                Dock = DockStyle.Fill,
+                ForeColor = Color.Gray,
+                AutoSize = false,
+                Padding = new Padding(0, 10, 0, 0)
+            };
+            panel.SetColumnSpan(_lblSamplesInfo, 3);
+            panel.Controls.Add(_lblSamplesInfo, 0, 3);
+
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
+            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+            tab.Controls.Add(panel);
+            return tab;
+        }
+
+        private void BtnBrowseSamples_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new FolderBrowserDialog())
+            {
+                dlg.Description = "Select folder where sample shots are stored";
+                dlg.ShowNewFolderButton = true;
+                var current = _txtSamplesDbPath.Text;
+                if (!string.IsNullOrEmpty(current))
+                {
+                    try { dlg.SelectedPath = System.IO.Path.GetDirectoryName(current); } catch { }
+                }
+
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    _txtSamplesDbPath.Text = System.IO.Path.Combine(dlg.SelectedPath, "samples.db");
+                }
+            }
+        }
+
+        private void BtnSaveSamples_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var mode = _rbZeroShot.Checked ? "zero" : _rbOneShot.Checked ? "one" : "few";
+                Environment.SetEnvironmentVariable("AICAD_SAMPLE_MODE", mode, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", _txtSamplesDbPath.Text ?? "", EnvironmentVariableTarget.User);
+
+                MessageBox.Show("Samples settings saved to environment variables. Restart SolidWorks for changes to take effect.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Failed to save samples settings: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void BtnLoadSamples_Click(object sender, EventArgs e)
+        {
+            try
+            {
+                var mode = Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", EnvironmentVariableTarget.User) ?? "";
+                if (string.IsNullOrEmpty(mode)) mode = Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE") ?? "";
+                switch (mode.ToLowerInvariant())
+                {
+                    case "zero": _rbZeroShot.Checked = true; break;
+                    case "one": _rbOneShot.Checked = true; break;
+                    case "few": _rbFewShot.Checked = true; break;
+                    default: _rbFewShot.Checked = true; break;
+                }
+
+                _txtSamplesDbPath.Text = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH") ?? "";
             }
             catch { }
         }
@@ -117,9 +259,11 @@ namespace AICAD.UI
             var dbTab = CreateDatabaseTab();
             var apiTab = CreateApiKeyTab();
             var nameEasyTab = CreateNameEasyTab();
+            var samplesTab = CreateSamplesTab();
             
             _tabControl.TabPages.Add(dbTab);
             _tabControl.TabPages.Add(apiTab);
+            _tabControl.TabPages.Add(samplesTab);
             _tabControl.TabPages.Add(nameEasyTab);
             
             Controls.Add(_tabControl);
@@ -155,6 +299,12 @@ namespace AICAD.UI
                 if (!string.IsNullOrEmpty(defaultPath) && _txtNameEasyPath != null)
                 {
                     _txtNameEasyPath.Text = defaultPath;
+                }
+                // Load samples DB path if present
+                var samplesPath = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? "";
+                if (!string.IsNullOrEmpty(samplesPath) && _txtSamplesDbPath != null)
+                {
+                    _txtSamplesDbPath.Text = samplesPath;
                 }
             }
             catch { }

@@ -1601,34 +1601,13 @@ namespace AICAD.UI
                     // Honor Stop requests before executing plan
                     if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
 
-                    // Prepare dynamic step list for UI from plan
-                    try
-                    {
-                        _steps.Clear();
-                        var stepsToken = planDoc.ContainsKey("steps") && planDoc["steps"] is Newtonsoft.Json.Linq.JArray ? (Newtonsoft.Json.Linq.JArray)planDoc["steps"] : null;
-                        if (stepsToken != null)
-                        {
-                            for (int si = 0; si < stepsToken.Count; si++)
-                            {
-                                var t = stepsToken[si];
-                                string label = null;
-                                if (t.Type == Newtonsoft.Json.Linq.JTokenType.Object)
-                                {
-                                    var jo = (Newtonsoft.Json.Linq.JObject)t;
-                                    label = (string)(jo["op"] ?? jo["operation"] ?? jo["Operation"] ?? jo["Op"]);
-                                }
-                                else
-                                {
-                                    var s = t.ToString();
-                                    var brace = s.IndexOf('{');
-                                    label = brace > 0 ? s.Substring(0, brace).Trim() : s.Trim();
-                                }
-                                if (string.IsNullOrWhiteSpace(label)) label = "step " + si;
-                                _steps.Add(new StepViewModel { Label = label, State = StepState.Pending, Percent = 0 });
-                            }
-                        }
-                    }
-                    catch { }
+                    // Keep the fixed pipeline steps only. Do NOT replace the taskpane step list
+                    // with the detailed plan steps returned by the LLM. The application relies
+                    // on the high-level 15-step pipeline initialized earlier (e.g. "Got your request",
+                    // "Preparing inputs", ..., "Complete"). Per-user request we leave that list
+                    // intact so the taskpane never shows low-level ops such as "new_part" or
+                    // "select_plane". Individual plan ops will still update the high-level
+                    // progress via UpdateHigherLevelFromOp(op, pct) below.
 
                     // mark read/checked progress
                     try { SetStepProgress("Reading AI response", 100, StepState.Success); SetStepProgress("Checking parameters", 50, StepState.Running); } catch { }

@@ -62,13 +62,17 @@ if not defined MSBUILD (
     )
 )
 
+
 if not defined MSBUILD (
     color 4F
     echo.
     echo [ERROR] MSBuild not found!
     echo Please ensure Visual Studio Build Tools are installed.
     echo.
-    pause
+    set /p RETRY="Do you want to retry? (Y/N): "
+    if /I "%RETRY%"=="Y" (
+        call "%~f0"
+    )
     exit /b
 )
 
@@ -80,6 +84,7 @@ REM FIX: Replaced pipe '|' with dash '-' to prevent crash
 echo [STEP 3] Building AI-CAD-December.sln (Debug - Any CPU)... 
 echo.
 
+
 "%MSBUILD%" "AI-CAD-December.sln" /p:Configuration=Debug "/p:Platform=Any CPU" /t:Rebuild
 
 if %ERRORLEVEL% NEQ 0 (
@@ -89,7 +94,10 @@ if %ERRORLEVEL% NEQ 0 (
     echo          BUILD FAILED
     echo !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
     echo.
-    pause
+    set /p RETRY="Build failed. Do you want to retry? (Y/N): "
+    if /I "%RETRY%"=="Y" (
+        call "%~f0"
+    )
     exit /b
 )
 

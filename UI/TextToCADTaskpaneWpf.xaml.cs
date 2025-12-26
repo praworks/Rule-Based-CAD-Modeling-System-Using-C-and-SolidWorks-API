@@ -94,6 +94,10 @@ namespace AICAD.UI
             }
             catch { }
 
+            // Wire up New Bottom button
+            if (this.FindName("btnNewBottom") is Button btnNewBottom)
+                btnNewBottom.Click += BtnNewBottom_Click;
+
             // Load adaptive LLM average from settings (persisted between runs)
             try
             {
@@ -2852,6 +2856,19 @@ namespace AICAD.UI
                 }), System.Windows.Threading.DispatcherPriority.Background);
             }
             catch { }
+        }
+
+        private void BtnNewBottom_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var win = new BlankWebView2Window();
+                win.Show();
+            }
+            catch (System.Exception ex)
+            {
+                MessageBox.Show($"Failed to open WebView2 window: {ex.Message}", "WebView2 Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
     }
 }

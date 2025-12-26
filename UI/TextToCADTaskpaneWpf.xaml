@@ -186,6 +186,7 @@
                 <ComboBoxItem>— none —</ComboBoxItem>
                 <ComboBoxItem>Box 100x50x25 mm</ComboBoxItem>
                 <ComboBoxItem>Cylinder Ø40 x 80 mm</ComboBoxItem>
+                <ComboBoxItem>Cube 10 mm</ComboBoxItem>
             </ComboBox>
             <Label x:Name="lblVersion" Grid.Column="2" Foreground="Silver" Content="v1.0" VerticalAlignment="Center" FontSize="9"/>
         </Grid>
@@ -205,6 +206,7 @@
                 <Button x:Name="btnHistory" Content="History" Padding="6,1" Margin="3,0,0,0" FontSize="11"/>
                 <Button x:Name="btnStatus" Content="👁️" Padding="6,1" Margin="3,0,0,0"/>
                 <Button x:Name="btnSettings" Content="⚙️" ToolTip="Settings" Padding="4,1" Margin="3,0,0,0"/>
+                <Button x:Name="btnNewBottom" Content="New Bottom" Padding="6,1" Margin="3,0,0,0"/>
             </StackPanel>
         </Grid>
     </Grid>

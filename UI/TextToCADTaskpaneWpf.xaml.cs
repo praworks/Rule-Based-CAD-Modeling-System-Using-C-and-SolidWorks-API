@@ -32,6 +32,7 @@ namespace AICAD.UI
 
         private ObservableCollection<StepViewModel> _steps = new ObservableCollection<StepViewModel>();
         private readonly ISldWorks _swApp;
+        private JArray _promptPresets;
         public class PromptChangedEventArgs : EventArgs
         {
             public string Text { get; }
@@ -457,6 +458,8 @@ namespace AICAD.UI
             lblVersion.Content = ver;
 
             // Wire up event handlers
+            // Load presets from PromtPreset.json (if present)
+            TryLoadPromptPresets();
             shapePreset.SelectionChanged += ShapePreset_SelectionChanged;
             prompt.TextChanged += Prompt_TextChanged;
 
@@ -625,14 +628,57 @@ namespace AICAD.UI
 
         private void ShapePreset_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
-            var idx = shapePreset.SelectedIndex;
-            switch (idx)
+            try
             {
-                case 1: PromptText = "Create a rectangular box 100 mm length, 50 mm width, 25 mm height"; break;
-                case 2: PromptText = "Create a cylinder 40 mm diameter and 80 mm height"; break;
-                case 3: PromptText = "Create a cube 10 mm"; break;
-                default: PromptText = string.Empty; break;
+                var idx = shapePreset.SelectedIndex;
+                if (_promptPresets == null || idx <= 0 || idx > _promptPresets.Count)
+                {
+                    PromptText = string.Empty;
+                    return;
+                }
+                var item = _promptPresets[idx - 1];
+                PromptText = item["prompt"]?.ToString() ?? string.Empty;
             }
+            catch { }
+        }
+
+        private void TryLoadPromptPresets()
+        {
+            try
+            {
+                string[] candidateNames = new[] { "PromtPreset.json", "PromptPreset.json" };
+                string baseDir = AppDomain.CurrentDomain.BaseDirectory ?? System.Environment.CurrentDirectory;
+                string found = null;
+                foreach (var name in candidateNames)
+                {
+                    var p = System.IO.Path.Combine(baseDir, name);
+                    if (File.Exists(p)) { found = p; break; }
+                }
+                if (found == null)
+                {
+                    foreach (var name in candidateNames)
+                    {
+                        var p = System.IO.Path.Combine(baseDir, "..", name);
+                        if (File.Exists(p)) { found = System.IO.Path.GetFullPath(p); break; }
+                    }
+                }
+                if (found == null) return;
+                var text = File.ReadAllText(found, Encoding.UTF8);
+                var arr = JArray.Parse(text);
+                _promptPresets = arr;
+                // populate combo
+                shapePreset.Items.Clear();
+                shapePreset.Items.Add("— none —");
+                foreach (var it in _promptPresets)
+                {
+                    var id = it["id"]?.ToString() ?? "";
+                    var desc = it["description"]?.ToString() ?? "";
+                    var display = string.IsNullOrWhiteSpace(id) ? desc : ($"{id} - {desc}");
+                    shapePreset.Items.Add(display);
+                }
+                shapePreset.SelectedIndex = 0;
+            }
+            catch { }
         }
 
         private void Prompt_TextChanged(object sender, TextChangedEventArgs e)

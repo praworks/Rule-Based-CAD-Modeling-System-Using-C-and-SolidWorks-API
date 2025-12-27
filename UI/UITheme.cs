@@ -15,8 +15,8 @@ namespace AICAD.UI
         public static Color BorderGray = Color.FromArgb(200, 200, 200);       // Subtle borders
 
         // Standard Font for Modern Windows Apps
-        public static Font MainFont = new Font("Segoe UI", 9f, FontStyle.Regular);
-        public static Font BoldFont = new Font("Segoe UI", 9f, FontStyle.Bold);
+        public static Font MainFont = new Font("Segoe UI", 10f, FontStyle.Regular);
+        public static Font BoldFont = new Font("Segoe UI", 10f, FontStyle.Bold);
 
         /// <summary>
         /// Applies standard font and color to the main window.
@@ -57,12 +57,12 @@ namespace AICAD.UI
 
         public static void ApplyNavButtonStyle(Button b, bool isActive)
         {
-            b.Width = 200; // Wider to accommodate text and prevent wrapping
-            b.Height = 45; // Slightly taller for touch/click targets
+            b.Width = 240; // Wider for better text fit
+            b.Height = 50; // Taller for better touch targets
             b.TextAlign = ContentAlignment.MiddleLeft;
             b.FlatStyle = FlatStyle.Flat;
             b.FlatAppearance.BorderSize = 0;
-            b.Padding = new Padding(15, 0, 0, 0); // Indent text
+            b.Padding = new Padding(20, 0, 0, 0); // More indent for text
             b.Cursor = Cursors.Hand;
 
             if (isActive)

@@ -9,34 +9,33 @@ namespace AICAD.UI
         // Create a Panel containing the database controls and assign to host fields
         public static Panel CreateDatabasePanel(SettingsDialog host)
         {
-            var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(15) };
+            var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20) };
             UITheme.ApplyPanelStyle(panel);
 
             var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2 };
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
 
             // MongoDB URI
-            var lblUri = new Label { Text = "MongoDB URI:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 8, 0, 0), Margin = new Padding(0, 20, 0, 20) };
-            host._txtMongoUri = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 20, 0, 20) };
+            var lblUri = new Label { Text = "MongoDB URI:", Dock = DockStyle.Fill, Padding = new Padding(0,10,0,0) };
+            host._txtMongoUri = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0,8,0,8) };
             UITheme.ApplyTextBoxStyle(host._txtMongoUri);
 
             // Database Name
-            var lblDb = new Label { Text = "Database Name:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 8, 0, 0), Margin = new Padding(0, 20, 0, 20) };
-            host._txtMongoDb = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 20, 0, 20) };
+            var lblDb = new Label { Text = "Database Name:", Dock = DockStyle.Fill, Padding = new Padding(0,10,0,0) };
+            host._txtMongoDb = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0,8,0,8) };
             UITheme.ApplyTextBoxStyle(host._txtMongoDb);
 
             // Username
-            var lblUser = new Label { Text = "Username:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 8, 0, 0), Margin = new Padding(0, 20, 0, 20) };
-            host._txtMongoUser = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 20, 0, 20) };
+            var lblUser = new Label { Text = "Username:", Dock = DockStyle.Fill, Padding = new Padding(0,10,0,0) };
+            host._txtMongoUser = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0,8,0,8) };
             UITheme.ApplyTextBoxStyle(host._txtMongoUser);
 
             // Password + visibility toggle
-            var lblPassword = new Label { Text = "Password:", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(0, 8, 0, 0), Margin = new Padding(0, 20, 0, 20) };
-            host._txtMongoPassword = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true, Margin = new Padding(0, 20, 0, 20) };
+            var lblPassword = new Label { Text = "Password:", Dock = DockStyle.Fill, Padding = new Padding(0,10,0,0) };
+            host._txtMongoPassword = new TextBox { Dock = DockStyle.Fill, UseSystemPasswordChar = true, Margin = new Padding(0,8,0,8) };
             UITheme.ApplyTextBoxStyle(host._txtMongoPassword);
             var pwPanel = new Panel { Dock = DockStyle.Fill };
-            pwPanel.Margin = new Padding(0, 20, 0, 20);
             host._btnToggleMongoPwVisibility = new Button { Width = 40, Height = 24, Dock = DockStyle.Right, FlatStyle = FlatStyle.Flat, Text = "Show", TabStop = false };
             UITheme.ApplyButtonStyle(host._btnToggleMongoPwVisibility, false);
             host._btnToggleMongoPwVisibility.Click += (s, e) =>
@@ -68,12 +67,12 @@ namespace AICAD.UI
 
             // Layout rows
             table.RowCount = 7;
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
             table.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 30));
             table.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
             table.Controls.Add(lblUri, 0, 0); table.Controls.Add(host._txtMongoUri, 1, 0);

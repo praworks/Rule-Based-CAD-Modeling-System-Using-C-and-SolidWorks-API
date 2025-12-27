@@ -167,7 +167,7 @@ namespace AICAD.UI
         private void InitializeComponents()
         {
             // Form properties
-            Text = "Settings - AI-CAD-December";
+            Text = "Settings";
             // FIX: Reduced size to fit standard screens
             Size = new Size(1000, 750);
             FormBorderStyle = FormBorderStyle.FixedDialog;
@@ -176,10 +176,10 @@ namespace AICAD.UI
             StartPosition = FormStartPosition.CenterParent;
 
             // Footer with Close and Apply buttons (dock first so SplitContainer fills remaining space)
-            var footer = new Panel { Dock = DockStyle.Bottom, Height = 60, Padding = new Padding(10) };
-            var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 260, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 12, 0, 0) };
-            var btnApplyAll = new Button { Text = "Apply", Width = 100, Height = 36 };
-            var btnClose = new Button { Text = "Close", Width = 100, Height = 36 };
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 80, Padding = new Padding(15) };
+            var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 350, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 15, 0, 0) };
+            var btnApplyAll = new Button { Text = "Apply", Width = 120, Height = 40 };
+            var btnClose = new Button { Text = "Close", Width = 120, Height = 40 };
             UITheme.ApplyButtonStyle(btnApplyAll, true);
             UITheme.ApplyButtonStyle(btnClose, false);
             btnApplyAll.Click += BtnApplyAll_Click;
@@ -193,8 +193,10 @@ namespace AICAD.UI
             _splitContainer = new SplitContainer
             {
                 Dock = DockStyle.Fill,
-                // FIX: Increased splitter distance so buttons are visible
-                SplitterDistance = 220, 
+                // FIX: Increased splitter distance for wider sidebar
+                SplitterDistance = 280,
+                // Prevent the left navigation panel from collapsing below this size
+                Panel1MinSize = 280,
                 IsSplitterFixed = false
             };
 
@@ -203,14 +205,15 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 FlowDirection = FlowDirection.TopDown,
-                Padding = new Padding(8),
+                Padding = new Padding(12),
                 AutoScroll = true,
                 WrapContents = false
             };
             _splitContainer.Panel1.Controls.Add(_navPanel);
 
             // Right: content host
-            _contentHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(40) };
+            // Increased padding for better spacing
+            _contentHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(30) };
             _splitContainer.Panel2.Controls.Add(_contentHost);
 
             // Build content panels using extracted tab classes

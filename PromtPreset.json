@@ -1,0 +1,188 @@
+[
+  {
+    "id": "001",
+    "category": "Base Primitive",
+    "description": "Simple cylinder creation with specific constraints",
+    "prompt": "Create a cylinder on the Top Plane with a diameter of 50mm and a height of 100mm centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Top Plane",
+        "geometry": "circle",
+        "constraints": ["concentric_origin"],
+        "parameters": {
+          "diameter": { "value": 50, "unit": "mm" }
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": { "value": 100, "unit": "mm" },
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "002",
+    "category": "Sketch & Cut",
+    "description": "Creating a cut feature on a specific face",
+    "prompt": "Sketch a 20x20mm center rectangle on the selected face and create a Through All cut.",
+    "expected_json": {
+      "intent": "create_cut_feature",
+      "type": "extrusion_cut",
+      "sketch": {
+        "plane": "selection_face",
+        "geometry": "rectangle_center",
+        "parameters": {
+          "width": { "value": 20, "unit": "mm" },
+          "height": { "value": 20, "unit": "mm" }
+        }
+      },
+      "extrusion": {
+        "direction": "through_all",
+        "flip_side": false
+      }
+    }
+  },
+  {
+    "id": "003",
+    "category": "Revolve Feature",
+    "description": "Creating a sphere using revolve",
+    "prompt": "Create a sphere by revolving a semi-circle with radius 30mm on the Front Plane around the vertical axis.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "revolve_boss",
+      "sketch": {
+        "plane": "Front Plane",
+        "geometry": "arc_center",
+        "parameters": {
+          "radius": { "value": 30, "unit": "mm" },
+          "angle": { "value": 180, "unit": "deg" }
+        }
+      },
+      "revolve": {
+        "axis_of_revolution": "sketch_vertical_line",
+        "angle": { "value": 360, "unit": "deg" }
+      }
+    }
+  },
+  {
+    "id": "004",
+    "category": "Applied Feature",
+    "description": "Filleting specific edges",
+    "prompt": "Apply a 5mm fillet to all edges of the last created feature.",
+    "expected_json": {
+      "intent": "create_applied_feature",
+      "type": "fillet_constant",
+      "selection_scope": {
+        "target": "feature_last_created",
+        "filter": "all_edges"
+      },
+      "parameters": {
+        "radius": { "value": 5, "unit": "mm" },
+        "propagation": "tangent"
+      }
+    }
+  },
+  {
+    "id": "005",
+    "category": "Applied Feature",
+    "description": "Chamfering with distance-distance",
+    "prompt": "Add a 2mm x 45 degree chamfer to the top face of the cylinder.",
+    "expected_json": {
+      "intent": "create_applied_feature",
+      "type": "chamfer",
+      "selection_scope": {
+        "target": "face_top",
+        "context": "cylinder"
+      },
+      "parameters": {
+        "distance": { "value": 2, "unit": "mm" },
+        "angle": { "value": 45, "unit": "deg" }
+      }
+    }
+  },
+  {
+    "id": "006",
+    "category": "Shell",
+    "description": "Shelling a part",
+    "prompt": "Shell the part with a wall thickness of 2mm, removing the top face.",
+    "expected_json": {
+      "intent": "create_applied_feature",
+      "type": "shell",
+      "selection_scope": {
+        "faces_to_remove": ["face_top"]
+      },
+      "parameters": {
+        "thickness": { "value": 2, "unit": "mm" },
+        "direction": "inside"
+      }
+    }
+  },
+  {
+    "id": "007",
+    "category": "Patterning",
+    "description": "Linear pattern of a feature",
+    "prompt": "Create a linear pattern of 'Cut-Extrude1' along the X-axis with 5 instances spaced 25mm apart.",
+    "expected_json": {
+      "intent": "create_pattern",
+      "type": "linear_pattern",
+      "target_feature": "Cut-Extrude1",
+      "direction_1": {
+        "reference": "axis_x",
+        "count": 5,
+        "spacing": { "value": 25, "unit": "mm" }
+      }
+    }
+  },
+  {
+    "id": "008",
+    "category": "Reference Geometry",
+    "description": "Creating an offset plane",
+    "prompt": "Create a new reference plane offset 50mm from the Right Plane.",
+    "expected_json": {
+      "intent": "create_reference_geometry",
+      "type": "plane",
+      "references": [
+        {
+          "entity": "Right Plane",
+          "condition": "offset",
+          "value": { "value": 50, "unit": "mm" }
+        }
+      ]
+    }
+  },
+  {
+    "id": "009",
+    "category": "Advanced Creation",
+    "description": "Loft between two sketches",
+    "prompt": "Create a loft feature connecting Sketch1 and Sketch2.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "loft",
+      "profiles": ["Sketch1", "Sketch2"],
+      "guide_curves": [],
+      "parameters": {
+        "merge_tangent_faces": true,
+        "close_loft": false
+      }
+    }
+  },
+  {
+    "id": "010",
+    "category": "Mid-Plane Extrusion",
+    "description": "Extrusion centered on plane",
+    "prompt": "Extrude Sketch3 40mm using the Mid Plane condition.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "use_existing": "Sketch3"
+      },
+      "extrusion": {
+        "direction": "mid_plane",
+        "depth": { "value": 40, "unit": "mm" }
+      }
+    }
+  }
+]

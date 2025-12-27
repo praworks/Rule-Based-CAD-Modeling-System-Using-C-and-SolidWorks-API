@@ -13,66 +13,70 @@ namespace AICAD.UI
     {
         private const string RecommendedMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
 
-        private TabControl _tabControl;
+        internal SplitContainer _splitContainer;
+        internal FlowLayoutPanel _navPanel;
+        internal Panel _contentHost;
         
-        // MongoDB Tab Controls
-        private TextBox _txtMongoUri;
-        private TextBox _txtMongoDb;
-        private TextBox _txtMongoUser;
-        private TextBox _txtMongoPassword;
-        private CheckBox _chkUseFewShot;
-        private CheckBox _chkAllowMultipleBuilds;
-        private Button _btnToggleMongoPwVisibility;
-        private Button _btnSaveMongo;
-        private Button _btnLoadMongo;
-        private Label _lblMongoStatus;
+        // MongoDB Tab Controls (made internal so DatabaseTab factory can assign them)
+        internal TextBox _txtMongoUri;
+        internal TextBox _txtMongoDb;
+        internal TextBox _txtMongoUser;
+        internal TextBox _txtMongoPassword;
+        internal CheckBox _chkUseFewShot;
+        internal CheckBox _chkAllowMultipleBuilds;
+        internal Button _btnToggleMongoPwVisibility;
+        internal Button _btnSaveMongo;
+        internal Button _btnLoadMongo;
+        internal Label _lblMongoStatus;
         
         // API Key Tab Controls
-        private TextBox _txtApiKey;
-        private Button _btnToggleApiKeyVisibility;
-        private ComboBox _cmbCloudProvider;
-        private Button _btnSaveApiKey;
-        private Button _btnLoadApiKey;
-        private Label _lblApiStatus;
-        private Button _btnTestApi;
+        internal TextBox _txtApiKey;
+        internal Button _btnToggleApiKeyVisibility;
+        internal ComboBox _cmbCloudProvider;
+        internal Button _btnSaveApiKey;
+        internal Button _btnLoadApiKey;
+        internal Label _lblApiStatus;
+        internal Button _btnTestApi;
         // Local LLM controls
-        private ComboBox _cmbLlmMode;
-        private TextBox _txtLocalEndpoint;
-        private TextBox _txtLocalModel;
-        private TextBox _txtLocalSystemPrompt;
+        internal ComboBox _cmbLlmMode;
+        internal TextBox _txtLocalEndpoint;
+        internal TextBox _txtLocalModel;
+        internal TextBox _txtLocalSystemPrompt;
         // New controls for direct key entry
-        private TextBox _txtGeminiKey;
-        private TextBox _txtGroqKey;
+        internal TextBox _txtGeminiKey;
+        internal TextBox _txtGroqKey;
         // API/LLM labels (kept as fields so visibility can be toggled)
-        private Label _lblProvider;
-        private Label _lblLlmMode;
-        private Label _lblApiKeyLabel;
-        private Label _lblLocalEndpointLabel;
-        private Label _lblLocalModelLabel;
-        private Label _lblLocalSysLabel;
-        private Label _lblCloudProvider;
-        private Label _lblGeminiKey;
-        private Label _lblGroqKey;
+        internal Label _lblProvider;
+        internal Label _lblLlmMode;
+        internal Label _lblApiKeyLabel;
+        internal Label _lblLocalEndpointLabel;
+        internal Label _lblLocalModelLabel;
+        internal Label _lblLocalSysLabel;
+        internal Label _lblCloudProvider;
+        internal Label _lblGeminiKey;
+        internal Label _lblGroqKey;
         
         
         // NameEasy Tab Controls
-        private TextBox _txtNameEasyPath;
-        private Button _btnBrowseNameEasy;
-        private Button _btnSaveNameEasy;
-        private Label _lblNameEasyInfo;
+        internal TextBox _txtNameEasyPath;
+        internal Button _btnBrowseNameEasy;
+        internal Button _btnSaveNameEasy;
+        internal Label _lblNameEasyInfo;
         
         // Samples Tab Controls
-        private RadioButton _rbZeroShot;
-        private RadioButton _rbOneShot;
-        private RadioButton _rbFewShot;
-        private TextBox _txtSamplesDbPath;
-        private Button _btnBrowseSamples;
-        private Button _btnSaveSamples;
-        private Label _lblSamplesInfo;
+        internal RadioButton _rbZeroShot;
+        internal RadioButton _rbOneShot;
+        internal RadioButton _rbFewShot;
+        internal TextBox _txtSamplesDbPath;
+        internal Button _btnBrowseSamples;
+        internal Button _btnSaveSamples;
+        internal Label _lblSamplesInfo;
         
         public SettingsDialog()
         {
             InitializeComponents();
+            // Applies the Font and Background color globally to the form
+            UITheme.ApplyFormStyle(this);
             TryReplaceOldMongoUri();
             LoadAllSettings();
         }
@@ -91,84 +95,9 @@ namespace AICAD.UI
             catch { }
         }
 
-        private TabPage CreateSamplesTab()
-        {
-            var tab = new TabPage("Samples");
-            var panel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 3,
-                RowCount = 4,
-                Padding = new Padding(15)
-            };
+        
 
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
-
-            // Radio buttons for sample mode
-            var lblMode = new Label
-            {
-                Text = "Sample Mode:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            var rbPanel = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.LeftToRight };
-            _rbZeroShot = new RadioButton { Text = "Zero-Shot", AutoSize = true };
-            _rbOneShot = new RadioButton { Text = "One-Shot", AutoSize = true };
-            _rbFewShot = new RadioButton { Text = "Few-Shot", AutoSize = true };
-            rbPanel.Controls.Add(_rbZeroShot);
-            rbPanel.Controls.Add(_rbOneShot);
-            rbPanel.Controls.Add(_rbFewShot);
-
-            panel.Controls.Add(lblMode, 0, 0);
-            panel.SetColumnSpan(rbPanel, 2);
-            panel.Controls.Add(rbPanel, 1, 0);
-
-            // Samples DB path
-            var lblPath = new Label
-            {
-                Text = "Samples DB Path:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtSamplesDbPath = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0, 5, 0, 5) };
-            _btnBrowseSamples = new Button { Text = "Browse...", Width = 80, Height = 26 };
-            _btnBrowseSamples.Click += BtnBrowseSamples_Click;
-
-            panel.Controls.Add(lblPath, 0, 1);
-            panel.Controls.Add(_txtSamplesDbPath, 1, 1);
-            panel.Controls.Add(_btnBrowseSamples, 2, 1);
-
-            // Save button
-            _btnSaveSamples = new Button { Text = "Save", Width = 100, Height = 30, Anchor = AnchorStyles.Right };
-            _btnSaveSamples.Click += BtnSaveSamples_Click;
-            panel.SetColumnSpan(_btnSaveSamples, 3);
-            panel.Controls.Add(_btnSaveSamples, 0, 2);
-
-            _lblSamplesInfo = new Label
-            {
-                Text = "Choose how example shots are provided to the LLM and where they are stored.",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.Gray,
-                AutoSize = false,
-                Padding = new Padding(0, 10, 0, 0)
-            };
-            panel.SetColumnSpan(_lblSamplesInfo, 3);
-            panel.Controls.Add(_lblSamplesInfo, 0, 3);
-
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-            tab.Controls.Add(panel);
-            return tab;
-        }
-
-        private void BtnBrowseSamples_Click(object sender, EventArgs e)
+        internal void BtnBrowseSamples_Click(object sender, EventArgs e)
         {
             using (var dlg = new FolderBrowserDialog())
             {
@@ -187,7 +116,7 @@ namespace AICAD.UI
             }
         }
 
-        private void BtnSaveSamples_Click(object sender, EventArgs e)
+        internal void BtnSaveSamples_Click(object sender, EventArgs e)
         {
             try
             {
@@ -203,7 +132,7 @@ namespace AICAD.UI
             }
         }
 
-        private void BtnLoadSamples_Click(object sender, EventArgs e)
+        internal void BtnLoadSamples_Click(object sender, EventArgs e)
         {
             try
             {
@@ -242,55 +171,83 @@ namespace AICAD.UI
         {
             // Form properties
             Text = "Settings - AI-CAD-December";
-            Size = new Size(600, 500);
+            Size = new Size(1500, 1000);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterParent;
-            
-            // Create tab control
-            _tabControl = new TabControl
+
+            // Footer with Close and Apply buttons (dock first so SplitContainer fills remaining space)
+            var footer = new Panel { Dock = DockStyle.Bottom, Height = 60, Padding = new Padding(10) };
+            var footerRight = new FlowLayoutPanel { Dock = DockStyle.Right, Width = 260, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 12, 0, 0) };
+            var btnApplyAll = new Button { Text = "Apply", Width = 100, Height = 36 };
+            var btnClose = new Button { Text = "Close", Width = 100, Height = 36 };
+            UITheme.ApplyButtonStyle(btnApplyAll, true);
+            UITheme.ApplyButtonStyle(btnClose, false);
+            btnApplyAll.Click += BtnApplyAll_Click;
+            btnClose.Click += (s, e) => Close();
+            footerRight.Controls.Add(btnClose);
+            footerRight.Controls.Add(btnApplyAll);
+            footer.Controls.Add(footerRight);
+            Controls.Add(footer);
+
+            // Create SplitContainer with a left navigation panel and right content host
+            _splitContainer = new SplitContainer
             {
                 Dock = DockStyle.Fill,
-                Padding = new Point(10, 10)
+                SplitterDistance = 20,
+                IsSplitterFixed = false
             };
-            
-            // Create tabs
-            var dbTab = CreateDatabaseTab();
-            var apiTab = CreateApiKeyTab();
-            var nameEasyTab = CreateNameEasyTab();
-            var samplesTab = CreateSamplesTab();
-            
-            _tabControl.TabPages.Add(dbTab);
-            _tabControl.TabPages.Add(apiTab);
-            _tabControl.TabPages.Add(samplesTab);
-            _tabControl.TabPages.Add(nameEasyTab);
-            
-            Controls.Add(_tabControl);
-            
-            // Close button at bottom
-            var btnClose = new Button
-            {
-                Text = "Close",
-                Width = 100,
-                Height = 30,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-                Location = new Point(Width - 120, Height - 70)
-            };
-            btnClose.Click += (s, e) => Close();
-            Controls.Add(btnClose);
 
-            // Apply all settings button
-            var btnApplyAll = new Button
+            // Left: navigation
+            _navPanel = new FlowLayoutPanel
             {
-                Text = "Apply",
-                Width = 100,
-                Height = 30,
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Right,
-                Location = new Point(Width - 240, Height - 70)
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.TopDown,
+                Padding = new Padding(8),
+                AutoScroll = true,
+                WrapContents = false
             };
-            btnApplyAll.Click += BtnApplyAll_Click;
-            Controls.Add(btnApplyAll);
+            _splitContainer.Panel1.Controls.Add(_navPanel);
+
+            // Right: content host
+            _contentHost = new Panel { Dock = DockStyle.Fill, Padding = new Padding(40) };
+            _splitContainer.Panel2.Controls.Add(_contentHost);
+
+            // Build content panels using extracted tab classes
+            var dbPanel = DatabaseTab.CreateDatabasePanel(this);
+            var llmPanel = LlmTab.CreatePanel(this);
+            var samplesPanel = SamplesTab.CreatePanel(this);
+            var nameEasyPanel = NameEasyTab.CreatePanel(this);
+
+            // Add nav buttons
+            var btnDb = new Button { Text = "Database", Tag = dbPanel };
+            var btnLlm = new Button { Text = "LLM Settings", Tag = llmPanel };
+            var btnSamples = new Button { Text = "Samples", Tag = samplesPanel };
+            var btnNameEasy = new Button { Text = "NameEasy", Tag = nameEasyPanel };
+            UITheme.ApplyNavButtonStyle(btnDb, false);
+            UITheme.ApplyNavButtonStyle(btnLlm, false);
+            UITheme.ApplyNavButtonStyle(btnSamples, false);
+            UITheme.ApplyNavButtonStyle(btnNameEasy, false);
+
+            btnDb.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
+            btnLlm.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
+            btnSamples.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
+            btnNameEasy.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
+
+            _navPanel.Controls.Add(btnDb);
+            _navPanel.Controls.Add(btnLlm);
+            _navPanel.Controls.Add(btnSamples);
+            _navPanel.Controls.Add(btnNameEasy);
+
+            // Add SplitContainer after footer so it fills the remaining area
+            Controls.Add(_splitContainer);
+            // Ensure the SplitContainer z-order is correct (so footer and content render properly)
+            _splitContainer.BringToFront();
+
+            // show database by default and mark nav button active
+            UITheme.ApplyNavButtonStyle(btnDb, true);
+            ShowPanel(dbPanel);
 
             // Load NameEasy current path into the tab if present
             try
@@ -310,522 +267,17 @@ namespace AICAD.UI
             catch { }
         }
         
-        private TabPage CreateDatabaseTab()
-        {
-            var tab = new TabPage("Database Settings");
-            var panel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
-                RowCount = 6,
-                Padding = new Padding(15)
-            };
-            
-            // Configure columns
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            
-            // Row 0: MongoDB URI
-            var lblUri = new Label 
-            { 
-                Text = "MongoDB URI:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtMongoUri = new TextBox 
-            { 
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            panel.Controls.Add(lblUri, 0, 0);
-            panel.Controls.Add(_txtMongoUri, 1, 0);
-            
-            // Row 1: Database Name
-            var lblDb = new Label 
-            { 
-                Text = "Database Name:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtMongoDb = new TextBox 
-            { 
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            panel.Controls.Add(lblDb, 0, 1);
-            panel.Controls.Add(_txtMongoDb, 1, 1);
-
-            // Row 2: Username
-            var lblUser = new Label
-            {
-                Text = "Username:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtMongoUser = new TextBox
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            panel.Controls.Add(lblUser, 0, 2);
-            panel.Controls.Add(_txtMongoUser, 1, 2);
-            
-            // Row 3: Password
-            var lblPassword = new Label 
-            { 
-                Text = "Password:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtMongoPassword = new TextBox 
-            { 
-                Dock = DockStyle.Fill,
-                UseSystemPasswordChar = true,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-
-            // Panel to hold password textbox + visibility toggle
-            var pwPanel = new Panel { Dock = DockStyle.Fill };
-            _btnToggleMongoPwVisibility = new Button
-            {
-                Width = 30,
-                Height = 24,
-                Dock = DockStyle.Right,
-                FlatStyle = FlatStyle.Flat,
-                Text = "Show",
-                TabStop = false
-            };
-            _btnToggleMongoPwVisibility.Click += ToggleMongoPasswordVisibility_Click;
-            pwPanel.Controls.Add(_btnToggleMongoPwVisibility);
-            pwPanel.Controls.Add(_txtMongoPassword);
-
-            panel.Controls.Add(lblPassword, 0, 3);
-            panel.Controls.Add(pwPanel, 1, 3);
-            
-            // (Model control intentionally moved to API Key tab)
-
-            // Row 4: Buttons
-            var buttonPanel = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.LeftToRight,
-                Padding = new Padding(0, 10, 0, 10)
-            };
-            
-            _btnLoadMongo = new Button
-            {
-                Text = "Load from Environment",
-                Width = 160,
-                Height = 30,
-                Margin = new Padding(0, 0, 10, 0)
-            };
-            _btnLoadMongo.Click += BtnLoadMongo_Click;
-            
-            _btnSaveMongo = new Button
-            {
-                Text = "Save to Environment",
-                Width = 160,
-                Height = 30,
-                BackColor = Color.FromArgb(0, 120, 215),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
-            };
-            _btnSaveMongo.Click += BtnSaveMongo_Click;
-            
-            buttonPanel.Controls.Add(_btnLoadMongo);
-            buttonPanel.Controls.Add(_btnSaveMongo);
-            panel.SetColumnSpan(buttonPanel, 2);
-            panel.Controls.Add(buttonPanel, 0, 4);
-
-            // Row 5: Status
-            _lblMongoStatus = new Label
-            {
-                Text = "",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.DarkGreen,
-                Padding = new Padding(0, 5, 0, 5)
-            };
-            panel.SetColumnSpan(_lblMongoStatus, 2);
-            panel.Controls.Add(_lblMongoStatus, 0, 5);
-            
-            // Row 6: Help text
-            var helpText = new Label
-            {
-                Text = "Note: Settings are saved to user environment variables.\n" +
-                       "Password is stored in plain text (MONGODB_PW).\n" +
-                       "You may need to restart SolidWorks for changes to take effect.",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.Gray,
-                AutoSize = false,
-                Padding = new Padding(0, 10, 0, 0)
-            };
-            panel.SetColumnSpan(helpText, 2);
-            panel.Controls.Add(helpText, 0, 6);
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // status
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-            
-            // Set initial visibility now that all controls have been created
-
-            tab.Controls.Add(panel);
-            return tab;
-        }
         
-        private TabPage CreateApiKeyTab()
-        {
-            var tab = new TabPage("LLM Settings");
-            var panel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 2,
-                RowCount = 14,
-                Padding = new Padding(15)
-            };
-            
-            // Configure columns
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            
-            // Row 0: LLM Mode (Cloud / Local)
-            _lblLlmMode = new Label
-            {
-                Text = "LLM Mode:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _cmbLlmMode = new ComboBox
-            {
-                Dock = DockStyle.Fill,
-                DropDownStyle = ComboBoxStyle.DropDownList,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            _cmbLlmMode.Items.AddRange(new object[] { "Cloud (Gemini/Groq)", "Local" });
-            _cmbLlmMode.SelectedIndexChanged += (s, e) =>
-            {
-                var isLocal = _cmbLlmMode.SelectedIndex == 1;
-                _txtLocalEndpoint.Enabled = isLocal;
-                _txtLocalModel.Enabled = isLocal;
-                _txtLocalSystemPrompt.Enabled = isLocal;
-                _txtGeminiKey.Enabled = !isLocal;
-                _txtGroqKey.Enabled = !isLocal;
-            };
-            panel.Controls.Add(_lblLlmMode, 0, 0);
-            panel.Controls.Add(_cmbLlmMode, 1, 0);
-
-            // Row 1: Local LLM Endpoint
-            _lblLocalEndpointLabel = new Label
-            {
-                Text = "Local LLM Endpoint:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtLocalEndpoint = new TextBox
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            panel.Controls.Add(_lblLocalEndpointLabel, 0, 1);
-            panel.Controls.Add(_txtLocalEndpoint, 1, 1);
-            
-            // Row 1: Google Gemini API Key
-            _lblGeminiKey = new Label
-            {
-                Text = "Google Gemini API Key:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtGeminiKey = new TextBox
-            {
-                Dock = DockStyle.Fill,
-                UseSystemPasswordChar = true,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            // Panel to hold Gemini key textbox + visibility toggle
-            var geminiPanel = new Panel { Dock = DockStyle.Fill };
-            var btnToggleGeminiVisibility = new Button
-            {
-                Width = 30,
-                Height = 24,
-                Dock = DockStyle.Right,
-                FlatStyle = FlatStyle.Flat,
-                Text = "Show",
-                TabStop = false
-            };
-            btnToggleGeminiVisibility.Click += (s, e) => ToggleApiKeyVisibility(s, e, _txtGeminiKey);
-            geminiPanel.Controls.Add(btnToggleGeminiVisibility);
-            geminiPanel.Controls.Add(_txtGeminiKey);
-            panel.Controls.Add(_lblGeminiKey, 0, 2);
-            panel.Controls.Add(geminiPanel, 1, 2);
-            
-            // Row 2: Groq API Key
-            _lblGroqKey = new Label
-            {
-                Text = "Groq API Key:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtGroqKey = new TextBox
-            {
-                Dock = DockStyle.Fill,
-                UseSystemPasswordChar = true,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            // Panel to hold Groq key textbox + visibility toggle
-            var groqPanel = new Panel { Dock = DockStyle.Fill };
-            var btnToggleGroqVisibility = new Button
-            {
-                Width = 30,
-                Height = 24,
-                Dock = DockStyle.Right,
-                FlatStyle = FlatStyle.Flat,
-                Text = "Show",
-                TabStop = false
-            };
-            btnToggleGroqVisibility.Click += (s, e) => ToggleApiKeyVisibility(s, e, _txtGroqKey);
-            groqPanel.Controls.Add(btnToggleGroqVisibility);
-            groqPanel.Controls.Add(_txtGroqKey);
-            panel.Controls.Add(_lblGroqKey, 0, 3);
-            panel.Controls.Add(groqPanel, 1, 3);
-
-            // Project ID removed from UI (managed externally via environment variables if needed)
-
-            // Row 3: Local model name
-            _lblLocalModelLabel = new Label
-            {
-                Text = "Local Model (identifier):",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtLocalModel = new TextBox
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            panel.Controls.Add(_lblLocalModelLabel, 0, 4);
-            panel.Controls.Add(_txtLocalModel, 1, 4);
-
-            // Row 4: Local system prompt
-            _lblLocalSysLabel = new Label
-            {
-                Text = "Local System Prompt:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtLocalSystemPrompt = new TextBox
-            {
-                Dock = DockStyle.Fill,
-                Margin = new Padding(0, 5, 0, 5)
-            };
-            panel.Controls.Add(_lblLocalSysLabel, 0, 5);
-            panel.Controls.Add(_txtLocalSystemPrompt, 1, 5);
-
-            // initial visibility will be set after the rest of the controls are created
-            // Model selection removed from UI; GEMINI_MODEL is managed via environment variables.
-
-            // Row 3: Buttons
-            var buttonPanel = new FlowLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                FlowDirection = FlowDirection.LeftToRight,
-                Padding = new Padding(0, 10, 0, 10)
-            };
-            
-            _btnLoadApiKey = new Button
-            {
-                Text = "Load from Environment",
-                Width = 160,
-                Height = 30,
-                Margin = new Padding(0, 0, 10, 0)
-            };
-            _btnLoadApiKey.Click += BtnLoadApiKey_Click;
-            
-            _btnSaveApiKey = new Button
-            {
-                Text = "Save to Environment",
-                Width = 160,
-                Height = 30,
-                BackColor = Color.FromArgb(0, 120, 215),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat
-            };
-            _btnSaveApiKey.Click += BtnSaveApiKey_Click;
-            
-            buttonPanel.Controls.Add(_btnLoadApiKey);
-            buttonPanel.Controls.Add(_btnSaveApiKey);
-            // Test button
-            _btnTestApi = new Button
-            {
-                Text = "Test API",
-                Width = 120,
-                Height = 30,
-                Margin = new Padding(10, 0, 0, 0)
-            };
-            _btnTestApi.Click += (s, e) => { var _ = BtnTestApi_Click(s, e); };
-            buttonPanel.Controls.Add(_btnTestApi);
-            panel.SetColumnSpan(buttonPanel, 2);
-            panel.Controls.Add(buttonPanel, 0, 5);
-
-            // Duplicate Save button at bottom of dialog for discoverability
-            var btnSaveBottom = new Button
-            {
-                Text = "Save to Environment",
-                Width = 160,
-                Height = 30,
-                BackColor = Color.FromArgb(0, 120, 215),
-                ForeColor = Color.White,
-                FlatStyle = FlatStyle.Flat,
-                Anchor = AnchorStyles.Bottom
-            };
-            btnSaveBottom.Click += BtnSaveApiKey_Click;
-            btnSaveBottom.Location = new Point((this.Width / 2) - 80, this.Height - 60);
-            Controls.Add(btnSaveBottom);
-            
-            // Row 5: Status
-            _lblApiStatus = new Label
-            {
-                Text = "",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                ForeColor = Color.DarkGreen,
-                Padding = new Padding(0, 5, 0, 5)
-            };
-            panel.SetColumnSpan(_lblApiStatus, 2);
-            panel.Controls.Add(_lblApiStatus, 0, 8);
-            
-            // Row 6: Help text
-            var helpText = new Label
-            {
-                Text = "Note: Settings are saved to user environment variables.\n" +
-                       "Variables: LOCAL_LLM_ENDPOINT, GEMINI_API_KEY, GROQ_API_KEY,\n" +
-                       "LOCAL_LLM_MODEL, LOCAL_LLM_SYSTEM_PROMPT.\n" +
-                       "You may need to restart SolidWorks for changes to take effect.",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.Gray,
-                AutoSize = false,
-                Padding = new Padding(0, 10, 0, 0)
-            };
-            panel.SetColumnSpan(helpText, 2);
-            panel.Controls.Add(helpText, 0, 9);
-            
-            // Row 7: Few-shot checkbox
-            _chkUseFewShot = new CheckBox
-            {
-                Text = "Enable Few-Shot examples (use examples from DB)",
-                Dock = DockStyle.Fill,
-                Padding = new Padding(3, 8, 0, 0)
-            };
-            panel.SetColumnSpan(_chkUseFewShot, 2);
-            panel.Controls.Add(_chkUseFewShot, 0, 10);
-            
-            // Row 8: Allow multiple builds checkbox
-            _chkAllowMultipleBuilds = new CheckBox
-            {
-                Text = "Allow multiple build requests (disable button protection)",
-                Dock = DockStyle.Fill,
-                Padding = new Padding(3, 8, 0, 0)
-            };
-            panel.SetColumnSpan(_chkAllowMultipleBuilds, 2);
-            panel.Controls.Add(_chkAllowMultipleBuilds, 0, 11);
-            
-            // Set row heights
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 0 llm mode
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 1 local endpoint
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 2 gemini key
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 3 groq key
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 4 local model
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35)); // 5 local sys
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50)); // 6 buttons
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 7 status
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40)); // 8 help
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 9 placeholder
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 10 fewshot
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // 11 allow
-            panel.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // 10
-            
-            tab.Controls.Add(panel);
-            return tab;
-        }
-
-
-
-
-
-        private TabPage CreateNameEasyTab()
-        {
-            var tab = new TabPage("NameEasy");
-            var panel = new TableLayoutPanel
-            {
-                Dock = DockStyle.Fill,
-                ColumnCount = 3,
-                RowCount = 3,
-                Padding = new Padding(15)
-            };
-
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90));
-
-            var lblPath = new Label
-            {
-                Text = "Database Path:",
-                Dock = DockStyle.Fill,
-                TextAlign = ContentAlignment.MiddleLeft,
-                Padding = new Padding(0, 8, 0, 0)
-            };
-            _txtNameEasyPath = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(0,5,0,5) };
-            _btnBrowseNameEasy = new Button { Text = "Browse...", Width = 80, Height = 26 };
-            _btnBrowseNameEasy.Click += BtnBrowseNameEasy_Click;
-
-            panel.Controls.Add(lblPath, 0, 0);
-            panel.Controls.Add(_txtNameEasyPath, 1, 0);
-            panel.Controls.Add(_btnBrowseNameEasy, 2, 0);
-
-            _lblNameEasyInfo = new Label
-            {
-                Text = "Choose where to store the NameEasy.db database. Default: add-in folder.",
-                Dock = DockStyle.Fill,
-                ForeColor = Color.Gray,
-                AutoSize = false,
-                Padding = new Padding(0,10,0,0)
-            };
-            panel.SetColumnSpan(_lblNameEasyInfo, 3);
-            panel.Controls.Add(_lblNameEasyInfo, 0, 1);
-
-            _btnSaveNameEasy = new Button
-            {
-                Text = "Save",
-                Width = 100,
-                Height = 30,
-                Anchor = AnchorStyles.Right
-            };
-            _btnSaveNameEasy.Click += BtnSaveNameEasy_Click;
-            panel.SetColumnSpan(_btnSaveNameEasy, 3);
-            panel.Controls.Add(_btnSaveNameEasy, 0, 2);
-
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40));
-            panel.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
-
-            tab.Controls.Add(panel);
-            return tab;
-        }
         
-        private void BtnLoadMongo_Click(object sender, EventArgs e)
+        
+
+
+
+
+
+        
+        
+        internal void BtnLoadMongo_Click(object sender, EventArgs e)
         {
             try
             {
@@ -856,8 +308,29 @@ namespace AICAD.UI
                 _lblMongoStatus.ForeColor = Color.Red;
             }
         }
+
+        private void ShowPanel(Control p)
+        {
+            if (p == null) return;
+            _contentHost.Controls.Clear();
+            p.Dock = DockStyle.Fill;
+            _contentHost.Controls.Add(p);
+            // update nav button styles to reflect active panel
+            try
+            {
+                foreach (Control c in _navPanel.Controls)
+                {
+                    if (c is Button b)
+                    {
+                        var isActive = object.ReferenceEquals(b.Tag, p);
+                        UITheme.ApplyNavButtonStyle(b, isActive);
+                    }
+                }
+            }
+            catch { }
+        }
         
-        private void BtnSaveMongo_Click(object sender, EventArgs e)
+        internal void BtnSaveMongo_Click(object sender, EventArgs e)
         {
             try
             {
@@ -891,14 +364,14 @@ namespace AICAD.UI
             }
         }
         
-        private async void BtnLoadApiKey_Click(object sender, EventArgs e)
+        internal async void BtnLoadApiKey_Click(object sender, EventArgs e)
         {
             try
             {
                 // Load all LLM settings from environment variables
                 try
                 {
-                    _txtLocalEndpoint.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "";
+                    _txtLocalEndpoint.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "http://127.0.0.1:1234";
                     _txtGeminiKey.Text = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? "";
                     _txtGroqKey.Text = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "";
                     _txtLocalModel.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", EnvironmentVariableTarget.User) ?? "";
@@ -940,7 +413,7 @@ namespace AICAD.UI
 
         // Model list and population removed — model selection is managed via environment variables outside the UI.
         
-        private void BtnSaveApiKey_Click(object sender, EventArgs e)
+        internal void BtnSaveApiKey_Click(object sender, EventArgs e)
         {
             try
             {
@@ -991,7 +464,7 @@ namespace AICAD.UI
             }
         }
 
-        private async Task BtnTestApi_Click(object sender, EventArgs e)
+        internal async Task BtnTestApi_Click(object sender, EventArgs e)
         {
             try
             {
@@ -1100,21 +573,61 @@ namespace AICAD.UI
                                             stream = false
                                         };
                                         var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-                                        var resp = http.PostAsync(endpoint, new StringContent(json, System.Text.Encoding.UTF8, "application/json")).GetAwaiter().GetResult();
-                                        var body = resp.Content.ReadAsStringAsync().GetAwaiter().GetResult();
-                                        this.BeginInvoke((Action)(() =>
+                                        // If the user provided only a base URL (e.g. http://127.0.0.1:1234) try common OpenAI-like paths.
+                                        var endpointsToTry = new System.Collections.Generic.List<string>();
+                                        if (endpoint.IndexOf("/v1/", StringComparison.OrdinalIgnoreCase) >= 0)
                                         {
-                                            if (resp.IsSuccessStatusCode)
+                                            endpointsToTry.Add(endpoint);
+                                        }
+                                        else
+                                        {
+                                            var baseUrl = endpoint.TrimEnd('/');
+                                            endpointsToTry.Add(baseUrl + "/v1/chat/completions");
+                                            endpointsToTry.Add(baseUrl + "/v1/responses");
+                                            endpointsToTry.Add(baseUrl + "/v1/completions");
+                                        }
+
+                                        HttpResponseMessage lastResp = null;
+                                        Exception lastEx = null;
+                                        foreach (var url in endpointsToTry)
+                                        {
+                                            try
                                             {
-                                                _lblApiStatus.Text = "Local LLM: OK";
-                                                _lblApiStatus.ForeColor = Color.DarkGreen;
+                                                var resp = await http.PostAsync(url, new StringContent(json, System.Text.Encoding.UTF8, "application/json")).ConfigureAwait(false);
+                                                lastResp = resp;
+                                                var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                                this.BeginInvoke((Action)(() =>
+                                                {
+                                                    if (resp.IsSuccessStatusCode)
+                                                    {
+                                                        _lblApiStatus.Text = $"Local LLM: OK ({url})";
+                                                        _lblApiStatus.ForeColor = Color.DarkGreen;
+                                                    }
+                                                    else
+                                                    {
+                                                        _lblApiStatus.Text = $"Local LLM test failed: {(int)resp.StatusCode} {resp.ReasonPhrase} (tried {url})";
+                                                        _lblApiStatus.ForeColor = Color.Red;
+                                                    }
+                                                }));
+
+                                                // stop after first successful or non-error response
+                                                if (resp.IsSuccessStatusCode) break;
                                             }
-                                            else
+                                            catch (Exception ex2)
                                             {
-                                                _lblApiStatus.Text = $"Local LLM test failed: {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                                                lastEx = ex2;
+                                                // try next endpoint
+                                            }
+                                        }
+
+                                        if (lastResp == null && lastEx != null)
+                                        {
+                                            this.BeginInvoke((Action)(() =>
+                                            {
+                                                _lblApiStatus.Text = "Local LLM test error: " + lastEx.Message;
                                                 _lblApiStatus.ForeColor = Color.Red;
-                                            }
-                                        }));
+                                            }));
+                                        }
                                     }
                                 }
                                 catch (Exception ex)
@@ -1187,7 +700,7 @@ namespace AICAD.UI
             catch { }
         }
 
-        private void BtnBrowseNameEasy_Click(object sender, EventArgs e)
+        internal void BtnBrowseNameEasy_Click(object sender, EventArgs e)
         {
             using (var dlg = new FolderBrowserDialog())
             {
@@ -1206,7 +719,7 @@ namespace AICAD.UI
             }
         }
 
-        private void BtnSaveNameEasy_Click(object sender, EventArgs e)
+        internal void BtnSaveNameEasy_Click(object sender, EventArgs e)
         {
             var path = _txtNameEasyPath.Text?.Trim() ?? string.Empty;
             if (string.IsNullOrEmpty(path))
@@ -1233,7 +746,7 @@ namespace AICAD.UI
             }
         }
 
-        private void ToggleApiKeyVisibility(object sender, EventArgs e, TextBox txtBox)
+        internal void ToggleApiKeyVisibility(object sender, EventArgs e, TextBox txtBox)
         {
             if (txtBox != null)
             {

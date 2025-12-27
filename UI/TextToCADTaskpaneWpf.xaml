@@ -7,7 +7,6 @@
              mc:Ignorable="d" 
              d:DesignWidth="472" d:DesignHeight="1200"
              Focusable="True">
-
     <UserControl.Resources>
         <ui:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
         <ui:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter" />

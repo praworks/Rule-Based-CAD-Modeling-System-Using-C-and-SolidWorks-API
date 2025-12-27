@@ -7,7 +7,7 @@
         mc:Ignorable="d"
         Title="WebView2 Window" Height="450" Width="800">
     <DockPanel LastChildFill="True">
-        <TextBox x:Name="inputBox" DockPanel.Dock="Top" Margin="6" Height="26" VerticalAlignment="Top" AcceptsReturn="False"/>
-        <wv2:WebView2 x:Name="webView" />
+    <TextBox x:Name="inputBox" DockPanel.Dock="Top" Margin="6" Height="26" VerticalAlignment="Top" AcceptsReturn="False"/>
+    <wv2:WebView2 x:Name="webView" />
     </DockPanel>
 </Window>

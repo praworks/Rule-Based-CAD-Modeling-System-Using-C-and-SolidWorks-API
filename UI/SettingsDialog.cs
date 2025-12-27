@@ -3,6 +3,7 @@ using System.Drawing;
 using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using System.Text;
 
 namespace AICAD.UI
 {
@@ -17,7 +18,7 @@ namespace AICAD.UI
         internal FlowLayoutPanel _navPanel;
         internal Panel _contentHost;
         
-        // MongoDB Tab Controls (made internal so DatabaseTab factory can assign them)
+        // MongoDB Tab Controls
         internal TextBox _txtMongoUri;
         internal TextBox _txtMongoDb;
         internal TextBox _txtMongoUser;
@@ -29,23 +30,24 @@ namespace AICAD.UI
         internal Button _btnLoadMongo;
         internal Label _lblMongoStatus;
         
-        // API Key Tab Controls
-        internal TextBox _txtApiKey;
-        internal Button _btnToggleApiKeyVisibility;
-        internal ComboBox _cmbCloudProvider;
+        // API Key Tab Controls (Updated)
+        // Note: _txtApiKey and _cmbCloudProvider removed as they are obsolete
         internal Button _btnSaveApiKey;
         internal Button _btnLoadApiKey;
         internal Label _lblApiStatus;
         internal Button _btnTestApi;
+        
         // Local LLM controls
         internal ComboBox _cmbLlmMode;
         internal TextBox _txtLocalEndpoint;
         internal TextBox _txtLocalModel;
         internal TextBox _txtLocalSystemPrompt;
+        
         // New controls for direct key entry
         internal TextBox _txtGeminiKey;
         internal TextBox _txtGroqKey;
-        // API/LLM labels (kept as fields so visibility can be toggled)
+        
+        // Labels handled by Tabs
         internal Label _lblProvider;
         internal Label _lblLlmMode;
         internal Label _lblApiKeyLabel;
@@ -55,7 +57,6 @@ namespace AICAD.UI
         internal Label _lblCloudProvider;
         internal Label _lblGeminiKey;
         internal Label _lblGroqKey;
-        
         
         // NameEasy Tab Controls
         internal TextBox _txtNameEasyPath;
@@ -89,13 +90,9 @@ namespace AICAD.UI
                 BtnLoadApiKey_Click(this, EventArgs.Empty);
                 // Load samples tab settings
                 try { BtnLoadSamples_Click(this, EventArgs.Empty); } catch { }
-
-                // Model selection is configured via environment (`GEMINI_MODEL`) not the UI.
             }
             catch { }
         }
-
-        
 
         internal void BtnBrowseSamples_Click(object sender, EventArgs e)
         {
@@ -171,7 +168,8 @@ namespace AICAD.UI
         {
             // Form properties
             Text = "Settings - AI-CAD-December";
-            Size = new Size(1500, 1000);
+            // FIX: Reduced size to fit standard screens
+            Size = new Size(1000, 750);
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
             MinimizeBox = false;
@@ -195,7 +193,8 @@ namespace AICAD.UI
             _splitContainer = new SplitContainer
             {
                 Dock = DockStyle.Fill,
-                SplitterDistance = 20,
+                // FIX: Increased splitter distance so buttons are visible
+                SplitterDistance = 220, 
                 IsSplitterFixed = false
             };
 
@@ -230,10 +229,10 @@ namespace AICAD.UI
             UITheme.ApplyNavButtonStyle(btnSamples, false);
             UITheme.ApplyNavButtonStyle(btnNameEasy, false);
 
-            btnDb.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
-            btnLlm.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
-            btnSamples.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
-            btnNameEasy.Click += (s, e) => { foreach (Control c in _navPanel.Controls) if (c is Button b) UITheme.ApplyNavButtonStyle(b, false); UITheme.ApplyNavButtonStyle((Button)s, true); ShowPanel((Control)((Button)s).Tag); };
+            btnDb.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
+            btnLlm.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
+            btnSamples.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
+            btnNameEasy.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
 
             _navPanel.Controls.Add(btnDb);
             _navPanel.Controls.Add(btnLlm);
@@ -242,14 +241,12 @@ namespace AICAD.UI
 
             // Add SplitContainer after footer so it fills the remaining area
             Controls.Add(_splitContainer);
-            // Ensure the SplitContainer z-order is correct (so footer and content render properly)
             _splitContainer.BringToFront();
 
-            // show database by default and mark nav button active
-            UITheme.ApplyNavButtonStyle(btnDb, true);
-            ShowPanel(dbPanel);
-
-            // Load NameEasy current path into the tab if present
+            // show database by default
+            ActivateTab(btnDb, _navPanel);
+            
+            // Load defaults
             try
             {
                 var defaultPath = AICAD.Services.SettingsManager.GetDatabasePath();
@@ -257,7 +254,6 @@ namespace AICAD.UI
                 {
                     _txtNameEasyPath.Text = defaultPath;
                 }
-                // Load samples DB path if present
                 var samplesPath = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? "";
                 if (!string.IsNullOrEmpty(samplesPath) && _txtSamplesDbPath != null)
                 {
@@ -266,17 +262,16 @@ namespace AICAD.UI
             }
             catch { }
         }
-        
-        
-        
-        
 
+        private void ActivateTab(Button activeBtn, Control navPanel)
+        {
+            foreach (Control c in navPanel.Controls) 
+                if (c is Button b) UITheme.ApplyNavButtonStyle(b, false);
+            
+            UITheme.ApplyNavButtonStyle(activeBtn, true);
+            ShowPanel((Control)activeBtn.Tag);
+        }
 
-
-
-
-        
-        
         internal void BtnLoadMongo_Click(object sender, EventArgs e)
         {
             try
@@ -285,7 +280,6 @@ namespace AICAD.UI
                     ?? Environment.GetEnvironmentVariable("MONGO_LOG_CONN", EnvironmentVariableTarget.User) 
                     ?? "";
 
-                // If an older or placeholder URI is present, replace it with the recommended URI
                 if (string.IsNullOrWhiteSpace(_txtMongoUri.Text) ||
                     _txtMongoUri.Text.IndexOf("prashanth", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     _txtMongoUri.Text.IndexOf("cluster2.9abz2oy", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -315,19 +309,6 @@ namespace AICAD.UI
             _contentHost.Controls.Clear();
             p.Dock = DockStyle.Fill;
             _contentHost.Controls.Add(p);
-            // update nav button styles to reflect active panel
-            try
-            {
-                foreach (Control c in _navPanel.Controls)
-                {
-                    if (c is Button b)
-                    {
-                        var isActive = object.ReferenceEquals(b.Tag, p);
-                        UITheme.ApplyNavButtonStyle(b, isActive);
-                    }
-                }
-            }
-            catch { }
         }
         
         internal void BtnSaveMongo_Click(object sender, EventArgs e)
@@ -339,28 +320,15 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("MONGODB_USER", _txtMongoUser.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_PW", _txtMongoPassword.Text, EnvironmentVariableTarget.User);
                 
-                _lblMongoStatus.Text = "Settings saved successfully! Restart SolidWorks to apply changes.";
+                _lblMongoStatus.Text = "Saved! Restart SolidWorks.";
                 _lblMongoStatus.ForeColor = Color.DarkGreen;
                 
-                MessageBox.Show(
-                    "DB settings saved to user environment variables.\n\n" +
-                    "Please restart SolidWorks for changes to take effect.",
-                    "Settings Saved",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information
-                );
+                MessageBox.Show("DB settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
                 _lblMongoStatus.Text = "Failed to save: " + ex.Message;
                 _lblMongoStatus.ForeColor = Color.Red;
-                
-                MessageBox.Show(
-                    "Failed to save settings: " + ex.Message,
-                    "Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
             }
         }
         
@@ -368,38 +336,23 @@ namespace AICAD.UI
         {
             try
             {
-                // Load all LLM settings from environment variables
-                try
-                {
-                    _txtLocalEndpoint.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "http://127.0.0.1:1234";
-                    _txtGeminiKey.Text = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? "";
-                    _txtGroqKey.Text = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "";
-                    _txtLocalModel.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", EnvironmentVariableTarget.User) ?? "";
-                    _txtLocalSystemPrompt.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", EnvironmentVariableTarget.User) ?? "";
+                _txtLocalEndpoint.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "http://127.0.0.1:1234";
+                _txtGeminiKey.Text = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? "";
+                _txtGroqKey.Text = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "";
+                _txtLocalModel.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", EnvironmentVariableTarget.User) ?? "";
+                _txtLocalSystemPrompt.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", EnvironmentVariableTarget.User) ?? "";
 
-                    var mode = Environment.GetEnvironmentVariable("AICAD_LLM_MODE", EnvironmentVariableTarget.User) ?? "";
-                    if (_cmbLlmMode != null)
-                    {
-                        _cmbLlmMode.SelectedIndex = (mode.Equals("local", StringComparison.OrdinalIgnoreCase)) ? 1 : 0;
-                    }
-                }
-                catch { }
-                
-                // Load few-shot flag from environment: AICAD_USE_FEWSHOT (1 = enabled)
-                try
+                var mode = Environment.GetEnvironmentVariable("AICAD_LLM_MODE", EnvironmentVariableTarget.User) ?? "";
+                if (_cmbLlmMode != null)
                 {
-                    var fs = Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT");
-                    _chkUseFewShot.Checked = string.IsNullOrEmpty(fs) ? true : (fs == "1" || fs.Equals("true", StringComparison.OrdinalIgnoreCase));
+                    _cmbLlmMode.SelectedIndex = (mode.Equals("local", StringComparison.OrdinalIgnoreCase)) ? 1 : 0;
                 }
-                catch { _chkUseFewShot.Checked = true; }
                 
-                // Load allow multiple builds flag from environment: AICAD_ALLOW_MULTIPLE_BUILDS (1 = enabled)
-                try
-                {
-                    var amb = Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS");
-                    _chkAllowMultipleBuilds.Checked = string.IsNullOrEmpty(amb) ? false : (amb == "1" || amb.Equals("true", StringComparison.OrdinalIgnoreCase));
-                }
-                catch { _chkAllowMultipleBuilds.Checked = false; }
+                var fs = Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT");
+                _chkUseFewShot.Checked = string.IsNullOrEmpty(fs) ? true : (fs == "1" || fs.Equals("true", StringComparison.OrdinalIgnoreCase));
+                
+                var amb = Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS");
+                _chkAllowMultipleBuilds.Checked = string.IsNullOrEmpty(amb) ? false : (amb == "1" || amb.Equals("true", StringComparison.OrdinalIgnoreCase));
                 
                 _lblApiStatus.Text = "Loaded from environment variables";
                 _lblApiStatus.ForeColor = Color.DarkGreen;
@@ -410,246 +363,151 @@ namespace AICAD.UI
                 _lblApiStatus.ForeColor = Color.Red;
             }
         }
-
-        // Model list and population removed — model selection is managed via environment variables outside the UI.
         
         internal void BtnSaveApiKey_Click(object sender, EventArgs e)
         {
             try
             {
-                // Save all LLM settings to environment variables
                 Environment.SetEnvironmentVariable("LOCAL_LLM_ENDPOINT", _txtLocalEndpoint.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("GEMINI_API_KEY", _txtGeminiKey.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("GROQ_API_KEY", _txtGroqKey.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("LOCAL_LLM_MODEL", _txtLocalModel.Text, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", _txtLocalSystemPrompt.Text, EnvironmentVariableTarget.User);
-                // Save LLM mode (local/cloud)
-                try { Environment.SetEnvironmentVariable("AICAD_LLM_MODE", (_cmbLlmMode != null && _cmbLlmMode.SelectedIndex == 1) ? "local" : "cloud", EnvironmentVariableTarget.User); } catch { }
                 
-                // Save few-shot checkbox state
-                try
-                {
-                    Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", _chkUseFewShot.Checked ? "1" : "0", EnvironmentVariableTarget.User);
-                }
-                catch { }
+                var mode = (_cmbLlmMode != null && _cmbLlmMode.SelectedIndex == 1) ? "local" : "cloud";
+                Environment.SetEnvironmentVariable("AICAD_LLM_MODE", mode, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", _chkUseFewShot.Checked ? "1" : "0", EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", _chkAllowMultipleBuilds.Checked ? "1" : "0", EnvironmentVariableTarget.User);
                 
-                // Save allow multiple builds checkbox state
-                try
-                {
-                    Environment.SetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", _chkAllowMultipleBuilds.Checked ? "1" : "0", EnvironmentVariableTarget.User);
-                }
-                catch { }
-                
-                _lblApiStatus.Text = "Settings saved to environment variables! Restart SolidWorks to apply changes.";
+                _lblApiStatus.Text = "Saved! Restart SolidWorks.";
                 _lblApiStatus.ForeColor = Color.DarkGreen;
                 
-                MessageBox.Show(
-                    "Settings saved to environment variables.\n\nPlease restart SolidWorks for changes to take effect.",
-                    "Settings Saved",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Information
-                );
+                MessageBox.Show("Settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
                 _lblApiStatus.Text = "Failed to save: " + ex.Message;
                 _lblApiStatus.ForeColor = Color.Red;
-                
-                MessageBox.Show(
-                    "Failed to save settings: " + ex.Message,
-                    "Error",
-                    MessageBoxButtons.OK,
-                    MessageBoxIcon.Error
-                );
             }
         }
 
+        // FIX: Rewritten to use correct key fields and logic
         internal async Task BtnTestApi_Click(object sender, EventArgs e)
         {
+            _lblApiStatus.Text = "Testing API...";
+            _lblApiStatus.ForeColor = Color.Blue;
+            _btnTestApi.Enabled = false;
+
             try
             {
-                _lblApiStatus.Text = "Testing API...";
-                _lblApiStatus.ForeColor = Color.Blue;
+                bool isLocal = _cmbLlmMode.SelectedIndex == 1;
 
-                string key = _txtApiKey.Text;
-                if (string.IsNullOrWhiteSpace(key))
+                if (!isLocal)
                 {
-                    _lblApiStatus.Text = "No API key provided.";
-                    _lblApiStatus.ForeColor = Color.Orange;
-                    return;
-                }
-
-                // Disable test button while running
-                _btnTestApi.Enabled = false;
-                try
-                {
-                    if (_cmbCloudProvider.SelectedIndex == 0)
+                    // Test Gemini if key exists
+                    if (!string.IsNullOrWhiteSpace(_txtGeminiKey.Text))
                     {
-                        // Google Gemini: use GeminiClient.TestApiKeyAsync for detailed diagnostics
-                        var client = new AICAD.Services.GeminiClient(key);
+                        var client = new AICAD.Services.GeminiClient(_txtGeminiKey.Text);
                         var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
                         this.BeginInvoke((Action)(() =>
                         {
-                            if (res == null)
+                            if (res != null && res.Success)
                             {
-                                _lblApiStatus.Text = "API test returned no result.";
-                                _lblApiStatus.ForeColor = Color.Red;
-                                return;
-                            }
-
-                            if (res.Success)
-                            {
-                                var sample = res.ModelNames != null && res.ModelNames.Count > 0 ? res.ModelNames[0] : "(none)";
-                                _lblApiStatus.Text = $"Gemini: OK — {res.ModelsFound} models (example: {sample})";
+                                _lblApiStatus.Text = $"Gemini OK: Found {res.ModelsFound} models.";
                                 _lblApiStatus.ForeColor = Color.DarkGreen;
-
-                                // Model dropdown population removed; models are managed externally via env var.
                             }
                             else
                             {
-                                var code = res.StatusCode.HasValue ? res.StatusCode.Value.ToString() : "?";
-                                var hint = string.IsNullOrWhiteSpace(res.Hint) ? string.Empty : " Hint: " + res.Hint;
-                                _lblApiStatus.Text = $"Gemini test failed: {code}. {res.Message}{hint}";
+                                _lblApiStatus.Text = $"Gemini Fail: {res?.Message ?? "Unknown error"}";
                                 _lblApiStatus.ForeColor = Color.Red;
                             }
                         }));
                     }
-                    else if (_cmbCloudProvider.SelectedIndex == 1)
+                    
+                    // Test Groq if key exists
+                    if (!string.IsNullOrWhiteSpace(_txtGroqKey.Text))
                     {
-                        // Groq: simple models list check
                         using (var http = new HttpClient())
                         {
                             http.Timeout = TimeSpan.FromSeconds(10);
-                            http.DefaultRequestHeaders.Clear();
-                            http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
+                            http.DefaultRequestHeaders.Add("Authorization", "Bearer " + _txtGroqKey.Text);
                             var resp = await http.GetAsync("https://api.groq.com/v1/models");
-                            var body = await resp.Content.ReadAsStringAsync();
                             this.BeginInvoke((Action)(() =>
                             {
                                 if (resp.IsSuccessStatusCode)
                                 {
-                                    _lblApiStatus.Text = $"Groq: OK — {((int)resp.StatusCode)}";
+                                    // If Gemini was also tested, append status
+                                    string current = _lblApiStatus.ForeColor == Color.DarkGreen ? _lblApiStatus.Text + " | " : "";
+                                    _lblApiStatus.Text = current + "Groq OK.";
                                     _lblApiStatus.ForeColor = Color.DarkGreen;
                                 }
                                 else
                                 {
-                                    _lblApiStatus.Text = $"Groq test failed: {(int)resp.StatusCode} {resp.ReasonPhrase}";
+                                    _lblApiStatus.Text = $"Groq Fail: {resp.StatusCode}";
                                     _lblApiStatus.ForeColor = Color.Red;
                                 }
                             }));
                         }
                     }
+
+                    if (string.IsNullOrWhiteSpace(_txtGeminiKey.Text) && string.IsNullOrWhiteSpace(_txtGroqKey.Text))
+                    {
+                        _lblApiStatus.Text = "No Cloud API Keys entered.";
+                        _lblApiStatus.ForeColor = Color.Orange;
+                    }
+                }
+                else
+                {
+                    // Test Local
+                    var endpoint = _txtLocalEndpoint.Text;
+                    if (string.IsNullOrWhiteSpace(endpoint))
+                    {
+                        _lblApiStatus.Text = "Local endpoint is empty.";
+                        _lblApiStatus.ForeColor = Color.Orange;
+                    }
                     else
                     {
-                        _lblApiStatus.Text = "Test not available for New provider.";
-                        _lblApiStatus.ForeColor = Color.Gray;
-                    }
-
-                        // If Local LLM mode selected, attempt a quick POST
-                        if (_cmbLlmMode != null && _cmbLlmMode.SelectedIndex == 1)
-                        {
-                            var endpoint = _txtLocalEndpoint.Text;
-                            if (string.IsNullOrWhiteSpace(endpoint))
+                         using (var http = new HttpClient())
+                         {
+                            http.Timeout = TimeSpan.FromSeconds(5);
+                            try 
+                            {
+                                // Simple GET to check if server is up
+                                var resp = await http.GetAsync(endpoint.TrimEnd('/') + "/v1/models"); 
+                                this.BeginInvoke((Action)(() =>
+                                {
+                                    if (resp.IsSuccessStatusCode)
+                                    {
+                                        _lblApiStatus.Text = "Local OK (Server reachable)";
+                                        _lblApiStatus.ForeColor = Color.DarkGreen;
+                                    }
+                                    else
+                                    {
+                                        _lblApiStatus.Text = $"Local Fail: {resp.StatusCode}";
+                                        _lblApiStatus.ForeColor = Color.Red;
+                                    }
+                                }));
+                            }
+                            catch(Exception ex) 
                             {
                                 this.BeginInvoke((Action)(() =>
                                 {
-                                    _lblApiStatus.Text = "Local endpoint is empty.";
-                                    _lblApiStatus.ForeColor = Color.Orange;
+                                    _lblApiStatus.Text = "Local Error: " + ex.Message;
+                                    _lblApiStatus.ForeColor = Color.Red;
                                 }));
                             }
-                            else
-                            {
-                                try
-                                {
-                                    using (var http = new HttpClient())
-                                    {
-                                        http.Timeout = TimeSpan.FromSeconds(10);
-                                        var payload = new
-                                        {
-                                            model = string.IsNullOrWhiteSpace(_txtLocalModel.Text) ? "" : _txtLocalModel.Text,
-                                            messages = new[] { new { role = "user", content = "Test: hello" } },
-                                            temperature = 0.0,
-                                            max_tokens = 10,
-                                            stream = false
-                                        };
-                                        var json = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
-                                        // If the user provided only a base URL (e.g. http://127.0.0.1:1234) try common OpenAI-like paths.
-                                        var endpointsToTry = new System.Collections.Generic.List<string>();
-                                        if (endpoint.IndexOf("/v1/", StringComparison.OrdinalIgnoreCase) >= 0)
-                                        {
-                                            endpointsToTry.Add(endpoint);
-                                        }
-                                        else
-                                        {
-                                            var baseUrl = endpoint.TrimEnd('/');
-                                            endpointsToTry.Add(baseUrl + "/v1/chat/completions");
-                                            endpointsToTry.Add(baseUrl + "/v1/responses");
-                                            endpointsToTry.Add(baseUrl + "/v1/completions");
-                                        }
-
-                                        HttpResponseMessage lastResp = null;
-                                        Exception lastEx = null;
-                                        foreach (var url in endpointsToTry)
-                                        {
-                                            try
-                                            {
-                                                var resp = await http.PostAsync(url, new StringContent(json, System.Text.Encoding.UTF8, "application/json")).ConfigureAwait(false);
-                                                lastResp = resp;
-                                                var body = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                                this.BeginInvoke((Action)(() =>
-                                                {
-                                                    if (resp.IsSuccessStatusCode)
-                                                    {
-                                                        _lblApiStatus.Text = $"Local LLM: OK ({url})";
-                                                        _lblApiStatus.ForeColor = Color.DarkGreen;
-                                                    }
-                                                    else
-                                                    {
-                                                        _lblApiStatus.Text = $"Local LLM test failed: {(int)resp.StatusCode} {resp.ReasonPhrase} (tried {url})";
-                                                        _lblApiStatus.ForeColor = Color.Red;
-                                                    }
-                                                }));
-
-                                                // stop after first successful or non-error response
-                                                if (resp.IsSuccessStatusCode) break;
-                                            }
-                                            catch (Exception ex2)
-                                            {
-                                                lastEx = ex2;
-                                                // try next endpoint
-                                            }
-                                        }
-
-                                        if (lastResp == null && lastEx != null)
-                                        {
-                                            this.BeginInvoke((Action)(() =>
-                                            {
-                                                _lblApiStatus.Text = "Local LLM test error: " + lastEx.Message;
-                                                _lblApiStatus.ForeColor = Color.Red;
-                                            }));
-                                        }
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    this.BeginInvoke((Action)(() =>
-                                    {
-                                        _lblApiStatus.Text = "Local LLM test error: " + ex.Message;
-                                        _lblApiStatus.ForeColor = Color.Red;
-                                    }));
-                                }
-                            }
-                        }
-                }
-                finally
-                {
-                    _btnTestApi.Enabled = true;
+                         }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                _lblApiStatus.Text = "API test error: " + ex.Message;
+                _lblApiStatus.Text = "Test Error: " + ex.Message;
                 _lblApiStatus.ForeColor = Color.Red;
+            }
+            finally
+            {
+                this.BeginInvoke((Action)(() => _btnTestApi.Enabled = true));
             }
         }
 
@@ -657,92 +515,44 @@ namespace AICAD.UI
         {
             try
             {
-                // Save Mongo
                 BtnSaveMongo_Click(sender, e);
-
-                // Save API key
                 BtnSaveApiKey_Click(sender, e);
-
-                // GEMINI_MODEL is managed externally (env var).
-
-                // Save project id (if set)
-                try
-                {
-                    // Project ID field removed; no-op.
-                }
-                catch { }
-
-                MessageBox.Show("All settings applied. Restart SolidWorks for changes to take effect.", "Applied", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Failed to apply settings: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Failed: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-        }
-
-        private void ToggleMongoPasswordVisibility_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                _txtMongoPassword.UseSystemPasswordChar = !_txtMongoPassword.UseSystemPasswordChar;
-                _btnToggleMongoPwVisibility.Text = _txtMongoPassword.UseSystemPasswordChar ? "Show" : "Hide";
-            }
-            catch { }
-        }
-
-        private void ToggleApiKeyVisibility_Click(object sender, EventArgs e)
-        {
-            try
-            {
-                _txtApiKey.UseSystemPasswordChar = !_txtApiKey.UseSystemPasswordChar;
-                _btnToggleApiKeyVisibility.Text = _txtApiKey.UseSystemPasswordChar ? "Show" : "Hide";
-            }
-            catch { }
         }
 
         internal void BtnBrowseNameEasy_Click(object sender, EventArgs e)
         {
             using (var dlg = new FolderBrowserDialog())
             {
-                dlg.Description = "Select folder for NameEasy.db database";
+                dlg.Description = "Select folder for NameEasy.db";
                 dlg.ShowNewFolderButton = true;
-                var current = _txtNameEasyPath.Text;
-                if (!string.IsNullOrEmpty(current))
-                {
-                    try { dlg.SelectedPath = System.IO.Path.GetDirectoryName(current); } catch { }
-                }
+                if (!string.IsNullOrEmpty(_txtNameEasyPath.Text))
+                    try { dlg.SelectedPath = System.IO.Path.GetDirectoryName(_txtNameEasyPath.Text); } catch { }
 
                 if (dlg.ShowDialog() == DialogResult.OK)
-                {
                     _txtNameEasyPath.Text = System.IO.Path.Combine(dlg.SelectedPath, "NameEasy.db");
-                }
             }
         }
 
         internal void BtnSaveNameEasy_Click(object sender, EventArgs e)
         {
             var path = _txtNameEasyPath.Text?.Trim() ?? string.Empty;
-            if (string.IsNullOrEmpty(path))
-            {
-                MessageBox.Show("Please specify a database path.", "Invalid Path", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                return;
-            }
-
+            if (string.IsNullOrEmpty(path)) return;
             try
             {
-                var ok = AICAD.Services.SettingsManager.SetDatabasePath(path);
-                if (ok)
-                {
-                    MessageBox.Show("NameEasy database path saved. Restart SolidWorks for changes to take effect.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                }
+                if (AICAD.Services.SettingsManager.SetDatabasePath(path))
+                    MessageBox.Show("Path saved. Restart SolidWorks.", "Saved", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 else
-                {
-                    MessageBox.Show("Failed to save database path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
+                    MessageBox.Show("Failed to save path.", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("Error saving path: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Error: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -751,11 +561,7 @@ namespace AICAD.UI
             if (txtBox != null)
             {
                 txtBox.UseSystemPasswordChar = !txtBox.UseSystemPasswordChar;
-                var btn = sender as Button;
-                if (btn != null)
-                {
-                    btn.Text = txtBox.UseSystemPasswordChar ? "Show" : "Hide";
-                }
+                if (sender is Button btn) btn.Text = txtBox.UseSystemPasswordChar ? "Show" : "Hide";
             }
         }
     }

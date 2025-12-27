@@ -380,7 +380,7 @@ namespace AICAD.UI
                     prompt.TextChanged += (s, e) => { try { AppendKeyLog($"Prompt.TextChanged: Length={prompt.Text?.Length}"); } catch { } };
                     prompt.PreviewTextInput += (s, e) => { try { AppendKeyLog($"Prompt.PreviewTextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
                     prompt.TextInput += (s, e) => { try { AppendKeyLog($"Prompt.TextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
-                    prompt.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.GotKeyboardFocus"); } catch { } };
+                    prompt.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.GotKeyboardFocus"); EnsureNativeFocus(prompt); } catch { } };
                     prompt.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.LostKeyboardFocus"); } catch { } };
                     // Also instrument the type description textbox to diagnose focus/keyboard issues
                         try
@@ -649,6 +649,8 @@ namespace AICAD.UI
                     {
                         prompt.Focus();
                         System.Windows.Input.Keyboard.Focus(prompt);
+                        // Also ensure native Win32 focus is set to the WPF host window so keystrokes are delivered
+                        EnsureNativeFocus(prompt);
                         prompt.CaretIndex = prompt.Text?.Length ?? 0;
                     }
                     catch { }

@@ -25,11 +25,7 @@
     <PackageReference Include="Google.Apis.Auth" Version="1.73.0" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.3650.58" />
   </ItemGroup>
-  <ItemGroup>
-    <Compile Update="UI\TextToCADTaskpane.cs">
-      <SubType>UserControl</SubType>
-    </Compile>
-  </ItemGroup>
+  <!-- legacy WinForms taskpane removed; no explicit Compile entry required -->
   <ItemGroup>
     <Reference Include="Newtonsoft.Json">
       <HintPath>bin\Debug\Newtonsoft.Json.dll</HintPath>
@@ -91,5 +87,12 @@
     <Compile Remove="scripts\**\*.cs" />
     <EmbeddedResource Remove="scripts\**\*" />
     <None Remove="scripts\**\*" />
+  </ItemGroup>
+  <!-- Ensure runtime presets are copied to the add-in output directory so the WPF taskpane can load them -->
+  <ItemGroup>
+    <None Include="PromptPreset.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+    <EmbeddedResource Include="PromptPreset.json" />
   </ItemGroup>
 </Project>

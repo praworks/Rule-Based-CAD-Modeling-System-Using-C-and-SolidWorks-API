@@ -174,19 +174,15 @@
             </Grid>
         </Grid>
 
-        <Grid Grid.Row="4" Margin="0,0,0,0">
+            <Grid Grid.Row="4" Margin="0,0,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <Label x:Name="presetLabel" Grid.Column="0" Content="Preset:" VerticalAlignment="Center" Foreground="DimGray" FontSize="11"/>
-            <ComboBox x:Name="shapePreset" Grid.Column="1" VerticalAlignment="Center" SelectedIndex="0" Margin="4,0" Height="24">
-                <ComboBoxItem>— none —</ComboBoxItem>
-                <ComboBoxItem>Box 100x50x25 mm</ComboBoxItem>
-                <ComboBoxItem>Cylinder Ø40 x 80 mm</ComboBoxItem>
-                <ComboBoxItem>Cube 10 mm</ComboBoxItem>
-            </ComboBox>
+            <!-- Items are populated at runtime by TryLoadPromptPresets() in code-behind -->
+            <ComboBox x:Name="shapePreset" Grid.Column="1" VerticalAlignment="Center" SelectedIndex="0" Margin="4,0" Height="24" />
             <Label x:Name="lblVersion" Grid.Column="2" Foreground="Silver" Content="v1.0" VerticalAlignment="Center" FontSize="9"/>
         </Grid>
 

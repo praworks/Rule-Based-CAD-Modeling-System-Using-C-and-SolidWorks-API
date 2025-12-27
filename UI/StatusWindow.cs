@@ -15,6 +15,9 @@ namespace AICAD.UI
         private Button _btnCopyError;
         private Button _btnCopyRun;
         private bool _expanded = false;
+        private Timer _restTimer;
+        private Color _restColor = Color.FromArgb(179, 229, 179); // Pastel green
+        private Color _activeColor = Color.FromArgb(255, 243, 205); // Light yellow when active
 
         public event EventHandler CopyErrorClicked;
         public event EventHandler CopyRunClicked;
@@ -22,11 +25,16 @@ namespace AICAD.UI
         public StatusWindow()
         {
             Text = "AI-CAD-December - Status Console";
-            Size = new Size(800, 40);
+            Size = new Size(800, 300);
             StartPosition = FormStartPosition.CenterParent;
+            ShowInTaskbar = true;
+            WindowState = FormWindowState.Normal;
             MinimizeBox = true;
             MaximizeBox = true;
-            BackColor = Color.FromArgb(179, 229, 179);  // Pastel green
+            BackColor = _restColor;
+
+            _restTimer = new Timer { Interval = 3000 };
+            _restTimer.Tick += (s, e) => RestoreRestState();
             
             BuildUI();
         }
@@ -39,7 +47,7 @@ namespace AICAD.UI
                 ColumnCount = 1,
                 RowCount = 3,
                 Padding = new Padding(10),
-                BackColor = Color.FromArgb(179, 229, 179)  // Pastel green
+                BackColor = _restColor
             };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));    // toolbar
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // console
@@ -98,19 +106,19 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
-                BackColor = Color.FromArgb(220, 245, 220),
-                ForeColor = Color.Black,
+                BackColor = Color.Black,
+                ForeColor = Color.Gainsboro,
                 Font = new Font("Consolas", 9f, FontStyle.Regular),
                 BorderStyle = BorderStyle.FixedSingle,
                 WordWrap = false,
                 HideSelection = false
             };
             
-            var ctx = new ContextMenu();
-            ctx.MenuItems.Add(new MenuItem("Copy", (s, e) => { try { StatusConsole.Copy(); } catch { } }));
-            ctx.MenuItems.Add(new MenuItem("Copy All", (s, e) => { try { Clipboard.SetText(StatusConsole.Text); } catch { } }));
-            ctx.MenuItems.Add(new MenuItem("Select All", (s, e) => { try { StatusConsole.SelectAll(); } catch { } }));
-            StatusConsole.ContextMenu = ctx;
+            var ctx = new ContextMenuStrip();
+            ctx.Items.Add(new ToolStripMenuItem("Copy", null, (s, e) => { try { StatusConsole.Copy(); } catch { } }));
+            ctx.Items.Add(new ToolStripMenuItem("Copy All", null, (s, e) => { try { Clipboard.SetText(StatusConsole.Text); } catch { } }));
+            ctx.Items.Add(new ToolStripMenuItem("Select All", null, (s, e) => { try { StatusConsole.SelectAll(); } catch { } }));
+            StatusConsole.ContextMenuStrip = ctx;
 
             // Error row
             var errRow = new FlowLayoutPanel 
@@ -143,6 +151,91 @@ namespace AICAD.UI
             root.Controls.Add(errRow, 0, 2);
 
             Controls.Add(root);
+        }
+
+        protected override void OnShown(EventArgs e)
+        {
+            base.OnShown(e);
+            try
+            {
+                // Ensure window is visible and not minimized/hidden
+                if (WindowState == FormWindowState.Minimized)
+                    WindowState = FormWindowState.Normal;
+                BringToFront();
+                Activate();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Append a status line and flash active color briefly.
+        /// </summary>
+        public void AppendStatus(string line)
+        {
+            if (string.IsNullOrEmpty(line)) return;
+            try
+            {
+                if (StatusConsole.InvokeRequired)
+                {
+                    StatusConsole.Invoke(new Action(() => AppendStatus(line)));
+                    return;
+                }
+
+                StatusConsole.AppendText(line + Environment.NewLine);
+                SetActiveState();
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Replace the status content and set active color.
+        /// </summary>
+        public void SetStatus(string text)
+        {
+            try
+            {
+                if (StatusConsole.InvokeRequired)
+                {
+                    StatusConsole.Invoke(new Action(() => SetStatus(text)));
+                    return;
+                }
+
+                StatusConsole.Text = text ?? string.Empty;
+                SetActiveState();
+            }
+            catch { }
+        }
+
+        private void SetActiveState()
+        {
+            try
+            {
+                BackColor = _activeColor;
+                // also set root/backing controls if present
+                foreach (Control c in Controls)
+                {
+                    if (c is TableLayoutPanel tbl)
+                        tbl.BackColor = _activeColor;
+                }
+                _restTimer.Stop();
+                _restTimer.Start();
+            }
+            catch { }
+        }
+
+        private void RestoreRestState()
+        {
+            try
+            {
+                _restTimer.Stop();
+                BackColor = _restColor;
+                foreach (Control c in Controls)
+                {
+                    if (c is TableLayoutPanel tbl)
+                        tbl.BackColor = _restColor;
+                }
+            }
+            catch { }
         }
     }
 }

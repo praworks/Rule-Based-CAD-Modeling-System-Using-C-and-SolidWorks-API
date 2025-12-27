@@ -3,14 +3,19 @@
 	"tasks": [
 		{
 			"label": "Build AI-CAD-December Project",
-			"type": "shell",
-			"command": "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\Common7\\IDE\\devenv.exe",
+			"type": "process",
+			"command": "msbuild",
 			"args": [
 				"AI-CAD-December.sln",
-				"/rebuild",
-				"Debug|Any CPU"
+				"/t:Rebuild",
+				"/p:Configuration=Debug",
+				"/p:Platform=\"Any CPU\""
 			],
-			"group": "build"
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			},
+			"problemMatcher": ["$msCompile"]
 		},
 		{
 			"label": "Build + Register AI-CAD (Admin)",

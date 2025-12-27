@@ -125,7 +125,7 @@ CREATE TABLE IF NOT EXISTS feedback2 (
                             JArray stepsArr = null;
                             try
                             {
-                                var planObj = JObject.Parse(planJson);
+                                var planObj = JObject.Parse(AICAD.Services.JsonUtils.SerializeCompact(planJson));
                                 stepsArr = planObj["steps"] as JArray;
                             }
                             catch { /* ignore parse errors; we'll skip steps */ }
@@ -160,7 +160,7 @@ CREATE TABLE IF NOT EXISTS feedback2 (
                                     cmd.Parameters.AddWithValue("@run", (object)runKey ?? DBNull.Value);
                                     cmd.Parameters.AddWithValue("@idx", i);
                                     cmd.Parameters.AddWithValue("@op", op);
-                                    cmd.Parameters.AddWithValue("@params", sCopy.ToString(Newtonsoft.Json.Formatting.None));
+                                    cmd.Parameters.AddWithValue("@params", AICAD.Services.JsonUtils.SerializeCompact(sCopy));
                                     cmd.Parameters.AddWithValue("@succ", succ);
                                     cmd.Parameters.AddWithValue("@err", (object)err ?? DBNull.Value);
                                     await cmd.ExecuteNonQueryAsync().ConfigureAwait(false);

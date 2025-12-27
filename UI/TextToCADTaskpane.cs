@@ -52,7 +52,18 @@ namespace AICAD.UI
             // Wire up event handlers
             shapePreset.SelectedIndexChanged += ShapePreset_SelectedIndexChanged;
             prompt.TextChanged += Prompt_TextChanged;
-            build.Click += async (s, e) => await BuildFromPromptAsync();
+            build.Click += async (s, e) =>
+            {
+                // Check if multiple builds are allowed
+                var allowMultiple = System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", System.EnvironmentVariableTarget.Machine);
+                if (string.IsNullOrEmpty(allowMultiple) || allowMultiple == "0" || allowMultiple.Equals("false", StringComparison.OrdinalIgnoreCase))
+                {
+                    try { build.Enabled = false; } catch { }
+                }
+                await BuildFromPromptAsync();
+            };
             btnHistory.Click += BtnHistory_Click;
             btnStatus.Click += BtnStatus_Click;
             btnSettings.Click += BtnSettings_Click;
@@ -80,7 +91,33 @@ namespace AICAD.UI
             SetTimes(null, null);
             SetLastError(null);
             try { Services.AddinStatusLogger.OnLog += (line) => { try { AppendStatusLine(line); } catch { } }; Services.AddinStatusLogger.Log("Init", "Taskpane subscribed to AddinStatusLogger"); } catch { }
-            try { InitDbAndStores(); } catch (Exception ex) { AppendDetailedStatus("DB:init", "call exception", ex); }
+            // REMOVE InitDbAndStores from constructor. Use async Load event instead.
+            this.Load += TextToCADTaskpane_Load;
+        }
+
+        // Add async Load event handler for background DB init
+        private async void TextToCADTaskpane_Load(object sender, EventArgs e)
+        {
+            // Run initialization on a background thread to prevent freezing SW
+            await Task.Run(() =>
+            {
+                try
+                {
+                    InitDbAndStores();
+                }
+                catch (Exception ex)
+                {
+                    // Marshal error back to UI thread
+                    if (this.InvokeRequired)
+                    {
+                        this.Invoke(new Action(() => AppendDetailedStatus("DB:init", "Async init failed", ex)));
+                    }
+                    else
+                    {
+                        AppendDetailedStatus("DB:init", "Async init failed", ex);
+                    }
+                }
+            });
         }
 
         private void ShapePreset_SelectedIndexChanged(object sender, EventArgs e)
@@ -151,7 +188,7 @@ namespace AICAD.UI
         {
             try
             {
-                var baseDir = @"D:\SolidWorks API\7. SolidWorks Taskpane Text To CAD"; // workspace folder
+                var baseDir = @"D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API"; // workspace folder
                 _fileLogger = new FileDbLogger(baseDir);
 
                 var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI")
@@ -278,6 +315,14 @@ namespace AICAD.UI
             {
                 lblRealTimeStatus.Text = text ?? string.Empty;
                 lblRealTimeStatus.ForeColor = color;
+                try
+                {
+                    // Force immediate repaint so intermediate "In Progress" states are visible
+                    lblRealTimeStatus.Refresh();
+                    // Process pending UI messages to ensure the control repaints even if long work follows
+                    try { System.Windows.Forms.Application.DoEvents(); } catch { }
+                }
+                catch { }
             }
             AppendStatusLine($"[Status] {text}");
         }
@@ -388,22 +433,22 @@ namespace AICAD.UI
         {
             if (_client == null)
             {
-                // WARNING: Storing API keys directly in code is not secure.
-                // This is for demonstration purposes only.
-                var key = "AIzaSyBUzKATKs5ea0mTSmGziZDnDdjaDK1RpjE"; // <-- IMPORTANT: This key is now hardcoded.
-
-                if (key == "REPLACE_WITH_YOUR_KEY_DO_NOT_COMMIT")
-                {
-                    AppendDetailedStatus("LLM", "API Key is not set. Please edit UI/TextToCADTaskpane.cs and replace the placeholder key.", null);
-                    throw new InvalidOperationException("API Key is not set in the source code. Please edit UI/TextToCADTaskpane.cs.");
-                }
+                // Prefer API keys provided by the environment; do not use hardcoded keys.
+                var key = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                          ?? null;
 
                 var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
-                                     ?? "gemini-1.0-pro"; // Updated to a more current model
+                                     ?? "gemini-1.0-pro";
+
                 _client = new GeminiClient(key, preferredModel);
-                AppendStatusLine("[LLM] Gemini client constructed with hardcoded API key.");
+                AppendStatusLine("[LLM] Gemini client constructed; apiKeySource=" + (string.IsNullOrEmpty(key) ? "none" : "env"));
                 
                 // Initialize logging and data stores
                 var baseDir = @"D:\SolidWorks API\9. SolidWorks Taskpane Text To CAD"; // workspace folder
@@ -470,40 +515,62 @@ namespace AICAD.UI
                 SetLlmStatus("Sending…", Color.DarkOrange);
                 SetLastError(null);
                 SetTimes(null, null);
+                // Start a run section so the status console groups this build attempt
+                var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                _lastRunId = runId;
+                AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----");
 
-                // Ask Gemini to produce a corrective, executable plan of SOLIDWORKS steps (few-shot guided)
-                var fewshot = new StringBuilder()
-                    .Append("Examples:")
-                    .Append("\nInput: Box 100x50x25 mm")
-                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
-                    .Append("\nInput: Cylinder 40 dia x 80 mm")
-                    .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
-
-                // Add dynamic few-shots from SQLite good feedback
-                if (_goodStore != null)
+                // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
+                bool useFewShot = true;
+                try
                 {
-                    var extras = _goodStore.GetRecentFewShots(2);
-                    foreach (var s in extras)
+                    var v = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Process)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Machine);
+                    if (!string.IsNullOrEmpty(v))
                     {
-                        fewshot.Append(s);
+                        if (v == "0" || v.Equals("false", StringComparison.OrdinalIgnoreCase)) useFewShot = false;
                     }
                 }
-                // Add retrieval from step store
-                if (_stepStore != null)
+                catch { useFewShot = true; }
+
+                StringBuilder fewshot = null;
+                if (useFewShot)
                 {
-                    var more = _stepStore.GetRelevantFewShots(text, 3);
-                    foreach (var s in more) fewshot.Append(s);
+                    // Ask Gemini to produce a corrective, executable plan of SOLIDWORKS steps (few-shot guided)
+                    fewshot = new StringBuilder()
+                        .Append("Examples:")
+                        .Append("\nInput: Box 100x50x25 mm")
+                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
+                        .Append("\nInput: Cylinder 40 dia x 80 mm")
+                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
+
+                    // Add dynamic few-shots from SQLite good feedback
+                    if (_goodStore != null)
+                    {
+                        var extras = _goodStore.GetRecentFewShots(2);
+                        foreach (var s in extras)
+                        {
+                            fewshot.Append(s);
+                        }
+                    }
+                    // Add retrieval from step store
+                    if (_stepStore != null)
+                    {
+                        var more = _stepStore.GetRelevantFewShots(text, 3);
+                        foreach (var s in more) fewshot.Append(s);
+                    }
                 }
 
                 var sysPrompt =
                     "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
                     "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
-                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + fewshot + "\nNow generate plan for: ";
+                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
                 var client = GetClient();
                 _lastModel = client?.Model;
                 SetRealTimeStatus("Applying few-shot examples…", Color.DarkOrange);
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                reply = await client.GenerateAsync(sysPrompt + fewshot.ToString() + "\nNow generate plan for: " + text + "\nJSON:");
+                reply = await client.GenerateAsync(sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:");
                 llmSw.Stop();
                 llmMs = llmSw.Elapsed;
                 _lastReply = reply;
@@ -518,6 +585,7 @@ namespace AICAD.UI
                 var maxAttempts = 2;
                 string planJson = ExtractRawJson(reply);
                 Newtonsoft.Json.Linq.JObject planDoc = null;
+                string corrective = null;
                 for (; attempt < maxAttempts; attempt++)
                 {
                     try
@@ -528,28 +596,6 @@ namespace AICAD.UI
                     {
                         errText = "plan-parse: " + ex.Message;
                         break;
-                    }
-
-                    exec = Services.StepExecutor.Execute(planDoc, _swApp);
-                    if (exec.Success) break;
-
-                    // Build corrective prompt with error log for next attempt
-                    var errDoc = new JObject
-                    {
-                        ["last_plan"] = SafeJson(planJson),
-                        ["errors"] = new JArray(exec.Log)
-                    };
-                    var corrective =
-                        "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
-                        errDoc.ToString(Newtonsoft.Json.Formatting.None) +
-                        "\nRemember: output only JSON with steps; use Front Plane and mm units.";
-                    // If we created a model this attempt and failed, close it before retry
-                    try
-                    {
-                        if (exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
-                        {
-                            _swApp.CloseDoc(exec.ModelTitle);
-                        }
                     }
                     catch { }
 
@@ -567,6 +613,8 @@ namespace AICAD.UI
                     SetSwStatus("OK", Color.DarkGreen);
                     // Clear modified state after successful create/save
                     try { SetModified(false); } catch { }
+                    // Do NOT auto-apply material/description/mass here — user should apply manually
+                    AppendStatusLine("[Status] Model created. Please set Material and Description manually and click 'Apply Properties' to finalize Mass (will remain 0.000 until linked).");
                 }
                 else
                 {
@@ -695,6 +743,12 @@ namespace AICAD.UI
                     _lastDbLogged = logged;
                     SetDbStatus(logged ? "Logged" : "Log error", logged ? Color.DarkGreen : Color.Firebrick);
                     SetRealTimeStatus(logged ? "Completed" : "Error logging", logged ? Color.DarkGreen : Color.Firebrick);
+                    // Close the run section with a footer summarizing the attempt
+                    try
+                    {
+                        AppendStatusLine($"[Run:{_lastRunId}] ----- Build End: success={(exec?.Success ?? false)} totalMs={(long)totalSw.Elapsed.TotalMilliseconds} error={(errText ?? string.Empty).Replace("\r", " ").Replace("\n", " ")} -----");
+                    }
+                    catch { }
                 }
                 catch
                 {
@@ -1126,32 +1180,66 @@ namespace AICAD.UI
 
         private void AppendStatusLine(string line)
         {
+            // Ensure we are on the UI thread before touching controls
+            if (this.InvokeRequired)
+            {
+                this.BeginInvoke(new Action<string>(AppendStatusLine), line);
+                return;
+            }
             try
             {
-                    // Write to status window if it's open
-                    if (_statusWindow != null && !_statusWindow.IsDisposed)
-                    {
-                        var ts = DateTime.Now.ToString("HH:mm:ss");
-                        _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                        _statusWindow.StatusConsole.SelectionColor = Color.Gainsboro;
-                        _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
-                        _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
-                        _statusWindow.StatusConsole.ScrollToCaret();
-                        try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
-                        return;
-                    }
-
-                    // If no window, still mirror to temp log for diagnostics
-                    try { MirrorStatusToTempFile(DateTime.Now.ToString("HH:mm:ss") + " " + line); } catch { }
-                }
-                catch { }
-            }
-
-            private void StatusWindow_CopyErrorClicked(object sender, EventArgs e)
-            {
-                try
+                // Write to status window if it's open
+                if (_statusWindow != null && !_statusWindow.IsDisposed)
                 {
-                    var text = BuildErrorCopyText();
+                    var ts = DateTime.Now.ToString("HH:mm:ss");
+                    _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
+                    // Colorize certain categories for readability
+                    var color = Color.Gainsboro;
+                    try
+                    {
+                        var l = (line ?? string.Empty);
+                        if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            color = Color.OrangeRed; // high-contrast red
+                        }
+                        else if (l.StartsWith("[FewShot", StringComparison.OrdinalIgnoreCase) || l.IndexOf("FewShot", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            color = Color.DodgerBlue; // bright blue
+                        }
+                        else if (l.StartsWith("[Status]", StringComparison.OrdinalIgnoreCase))
+                        {
+                            color = Color.Gold; // visible orange/gold
+                        }
+                        else if (l.StartsWith("[Run:", StringComparison.OrdinalIgnoreCase))
+                        {
+                            color = Color.Cyan; // run headers in cyan
+                        }
+                        else if (l.StartsWith("[LLM]", StringComparison.OrdinalIgnoreCase))
+                        {
+                            if (l.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0) color = Color.LimeGreen;
+                            else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) color = Color.OrangeRed;
+                            else color = Color.LightSkyBlue;
+                        }
+                    }
+                    catch { }
+                    _statusWindow.StatusConsole.SelectionColor = color;
+                    _statusWindow.StatusConsole.AppendText($"{ts} {line}\n");
+                    _statusWindow.StatusConsole.SelectionStart = _statusWindow.StatusConsole.TextLength;
+                    _statusWindow.StatusConsole.ScrollToCaret();
+                    try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
+                    return;
+                }
+                // If no window, still mirror to temp log for diagnostics
+                try { MirrorStatusToTempFile(DateTime.Now.ToString("HH:mm:ss") + " " + line); } catch { }
+            }
+            catch { }
+        }
+
+        private void StatusWindow_CopyErrorClicked(object sender, EventArgs e)
+        {
+            try
+            {
+                var text = BuildErrorCopyText();
                     if (!string.IsNullOrEmpty(text))
                     {
                         Clipboard.SetText(text);

@@ -95,20 +95,69 @@ CREATE INDEX IF NOT EXISTS idx_feedback_ts ON good_feedback(ts DESC);
                 using (var conn = new SQLiteConnection(_connString))
                 {
                     conn.Open();
-                    using (var cmd = conn.CreateCommand())
+                    // Check for forced key-only mode
+                    var forceKey = (System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS") ?? "").Equals("1", StringComparison.OrdinalIgnoreCase)
+                                   || (System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS") ?? "").Equals("true", StringComparison.OrdinalIgnoreCase);
+
+                    if (forceKey)
                     {
-                        cmd.CommandText = "SELECT prompt, plan FROM good_feedback ORDER BY ts DESC LIMIT @n";
-                        cmd.Parameters.AddWithValue("@n", max);
-                        using (var r = cmd.ExecuteReader())
+                        using (var cmd = conn.CreateCommand())
                         {
-                            while (r.Read())
+                            cmd.CommandText = "SELECT prompt, plan FROM good_feedback WHERE lower(comment) LIKE '%key%' ORDER BY ts DESC LIMIT @n";
+                            cmd.Parameters.AddWithValue("@n", max);
+                            using (var r = cmd.ExecuteReader())
                             {
-                                var prompt = r[0] as string ?? string.Empty;
-                                var plan = r[1] as string ?? "{}";
-                                var sb = new StringBuilder();
-                                sb.Append("\nInput: ").Append(prompt);
-                                sb.Append("\nOutput:").Append(plan);
-                                shots.Add(sb.ToString());
+                                while (r.Read())
+                                {
+                                    var prompt = r[0] as string ?? string.Empty;
+                                    var plan = r[1] as string ?? "{}";
+                                    var sb = new StringBuilder();
+                                    sb.Append("\nInput: ").Append(prompt);
+                                    sb.Append("\nOutput:").Append(plan);
+                                    shots.Add(sb.ToString());
+                                }
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // Prefer key-marked examples but include recent ones to fill
+                        using (var cmd = conn.CreateCommand())
+                        {
+                            cmd.CommandText = "SELECT prompt, plan, comment FROM good_feedback ORDER BY ts DESC LIMIT @n";
+                            cmd.Parameters.AddWithValue("@n", Math.Max(max * 3, max));
+                            using (var r = cmd.ExecuteReader())
+                            {
+                                var candidates = new System.Collections.Generic.List<(string prompt, string plan, string comment)>();
+                                while (r.Read())
+                                {
+                                    candidates.Add((r[0] as string ?? string.Empty, r[1] as string ?? "{}", r[2] as string ?? string.Empty));
+                                }
+                                // key-marked first
+                                foreach (var c in candidates)
+                                {
+                                    if (shots.Count >= max) break;
+                                    if (!string.IsNullOrEmpty(c.comment) && c.comment.IndexOf("key", StringComparison.OrdinalIgnoreCase) >= 0)
+                                    {
+                                        var sb = new StringBuilder();
+                                        sb.Append("\nInput: ").Append(c.prompt);
+                                        sb.Append("\nOutput:").Append(c.plan);
+                                        shots.Add(sb.ToString());
+                                    }
+                                }
+                                // fill remaining
+                                if (shots.Count < max)
+                                {
+                                    foreach (var c in candidates)
+                                    {
+                                        if (shots.Count >= max) break;
+                                        var sb = new StringBuilder();
+                                        sb.Append("\nInput: ").Append(c.prompt);
+                                        sb.Append("\nOutput:").Append(c.plan);
+                                        var entry = sb.ToString();
+                                        if (!shots.Contains(entry)) shots.Add(entry);
+                                    }
+                                }
                             }
                         }
                     }

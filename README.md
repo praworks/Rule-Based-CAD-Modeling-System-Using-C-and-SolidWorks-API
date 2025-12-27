@@ -11,8 +11,13 @@ Type a prompt like "box 100x50x25 mm" or "cylinder Ø40 x 80 mm" and it creates 
 
 ## Register (Admin)
 1. Build Debug.
-2. Right-click `Register_Addin_Debug.bat` > Run as administrator.
+2. Right-click `Register_Addin_Debug.bat` > Run as administrator (or run it from an elevated PowerShell).
+	- If you see `RegAsm ... Administrator permissions are needed`, re-run from an elevated shell.
 3. Start SolidWorks; the add-in should load and show a taskpane named "AI-CAD-December".
+
+### Build-button crash (SolidWorks)
+- The add-in now creates parts via `ISldWorks.NewPart()` instead of `NewDocument("", ...)` to avoid SolidWorks crashes when default templates are invalid or missing.
+- If SolidWorks still crashes when you click **Build 🚀**, confirm the add-in is registered from an elevated shell, then retry.
 
 ## Unregister (Admin)
 - Run `Unregister_Addin_Debug.bat` as administrator.

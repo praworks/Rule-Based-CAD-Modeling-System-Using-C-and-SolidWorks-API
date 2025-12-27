@@ -1,0 +1,1 @@
+& "C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" "AI-CAD-December.sln" /t:Rebuild /p:Configuration=Debug /p:Platform="Any CPU"

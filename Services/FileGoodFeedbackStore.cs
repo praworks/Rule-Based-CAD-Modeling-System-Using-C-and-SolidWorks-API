@@ -50,16 +50,61 @@ namespace AICAD.Services
             {
                 if (!File.Exists(_path)) return shots;
                 var lines = File.ReadAllLines(_path);
-                for (int i = lines.Length - 1; i >= 0 && shots.Count < max; i--)
+                // Check for forced key-only mode
+                var forceKey = (System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS") ?? "").Equals("1", StringComparison.OrdinalIgnoreCase)
+                               || (System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS") ?? "").Equals("true", StringComparison.OrdinalIgnoreCase);
+
+                if (forceKey)
                 {
-                    var line = lines[i];
-                    // naive parse: find prompt and plan fields
-                    var prompt = Extract(line, "\"prompt\":\"", "\"") ?? string.Empty;
-                    var plan = ExtractAfter(line, "\"plan\":") ?? "{}";
-                    var sb = new StringBuilder();
-                    sb.Append("\nInput: ").Append(prompt);
-                    sb.Append("\nOutput:").Append(plan);
-                    shots.Add(sb.ToString());
+                    for (int i = lines.Length - 1; i >= 0 && shots.Count < max; i--)
+                    {
+                        var line = lines[i];
+                        var comment = Extract(line, "\"comment\":\"", "\"") ?? string.Empty;
+                        if (string.IsNullOrEmpty(comment) || comment.IndexOf("key", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        var prompt = Extract(line, "\"prompt\":\"", "\"") ?? string.Empty;
+                        var plan = ExtractAfter(line, "\"plan\":") ?? "{}";
+                        var sb = new StringBuilder();
+                        sb.Append("\nInput: ").Append(prompt);
+                        sb.Append("\nOutput:").Append(plan);
+                        shots.Add(sb.ToString());
+                    }
+                }
+                else
+                {
+                    // Gather candidates and prefer key-marked
+                    var candidates = new System.Collections.Generic.List<(string prompt, string plan, string comment)>();
+                    for (int i = lines.Length - 1; i >= 0; i--)
+                    {
+                        var line = lines[i];
+                        var prompt = Extract(line, "\"prompt\":\"", "\"") ?? string.Empty;
+                        var plan = ExtractAfter(line, "\"plan\":") ?? "{}";
+                        var comment = Extract(line, "\"comment\":\"", "\"") ?? string.Empty;
+                        candidates.Add((prompt, plan, comment));
+                        if (candidates.Count >= Math.Max(max * 3, max)) break;
+                    }
+                    foreach (var c in candidates)
+                    {
+                        if (shots.Count >= max) break;
+                        if (!string.IsNullOrEmpty(c.comment) && c.comment.IndexOf("key", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            var sb = new StringBuilder();
+                            sb.Append("\nInput: ").Append(c.prompt);
+                            sb.Append("\nOutput:").Append(c.plan);
+                            shots.Add(sb.ToString());
+                        }
+                    }
+                    if (shots.Count < max)
+                    {
+                        foreach (var c in candidates)
+                        {
+                            if (shots.Count >= max) break;
+                            var sb = new StringBuilder();
+                            sb.Append("\nInput: ").Append(c.prompt);
+                            sb.Append("\nOutput:").Append(c.plan);
+                            var entry = sb.ToString();
+                            if (!shots.Contains(entry)) shots.Add(entry);
+                        }
+                    }
                 }
                 LastError = null;
                 AddinStatusLogger.Log("FileGoodFeedbackStore", "GetRecentFewShots succeeded lines=" + (File.Exists(_path) ? File.ReadAllLines(_path).Length.ToString() : "0"));

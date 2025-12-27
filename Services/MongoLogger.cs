@@ -6,6 +6,8 @@ using System.Linq;
 using System.Text.RegularExpressions;
 using MongoDB.Bson;
 using MongoDB.Driver;
+using MongoDB.Driver.Core.Configuration;
+using System.Security.Authentication;
 using System.Threading.Tasks;
 
 namespace AICAD.Services
@@ -45,6 +47,8 @@ namespace AICAD.Services
                 if (!string.IsNullOrWhiteSpace(_connectionString))
                 {
                     var settings = MongoClientSettings.FromConnectionString(_connectionString);
+                    // Force TLS 1.2 to avoid SSPI/SChannel handshake failures on some Windows hosts
+                    try { settings.SslSettings = new SslSettings { EnabledSslProtocols = SslProtocols.Tls12 }; } catch { }
                     // Align with Node sample: Stable API v1 + strict + deprecationErrors
                     settings.ServerApi = new ServerApi(ServerApiVersion.V1, strict: true, deprecationErrors: true);
                     // Make initial server selection/ping snappy
@@ -74,13 +78,29 @@ namespace AICAD.Services
                     {
                         // Treat ping failure as not available for logging
                         _collection = null;
-                        _lastError = ex.Message;
+                        _lastError = ex.ToString();
                         try { AddinStatusLogger.Error("MongoLogger", "Ping failed", ex); } catch { }
                         return;
                     }
 
                     _db = client.GetDatabase(_dbName);
                     _collection = _db.GetCollection<BsonDocument>(_collectionName);
+                    // Ensure collection exists (creates on first insert if allowed). Attempt explicit creation
+                    try
+                    {
+                        var exists = _db.ListCollectionNames().ToList().Contains(_collectionName);
+                        if (!exists)
+                        {
+                            var options = new CreateCollectionOptions();
+                            _db.CreateCollection(_collectionName, options);
+                            AddinStatusLogger.Log("MongoLogger", $"Created missing collection={_collectionName}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        // Creation may fail due to permissions; ignore but log
+                        try { AddinStatusLogger.Error("MongoLogger", "CreateCollection failed", ex); } catch { }
+                    }
                     _lastError = null;
                     try { AddinStatusLogger.Log("MongoLogger", $"Connected to MongoDB database={_dbName} collection={_collectionName}"); } catch { }
                 }
@@ -88,7 +108,7 @@ namespace AICAD.Services
             catch (Exception ex)
             {
                 _collection = null;
-                _lastError = ex.Message;
+                _lastError = ex.ToString();
                 try { AddinStatusLogger.Error("MongoLogger", "Constructor failed", ex); } catch { }
             }
         }
@@ -132,7 +152,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
-                _lastError = ex.Message;
+                _lastError = ex.ToString();
                 try { AddinStatusLogger.Error("MongoLogger", "InsertAsync failed", ex); } catch { }
                 return false;
             }
@@ -223,7 +243,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
-                lastErrProp?.SetValue(logger, ex.Message);
+                lastErrProp?.SetValue(logger, ex.ToString());
                 return false;
             }
         }

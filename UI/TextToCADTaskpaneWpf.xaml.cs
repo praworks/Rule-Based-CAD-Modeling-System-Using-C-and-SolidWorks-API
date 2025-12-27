@@ -649,23 +649,106 @@ namespace AICAD.UI
                 string[] candidateNames = new[] { "PromtPreset.json", "PromptPreset.json" };
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory ?? System.Environment.CurrentDirectory;
                 string found = null;
-                foreach (var name in candidateNames)
+                var tempLog = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_preset_load.log");
+                var sb = new StringBuilder();
+                sb.AppendLine($"[{DateTime.UtcNow:O}] TryLoadPromptPresets start. BaseDir={baseDir}");
+
+                // ensure dropdown always has a default entry so UI isn't empty
+                try { shapePreset.Items.Clear(); shapePreset.Items.Add("— none —"); shapePreset.SelectedIndex = 0; } catch { }
+
+                // 1) check the add-in assembly directory (when loaded inside SolidWorks)
+                try
                 {
-                    var p = System.IO.Path.Combine(baseDir, name);
-                    if (File.Exists(p)) { found = p; break; }
+                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                    var asmPath = asm.Location;
+                    if (!string.IsNullOrWhiteSpace(asmPath))
+                    {
+                        var asmDir = System.IO.Path.GetDirectoryName(asmPath);
+                        if (!string.IsNullOrWhiteSpace(asmDir))
+                        {
+                            foreach (var name in candidateNames)
+                            {
+                                var p = System.IO.Path.Combine(asmDir, name);
+                                sb.AppendLine($"Checking: {p}");
+                                if (File.Exists(p)) { found = p; break; }
+                            }
+                            if (found == null)
+                            {
+                                foreach (var name in candidateNames)
+                                {
+                                    var p = System.IO.Path.Combine(asmDir, "..", name);
+                                    sb.AppendLine($"Checking: {p}");
+                                    if (File.Exists(p)) { found = System.IO.Path.GetFullPath(p); break; }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine($"Assembly-location check failed: {ex.Message}");
+                }
+
+                // 2) fallback: check AppDomain base directory and parent
+                if (found == null)
+                {
+                    foreach (var name in candidateNames)
+                    {
+                        var p = System.IO.Path.Combine(baseDir, name);
+                        sb.AppendLine($"Checking: {p}");
+                        if (File.Exists(p)) { found = p; break; }
+                    }
                 }
                 if (found == null)
                 {
                     foreach (var name in candidateNames)
                     {
                         var p = System.IO.Path.Combine(baseDir, "..", name);
+                        sb.AppendLine($"Checking: {p}");
                         if (File.Exists(p)) { found = System.IO.Path.GetFullPath(p); break; }
                     }
                 }
-                if (found == null) return;
-                var text = File.ReadAllText(found, Encoding.UTF8);
-                var arr = JArray.Parse(text);
-                _promptPresets = arr;
+
+                // 3) embedded resource fallback
+                if (found == null)
+                {
+                    try
+                    {
+                        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                        var rn = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("PromptPreset.json", StringComparison.OrdinalIgnoreCase) || n.EndsWith("PromtPreset.json", StringComparison.OrdinalIgnoreCase));
+                        if (!string.IsNullOrWhiteSpace(rn))
+                        {
+                            sb.AppendLine($"Loading presets from embedded resource: {rn}");
+                            using (var s = asm.GetManifestResourceStream(rn))
+                            using (var r = new System.IO.StreamReader(s, Encoding.UTF8))
+                            {
+                                var textRes = r.ReadToEnd();
+                                var arrRes = JArray.Parse(textRes);
+                                _promptPresets = arrRes;
+                            }
+                        }
+                        else
+                        {
+                            sb.AppendLine($"[{DateTime.UtcNow:O}] No embedded preset resource found.");
+                            try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
+                            return;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        sb.AppendLine($"Embedded resource load failed: {ex.Message}");
+                        try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
+                        return;
+                    }
+                }
+                else
+                {
+                    sb.AppendLine($"[{DateTime.UtcNow:O}] Found preset file: {found}");
+                    var text = File.ReadAllText(found, Encoding.UTF8);
+                    var arr = JArray.Parse(text);
+                    _promptPresets = arr;
+                }
+
                 // populate combo
                 shapePreset.Items.Clear();
                 shapePreset.Items.Add("— none —");
@@ -677,6 +760,7 @@ namespace AICAD.UI
                     shapePreset.Items.Add(display);
                 }
                 shapePreset.SelectedIndex = 0;
+                try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
             }
             catch { }
         }
@@ -1049,13 +1133,7 @@ namespace AICAD.UI
                         var brush = KaraokeStatus.Foreground as SolidColorBrush;
                         if (brush == null)
                         {
-                            brush = new SolidColorBrush(targetColor);
-                            KaraokeStatus.Foreground = brush;
-                        }
-                        // If brush is frozen clone it so we can animate
-                        if (brush.IsFrozen)
-                        {
-                            brush = brush.Clone();
+                            brush = new SolidColorBrush(Colors.Transparent);
                             KaraokeStatus.Foreground = brush;
                         }
                         var animation = new ColorAnimation

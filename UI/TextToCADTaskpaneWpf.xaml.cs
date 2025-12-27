@@ -21,6 +21,9 @@ using SolidWorks.Interop.swcommands;
 using AICAD.Services;
 using Services;
 using Newtonsoft.Json.Linq;
+using MongoDB.Bson;
+using MongoDB.Driver;
+using MongoDB.Bson.IO;
 
 namespace AICAD.UI
 {
@@ -53,49 +56,12 @@ namespace AICAD.UI
                 {
                     http.Timeout = TimeSpan.FromSeconds(8);
 
-                    // 1) Ollama (user can override OLLAMA_ENDPOINT)
-                    var ollamaEndpoint = System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                         ?? System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                         ?? System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                         ?? "http://127.0.0.1:11434";
-                    try
-                    {
-                        AppendStatusLine("[LLM-STATUS] Checking Ollama: " + ollamaEndpoint);
-                        var u = new UriBuilder(ollamaEndpoint) { Path = "/api/tags" }.Uri.ToString();
-                        var resp = await http.GetAsync(u).ConfigureAwait(false);
-                        if (resp.IsSuccessStatusCode)
-                        {
-                            anyOk = true;
-                            var txt = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                            try
-                            {
-                                var j = JObject.Parse(txt);
-                                var models = j["models"] as JArray;
-                                if (models != null && models.Count > 0)
-                                {
-                                    var names = models.Select(m => (m["model"] ?? m["name"])?.ToString()).Where(s => !string.IsNullOrWhiteSpace(s)).Take(5);
-                                    AppendStatusLine("[LLM-STATUS] Ollama OK — models: " + string.Join(", ", names));
-                                }
-                                else AppendStatusLine("[LLM-STATUS] Ollama OK — no models listed");
-                            }
-                            catch { AppendStatusLine("[LLM-STATUS] Ollama OK — response parsed but no model list"); }
-                        }
-                        else
-                        {
-                            AppendStatusLine($"[LLM-STATUS] Ollama returned {(int)resp.StatusCode} {resp.ReasonPhrase}");
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        AppendStatusLine("[LLM-STATUS] Ollama check failed: " + ex.Message);
-                    }
-
-                    // 2) Generic local endpoint (LOCAL_LLM_ENDPOINT)
+                    // 1) Generic local endpoint (LOCAL_LLM_ENDPOINT)
                     // 2a) LM Studio (optional local provider)
                     var lmStudioEndpoint = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
                                          ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Process)
                                          ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                         ?? "http://127.0.0.1:8080";
+                                         ?? " http://192.168.0.105:1234";
                     try
                     {
                         AppendStatusLine("[LLM-STATUS] Checking LM Studio: " + lmStudioEndpoint);
@@ -185,47 +151,6 @@ namespace AICAD.UI
                         AppendStatusLine("[LLM-STATUS] " + dispLocal + " check failed: " + ex.Message);
                     }
 
-                    // 3) Groq/cloud provider
-                    var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
-                                  ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
-                                  ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Machine);
-                    if (!string.IsNullOrWhiteSpace(groqKey))
-                    {
-                        try
-                        {
-                            AppendStatusLine("[LLM-STATUS] Checking Groq API");
-                            var req = new HttpRequestMessage(HttpMethod.Get, "https://api.groq.com/v1/models");
-                            req.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", groqKey);
-                            var r = await http.SendAsync(req).ConfigureAwait(false);
-                            if (r.IsSuccessStatusCode)
-                            {
-                                anyOk = true;
-                                var txt = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                try
-                                {
-                                    var j = JObject.Parse(txt);
-                                    if (j["data"] is JArray arr && arr.Count > 0)
-                                    {
-                                        var names = arr.Children().Select(c => c["id"]?.ToString()).Where(s => !string.IsNullOrWhiteSpace(s)).Take(5);
-                                        AppendStatusLine("[LLM-STATUS] Groq OK — models: " + string.Join(", ", names));
-                                    }
-                                    else AppendStatusLine("[LLM-STATUS] Groq OK — no models listed");
-                                }
-                                catch { AppendStatusLine("[LLM-STATUS] Groq OK — response parsed but no model list"); }
-                            }
-                            else
-                            {
-                                AppendStatusLine($"[LLM-STATUS] Groq returned {(int)r.StatusCode} {r.ReasonPhrase}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            AppendStatusLine("[LLM-STATUS] Groq check failed: " + ex.Message);
-                        }
-                    }
-                    else
-                    {
-                        AppendStatusLine("[LLM-STATUS] Groq API key not configured");
                     }
                 }
             }
@@ -631,15 +556,24 @@ namespace AICAD.UI
             try
             {
                 var idx = shapePreset.SelectedIndex;
+                var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_preset_selection.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] SelectionChanged: idx={idx}, _promptPresets.Count={_promptPresets?.Count ?? -1}\n");
                 if (_promptPresets == null || idx <= 0 || idx > _promptPresets.Count)
                 {
                     PromptText = string.Empty;
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Clearing prompt text\n");
                     return;
                 }
                 var item = _promptPresets[idx - 1];
-                PromptText = item["prompt"]?.ToString() ?? string.Empty;
+                var prompt = item["prompt"]?.ToString() ?? string.Empty;
+                PromptText = prompt;
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Set prompt: '{prompt}'\n");
             }
-            catch { }
+            catch (Exception ex)
+            {
+                var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_preset_selection.log");
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Exception: {ex.Message}\n");
+            }
         }
 
         private void TryLoadPromptPresets()
@@ -656,113 +590,189 @@ namespace AICAD.UI
                 // ensure dropdown always has a default entry so UI isn't empty
                 try { shapePreset.Items.Clear(); shapePreset.Items.Add("— none —"); shapePreset.SelectedIndex = 0; } catch { }
 
-                // 1) check the add-in assembly directory (when loaded inside SolidWorks)
+                // Attempt to load from MongoDB if environment variable is provided
                 try
                 {
-                    var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                    var asmPath = asm.Location;
-                    if (!string.IsNullOrWhiteSpace(asmPath))
+                    var mongoUri = System.Environment.GetEnvironmentVariable("PROMPT_PRESET_MONGO_URI");
+                    if (!string.IsNullOrWhiteSpace(mongoUri))
                     {
-                        var asmDir = System.IO.Path.GetDirectoryName(asmPath);
-                        if (!string.IsNullOrWhiteSpace(asmDir))
+                        var mongoDb = System.Environment.GetEnvironmentVariable("PROMPT_PRESET_MONGO_DB") ?? "TaskPaneAddin";
+                        var mongoColl = System.Environment.GetEnvironmentVariable("PROMPT_PRESET_MONGO_COLL") ?? "PromptPresetCollection";
+                        sb.AppendLine($"Attempting MongoDB load: uri={(mongoUri.Length>64?mongoUri.Substring(0,64)+"...":mongoUri)} db={mongoDb} coll={mongoColl}");
+                        try
                         {
-                            foreach (var name in candidateNames)
+                            if (TryLoadPromptPresetsFromMongo(mongoUri, mongoDb, mongoColl, sb, out var arrFromMongo))
                             {
-                                var p = System.IO.Path.Combine(asmDir, name);
-                                sb.AppendLine($"Checking: {p}");
-                                if (File.Exists(p)) { found = p; break; }
+                                _promptPresets = arrFromMongo;
                             }
-                            if (found == null)
+                            else
                             {
-                                foreach (var name in candidateNames)
-                                {
-                                    var p = System.IO.Path.Combine(asmDir, "..", name);
-                                    sb.AppendLine($"Checking: {p}");
-                                    if (File.Exists(p)) { found = System.IO.Path.GetFullPath(p); break; }
-                                }
+                                sb.AppendLine("MongoDB returned no presets or collection empty.");
                             }
+                        }
+                        catch (Exception ex)
+                        {
+                            sb.AppendLine($"MongoDB load exception: {ex.Message}");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    sb.AppendLine($"Assembly-location check failed: {ex.Message}");
+                    sb.AppendLine($"MongoDB attempt failed: {ex.Message}");
                 }
 
-                // 2) fallback: check AppDomain base directory and parent
-                if (found == null)
+                // If MongoDB provided presets, skip file/embedded lookup
+                if (_promptPresets == null)
                 {
-                    foreach (var name in candidateNames)
-                    {
-                        var p = System.IO.Path.Combine(baseDir, name);
-                        sb.AppendLine($"Checking: {p}");
-                        if (File.Exists(p)) { found = p; break; }
-                    }
-                }
-                if (found == null)
-                {
-                    foreach (var name in candidateNames)
-                    {
-                        var p = System.IO.Path.Combine(baseDir, "..", name);
-                        sb.AppendLine($"Checking: {p}");
-                        if (File.Exists(p)) { found = System.IO.Path.GetFullPath(p); break; }
-                    }
-                }
-
-                // 3) embedded resource fallback
-                if (found == null)
-                {
+                    // 1) check the add-in assembly directory (when loaded inside SolidWorks)
                     try
                     {
                         var asm = System.Reflection.Assembly.GetExecutingAssembly();
-                        var rn = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("PromptPreset.json", StringComparison.OrdinalIgnoreCase) || n.EndsWith("PromtPreset.json", StringComparison.OrdinalIgnoreCase));
-                        if (!string.IsNullOrWhiteSpace(rn))
+                        var asmPath = asm.Location;
+                        if (!string.IsNullOrWhiteSpace(asmPath))
                         {
-                            sb.AppendLine($"Loading presets from embedded resource: {rn}");
-                            using (var s = asm.GetManifestResourceStream(rn))
-                            using (var r = new System.IO.StreamReader(s, Encoding.UTF8))
+                            var asmDir = System.IO.Path.GetDirectoryName(asmPath);
+                            if (!string.IsNullOrWhiteSpace(asmDir))
                             {
-                                var textRes = r.ReadToEnd();
-                                var arrRes = JArray.Parse(textRes);
-                                _promptPresets = arrRes;
+                                foreach (var name in candidateNames)
+                                {
+                                    var p = System.IO.Path.Combine(asmDir, name);
+                                    sb.AppendLine($"Checking: {p}");
+                                    if (File.Exists(p)) { found = p; break; }
+                                }
+                                if (found == null)
+                                {
+                                    foreach (var name in candidateNames)
+                                    {
+                                        var p = System.IO.Path.Combine(asmDir, "..", name);
+                                        sb.AppendLine($"Checking: {p}");
+                                        if (File.Exists(p)) { found = System.IO.Path.GetFullPath(p); break; }
+                                    }
+                                }
                             }
-                        }
-                        else
-                        {
-                            sb.AppendLine($"[{DateTime.UtcNow:O}] No embedded preset resource found.");
-                            try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
-                            return;
                         }
                     }
                     catch (Exception ex)
                     {
-                        sb.AppendLine($"Embedded resource load failed: {ex.Message}");
-                        try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
-                        return;
+                        sb.AppendLine($"Assembly-location check failed: {ex.Message}");
                     }
-                }
-                else
-                {
-                    sb.AppendLine($"[{DateTime.UtcNow:O}] Found preset file: {found}");
-                    var text = File.ReadAllText(found, Encoding.UTF8);
-                    var arr = JArray.Parse(text);
-                    _promptPresets = arr;
+
+                    // 2) fallback: check AppDomain base directory and parent
+                    if (found == null)
+                    {
+                        foreach (var name in candidateNames)
+                        {
+                            var p = System.IO.Path.Combine(baseDir, name);
+                            sb.AppendLine($"Checking: {p}");
+                            if (File.Exists(p)) { found = p; break; }
+                        }
+                    }
+                    if (found == null)
+                    {
+                        foreach (var name in candidateNames)
+                        {
+                            var p = System.IO.Path.Combine(baseDir, "..", name);
+                            sb.AppendLine($"Checking: {p}");
+                            if (File.Exists(p)) { found = System.IO.Path.GetFullPath(p); break; }
+                        }
+                    }
+
+                    // 3) embedded resource fallback
+                    if (found == null)
+                    {
+                        try
+                        {
+                            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+                            var rn = asm.GetManifestResourceNames().FirstOrDefault(n => n.EndsWith("PromptPreset.json", StringComparison.OrdinalIgnoreCase) || n.EndsWith("PromtPreset.json", StringComparison.OrdinalIgnoreCase));
+                            if (!string.IsNullOrWhiteSpace(rn))
+                            {
+                                sb.AppendLine($"Loading presets from embedded resource: {rn}");
+                                using (var s = asm.GetManifestResourceStream(rn))
+                                using (var r = new System.IO.StreamReader(s, Encoding.UTF8))
+                                {
+                                    var textRes = r.ReadToEnd();
+                                    sb.AppendLine($"[{DateTime.UtcNow:O}] Read {textRes.Length} chars from embedded resource");
+                                    var arrRes = JArray.Parse(textRes);
+                                    _promptPresets = arrRes;
+                                    sb.AppendLine($"[{DateTime.UtcNow:O}] Parsed {arrRes.Count} presets from embedded resource");
+                                }
+                            }
+                            else
+                            {
+                                sb.AppendLine($"[{DateTime.UtcNow:O}] No embedded preset resource found.");
+                                try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
+                                return;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            sb.AppendLine($"Embedded resource load failed: {ex.Message}");
+                            try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        sb.AppendLine($"[{DateTime.UtcNow:O}] Found preset file: {found}");
+                        var text = File.ReadAllText(found, Encoding.UTF8);
+                        sb.AppendLine($"[{DateTime.UtcNow:O}] Read {text.Length} chars from file");
+                        var arr = JArray.Parse(text);
+                        _promptPresets = arr;
+                        sb.AppendLine($"[{DateTime.UtcNow:O}] Parsed {arr.Count} presets from file");
+                    }
                 }
 
                 // populate combo
-                shapePreset.Items.Clear();
-                shapePreset.Items.Add("— none —");
-                foreach (var it in _promptPresets)
+                if (_promptPresets != null)
                 {
-                    var id = it["id"]?.ToString() ?? "";
-                    var desc = it["description"]?.ToString() ?? "";
-                    var display = string.IsNullOrWhiteSpace(id) ? desc : ($"{id} - {desc}");
-                    shapePreset.Items.Add(display);
+                    sb.AppendLine($"[{DateTime.UtcNow:O}] Populating combo with {_promptPresets.Count} presets");
+                    shapePreset.Items.Clear();
+                    shapePreset.Items.Add("— none —");
+                    foreach (var it in _promptPresets)
+                    {
+                        var id = it["id"]?.ToString() ?? "";
+                        var desc = it["description"]?.ToString() ?? "";
+                        var display = string.IsNullOrWhiteSpace(id) ? desc : ($"{id} - {desc}");
+                        shapePreset.Items.Add(display);
+                        sb.AppendLine($"[{DateTime.UtcNow:O}] Added item: {display}");
+                    }
+                    shapePreset.SelectedIndex = 0;
+                    sb.AppendLine($"[{DateTime.UtcNow:O}] Combo populated with {shapePreset.Items.Count} items");
                 }
-                shapePreset.SelectedIndex = 0;
                 try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
             }
             catch { }
+        }
+
+        private bool TryLoadPromptPresetsFromMongo(string uri, string dbName, string collName, StringBuilder sb, out JArray arr)
+        {
+            arr = null;
+            try
+            {
+                var settings = MongoClientSettings.FromConnectionString(uri);
+                settings.ServerApi = new ServerApi(ServerApiVersion.V1);
+                var client = new MongoClient(settings);
+                var db = client.GetDatabase(dbName);
+                var coll = db.GetCollection<BsonDocument>(collName);
+                var docs = coll.Find(Builders<BsonDocument>.Filter.Empty).ToList();
+                sb.AppendLine($"Mongo: fetched {docs.Count} docs from {dbName}.{collName}");
+                if (docs.Count == 0) return false;
+                var arrLocal = new JArray();
+                foreach (var d in docs)
+                {
+                    // use strict JSON for BSON types
+                    var js = d.ToJson(new JsonWriterSettings());
+                    var jo = JObject.Parse(js);
+                    arrLocal.Add(jo);
+                }
+                arr = arrLocal;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"TryLoadPromptPresetsFromMongo failed: {ex.Message}");
+                return false;
+            }
         }
 
         private void Prompt_TextChanged(object sender, TextChangedEventArgs e)
@@ -1546,12 +1556,12 @@ namespace AICAD.UI
                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
                                      ?? "google/functiongemma-270m";
 
-                if (!string.IsNullOrWhiteSpace(llmMode) && llmMode.Equals("local", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(localEndpoint))
+                if (!string.IsNullOrWhiteSpace(localEndpoint))
                 {
                     var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
-                                       ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                                       ?? "Always answer in rhymes. Today is Thursday";
                     _client = new LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt);
                     var dispName = GetEndpointDisplayName(localEndpoint);
                     AppendStatusLine("[LLM] " + dispName + " client constructed; endpoint=" + localEndpoint + " model=" + preferredModel);
@@ -1587,45 +1597,7 @@ namespace AICAD.UI
                                  ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
                                  ?? "google/functiongemma-270m";
 
-            // 1) Try Ollama at localhost:11434 first (user preference)
-            try
-            {
-                var ollamaEndpoint = System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                     ?? System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                     ?? System.Environment.GetEnvironmentVariable("OLLAMA_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                     ?? "http://localhost:11434/v1/chat/completions";
-
-                if (!string.IsNullOrWhiteSpace(ollamaEndpoint))
-                {
-                    AppendStatusLine("[LLM] Trying Ollama endpoint: " + ollamaEndpoint);
-                    var systemPrompt2 = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
-                                        ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
-                    var ollamaClient = new AICAD.Services.LocalHttpLlmClient(ollamaEndpoint, preferredModel, systemPrompt2);
-                    try
-                    {
-                        var r = await ollamaClient.GenerateAsync(prompt);
-                        _client = ollamaClient;
-                        _lastModel = ollamaClient.Model;
-                        AppendStatusLine("[LLM] Ollama succeeded: " + ollamaClient.Model);
-                        return r;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastEx = ex;
-                        AppendStatusLine("[LLM] Ollama failed: " + ex.Message);
-                        try { ollamaClient.Dispose(); } catch { }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                lastEx = ex;
-                AppendStatusLine("[LLM] Ollama attempt error: " + ex.Message);
-            }
-
-            // 2) Try Local HTTP LLM if explicitly configured via LOCAL_LLM_ENDPOINT
+            // 1) Try Local HTTP LLM if explicitly configured via LOCAL_LLM_ENDPOINT
             try
             {
                 var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -1715,39 +1687,6 @@ namespace AICAD.UI
                 lastEx = ex;
                 AppendStatusLine("[LLM] Gemini attempt error: " + ex.Message);
             }
-            }
-
-                // 3) Try Groq if key available
-            try
-            {
-                var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
-                              ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
-                              ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Machine)
-                              ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(groqKey))
-                {
-                        AppendStatusLine("[LLM] Trying Groq (API key from env)");
-                        try
-                        {
-                            var groqAdapter = new AICAD.Services.GroqLlmAdapter(groqKey);
-                            var r = await groqAdapter.GenerateAsync(prompt);
-                            _client = groqAdapter;
-                            _lastModel = groqAdapter.Model;
-                            AppendStatusLine("[LLM] Groq succeeded: " + groqAdapter.Model);
-                            return r;
-                        }
-                        catch (Exception ex)
-                        {
-                            lastEx = ex;
-                            AppendStatusLine("[LLM] Groq failed: " + ex.Message);
-                        }
-                }
-            }
-            catch (Exception ex)
-            {
-                lastEx = ex;
-                AppendStatusLine("[LLM] Groq attempt error: " + ex.Message);
-            }
 
             // All attempts failed
             if (lastEx != null)
@@ -1756,7 +1695,7 @@ namespace AICAD.UI
                 throw new InvalidOperationException("All LLM providers failed. See status log for details.", lastEx);
             }
 
-            throw new InvalidOperationException("No LLM provider configured (LOCAL_LLM_ENDPOINT, GEMINI_API_KEY or GROQ_API_KEY).");
+            throw new InvalidOperationException("No LLM provider configured (LOCAL_LLM_ENDPOINT or GEMINI_API_KEY).");
         }
 
         private async Task BuildFromPromptAsync()

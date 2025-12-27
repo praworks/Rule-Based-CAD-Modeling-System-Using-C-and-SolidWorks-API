@@ -26,6 +26,10 @@ namespace AICAD.UI
 {
     public partial class TextToCADTaskpaneWpf : UserControl
     {
+        // Throttle native focus calls to avoid focus-fighting loops
+        private DateTime _lastEnsureNativeFocusUtc = DateTime.MinValue;
+        private readonly object _ensureNativeFocusLock = new object();
+
         private ObservableCollection<StepViewModel> _steps = new ObservableCollection<StepViewModel>();
         private readonly ISldWorks _swApp;
         public class PromptChangedEventArgs : EventArgs
@@ -301,6 +305,7 @@ namespace AICAD.UI
             // Make sure TextBoxes are focusable and accept keyboard input when the host is clicked
             try
             {
+                // 1. Register the Anti-Steal Hook when the control loads
                 this.Loaded += (s, e) =>
                 {
                     try
@@ -308,7 +313,17 @@ namespace AICAD.UI
                         prompt.Focusable = true;
                         typeDescriptionTextBox.Focusable = true;
                         this.Focusable = true;
-                        // Fallback: after load, try to move keyboard focus into the description box
+
+                        // --- NEW: REGISTER HOOK ---
+                        var source = PresentationSource.FromVisual(this) as HwndSource;
+                        if (source != null)
+                        {
+                            source.AddHook(ChildHwndSourceHook);
+                            AppendKeyLog("Loaded: Hook registered successfully");
+                        }
+                        // --------------------------
+
+                        // Force focus to description box logic (keep existing)
                         this.Dispatcher.BeginInvoke(new Action(() =>
                         {
                             try
@@ -320,6 +335,17 @@ namespace AICAD.UI
                             }
                             catch { }
                         }), System.Windows.Threading.DispatcherPriority.Input);
+                    }
+                    catch (Exception ex) { AppendKeyLog("Loaded Error: " + ex.Message); }
+                };
+
+                // 2. Unregister hook when unloaded (Good practice)
+                this.Unloaded += (s, e) =>
+                {
+                    try
+                    {
+                        var source = PresentationSource.FromVisual(this) as HwndSource;
+                        source?.RemoveHook(ChildHwndSourceHook);
                     }
                     catch { }
                 };
@@ -380,7 +406,19 @@ namespace AICAD.UI
                     prompt.TextChanged += (s, e) => { try { AppendKeyLog($"Prompt.TextChanged: Length={prompt.Text?.Length}"); } catch { } };
                     prompt.PreviewTextInput += (s, e) => { try { AppendKeyLog($"Prompt.PreviewTextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
                     prompt.TextInput += (s, e) => { try { AppendKeyLog($"Prompt.TextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
-                    prompt.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.GotKeyboardFocus"); EnsureNativeFocus(prompt); } catch { } };
+                    prompt.GotKeyboardFocus += (s, e) =>
+                    {
+                        try
+                        {
+                            AppendKeyLog("Prompt.GotKeyboardFocus");
+                            // Defer native focus to avoid fighting WPF's internal focus handling
+                            this.Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                try { EnsureNativeFocus(prompt); } catch { }
+                            }), System.Windows.Threading.DispatcherPriority.ContextIdle);
+                        }
+                        catch { }
+                    };
                     prompt.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("Prompt.LostKeyboardFocus"); } catch { } };
                     // Also instrument the type description textbox to diagnose focus/keyboard issues
                         try
@@ -391,7 +429,18 @@ namespace AICAD.UI
                             typeDescriptionTextBox.TextChanged += (s, e) => { try { AppendKeyLog($"TypeDesc.TextChanged: Length={typeDescriptionTextBox.Text?.Length}"); } catch { } };
                             typeDescriptionTextBox.PreviewTextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.PreviewTextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
                             typeDescriptionTextBox.TextInput += (s, e) => { try { AppendKeyLog($"TypeDesc.TextInput: Text='{e.Text}' Handled={e.Handled}"); } catch { } };
-                            typeDescriptionTextBox.GotKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.GotKeyboardFocus"); EnsureNativeFocus(typeDescriptionTextBox); } catch { } };
+                            typeDescriptionTextBox.GotKeyboardFocus += (s, e) =>
+                            {
+                                try
+                                {
+                                    AppendKeyLog("TypeDesc.GotKeyboardFocus");
+                                    this.Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        try { EnsureNativeFocus(typeDescriptionTextBox); } catch { }
+                                    }), System.Windows.Threading.DispatcherPriority.Input);
+                                }
+                                catch { }
+                            };
                             typeDescriptionTextBox.LostKeyboardFocus += (s, e) => { try { AppendKeyLog("TypeDesc.LostKeyboardFocus"); } catch { } };
 
                             // Avoid aggressive mouse/touch-driven focus grabs which can steal
@@ -654,7 +703,7 @@ namespace AICAD.UI
                         prompt.CaretIndex = prompt.Text?.Length ?? 0;
                     }
                     catch { }
-                }), System.Windows.Threading.DispatcherPriority.Input);
+                }), System.Windows.Threading.DispatcherPriority.ContextIdle);
             }
             catch { }
         }
@@ -711,13 +760,35 @@ namespace AICAD.UI
         {
             try
             {
-                var src = PresentationSource.FromVisual(fe) as HwndSource;
-                if (src != null)
+                // Throttle rapid repeat calls to avoid focus-fighting loops
+                var now = DateTime.UtcNow;
+                lock (_ensureNativeFocusLock)
                 {
-                    var hwnd = src.Handle;
-                    SetForegroundWindow(hwnd);
-                    SetFocus(hwnd);
-                    AppendKeyLog($"EnsureNativeFocus: hwnd={hwnd}");
+                    if ((now - _lastEnsureNativeFocusUtc).TotalMilliseconds < 300)
+                        return;
+                    _lastEnsureNativeFocusUtc = now;
+                }
+
+                // Always schedule the actual Win32 focus call for later (ApplicationIdle)
+                // so WPF and the host (SolidWorks) can finish their internal focus work.
+                var dispatcher = fe?.Dispatcher ?? this.Dispatcher;
+                if (dispatcher != null)
+                {
+                    dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        try
+                        {
+                            var src = PresentationSource.FromVisual(fe) as HwndSource;
+                            if (src != null)
+                            {
+                                var hwnd = src.Handle;
+                                // SetForegroundWindow(hwnd); // Commented out: can cause SW to fight back for embedded task panes
+                                SetFocus(hwnd);
+                                AppendKeyLog($"EnsureNativeFocus: hwnd={hwnd}");
+                            }
+                        }
+                        catch { }
+                    }), System.Windows.Threading.DispatcherPriority.ApplicationIdle);
                 }
             }
             catch { }
@@ -3109,6 +3180,22 @@ namespace AICAD.UI
             {
                 MessageBox.Show($"Failed to open WebView2 window: {ex.Message}", "WebView2 Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private const int WM_GETDLGCODE = 0x0087;
+        private const int DLGC_WANTALLKEYS = 0x0004;
+        private const int DLGC_WANTCHARS = 0x0080;
+
+        private IntPtr ChildHwndSourceHook(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+        {
+            // This hook tells SolidWorks: "I want all keys and characters. Do not steal them!"
+            if (msg == WM_GETDLGCODE)
+            {
+                try { AppendKeyLog("Hook: WM_GETDLGCODE - Anti-Steal Active"); } catch { }
+                handled = true;
+                return new IntPtr(DLGC_WANTALLKEYS | DLGC_WANTCHARS);
+            }
+            return IntPtr.Zero;
         }
     }
 }

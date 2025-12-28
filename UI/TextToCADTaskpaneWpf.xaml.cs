@@ -1062,13 +1062,12 @@ namespace AICAD.UI
         {
             try
             {
-                // Show unified Settings dialog (includes NameEasy tab)
-                using (var dlg = new global::AICAD.UI.SettingsDialog())
-                {
-                    dlg.ShowDialog();
-                }
+                // Open the new WPF SettingsWindow
+                var wnd = new AICAD.UI.SettingsWindow();
+                wnd.Owner = Window.GetWindow(this);
+                wnd.ShowDialog();
             }
-            catch (Exception ex) { AppendDetailedStatus("UI", "Settings dialog error", ex); }
+            catch (Exception ex) { AppendDetailedStatus("UI", "Settings window error", ex); }
         }
 
         private void InitDbAndStores()

@@ -1935,50 +1935,35 @@ namespace AICAD.UI
                 {
                     finalPrompt = sysPrompt + "\nNow generate plan for: " + text + "\nJSON:";
                 }
-                // Start LLM progress estimation timer (500ms interval) so status console shows an animated single-line progress
+                // Start LLM progress estimation timer using a background System.Timers.Timer to ensure ticks fire
+                System.Timers.Timer threadTimer = null;
                 try
                 {
                     try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); } catch { }
                     _llmProgressStopwatch = System.Diagnostics.Stopwatch.StartNew();
-                    _llmProgressTimer = new System.Windows.Forms.Timer();
-                    _llmProgressTimer.Interval = 500;
-                    _llmProgressTimer.Tick += (s, ev) =>
+
+                    threadTimer = new System.Timers.Timer(1000); // 1s interval for background logging
+                    threadTimer.Elapsed += (s, ev) =>
                     {
                         try
                         {
-                            // Predictive progress: reach 95% by the average LLM time, then creep to 99% if still waiting
                             var elapsed = _llmProgressStopwatch?.Elapsed.TotalSeconds ?? 0.0;
                             double targetPercent = 95.0;
-                            double pctDouble = 0.0;
 
-                            if (_llmAverageSeconds <= 0.0)
-                            {
-                                // fallback linear mapping when no average
-                                pctDouble = Math.Min(99.0, (elapsed / 10.0) * targetPercent);
-                            }
-                            else
-                            {
-                                pctDouble = (elapsed / _llmAverageSeconds) * targetPercent;
-                                if (pctDouble >= targetPercent && elapsed > _llmAverageSeconds)
-                                {
-                                    double extra = elapsed - _llmAverageSeconds;
-                                    double creep = targetPercent + Math.Min(4.0, extra * 1.0); // up to +4% (95->99)
-                                    pctDouble = Math.Min(99.0, creep);
-                                }
-                            }
-
-                            int pct = (int)Math.Floor(pctDouble);
-                            if (pct < 1) pct = 1;
-                            if (pct > 99) pct = 99;
+                            // Simple linear mapping for debugging: 0-95% over 30s
+                            double pctDouble = (elapsed / 30.0) * targetPercent;
+                            int pct = (int)Math.Min(99, Math.Max(1, Math.Floor(pctDouble)));
 
                             var bar = MakeProgressBar(pct, 20);
-                            var progressMsg = StatusConsole.FormatLlmProgress(bar, pct);
-                            AppendStatusLine(progressMsg);
-                            try { AddinStatusLogger.Log("LLM", progressMsg); } catch { }
+                            var msg = StatusConsole.FormatLlmProgress(bar, pct);
+
+                            // Do NOT write these fine-grained progress ticks to the permanent log
+                            // (they spam the log). Only update the UI.
+                            try { Dispatcher.BeginInvoke(new Action(() => { AppendStatusLine(msg); UpdateGenerationProgressAnimated(pct); })); } catch { }
                         }
                         catch { }
                     };
-                    try { _llmProgressTimer.Start(); } catch { }
+                    try { threadTimer.Start(); } catch { }
                 }
                 catch { }
                 // mark formal run-level step states and initialize fixed UI steps
@@ -2023,11 +2008,13 @@ namespace AICAD.UI
                 }
                 catch { }
 
-                reply = await GenerateWithFallbackAsync(finalPrompt);
+                // Use Task.Run with async lambda to correctly unwrap Task<string>
+                reply = await Task.Run(async () => await GenerateWithFallbackAsync(finalPrompt));
+
                 // LLM responded; finalize progress line to Done (100%) and update EMA
                 try
                 {
-                    try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); _llmProgressTimer = null; } catch { }
+                    try { if (threadTimer != null) { threadTimer.Stop(); } } catch { }
                     try
                     {
                         if (_llmProgressStopwatch != null)

@@ -14,7 +14,7 @@ namespace AICAD.Services
     {
         private readonly HttpClient _http;
         private readonly string _endpoint;
-        private readonly string _model;
+        private string _model; // Removed 'readonly' so we can update it from the response
         private readonly string _systemPrompt;
 
         public LocalHttpLlmClient(string endpoint = "http://localhost:1234/v1/chat/completions",
@@ -97,8 +97,19 @@ namespace AICAD.Services
             // Try to parse common OpenAI-style chat response shapes.
             try
             {
-                var j = JObject.Parse(respText);
-                var choices = j["choices"] as JArray;
+                    var j = JObject.Parse(respText);
+
+                    // Capture the actual model name returned by the server
+                    try
+                    {
+                        if (j["model"] != null)
+                        {
+                            _model = j["model"].ToString();
+                        }
+                    }
+                    catch { }
+
+                    var choices = j["choices"] as JArray;
                 if (choices != null && choices.Count > 0)
                 {
                     var first = choices[0] as JObject;

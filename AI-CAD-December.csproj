@@ -3,7 +3,6 @@
     <TargetFramework>net48</TargetFramework>
     <OutputType>Library</OutputType>
     <RootNamespace>AICAD</RootNamespace>
-    <BaseIntermediateOutputPath>$(MSBuildProjectDirectory)\build_obj\</BaseIntermediateOutputPath>
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>

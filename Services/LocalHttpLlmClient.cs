@@ -8,7 +8,7 @@ namespace AICAD.Services
 {
     /// <summary>
     /// Calls a local HTTP LLM endpoint that implements an OpenAI-style chat/completions API.
-    /// Defaults to http://127.0.0.1:1234/v1/chat/completions.
+    /// Defaults to http://localhost:1234/v1/chat/completions.
     /// </summary>
     public class LocalHttpLlmClient : ILlmClient, IDisposable
     {
@@ -17,11 +17,19 @@ namespace AICAD.Services
         private readonly string _model;
         private readonly string _systemPrompt;
 
-        public LocalHttpLlmClient(string endpoint = "http://192.168.0.105:1234/v1/chat/completions",
+        public LocalHttpLlmClient(string endpoint = "http://localhost:1234/v1/chat/completions",
                                   string model = "qwen2.5-coder-3b-instruct",
                                   string systemPrompt = null)
         {
             _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+            // Ensure endpoint includes the API path for OpenAI-style chat completions
+            if (!_endpoint.Contains("/v1/chat/completions"))
+            {
+                if (_endpoint.EndsWith("/"))
+                    _endpoint += "v1/chat/completions";
+                else
+                    _endpoint += "/v1/chat/completions";
+            }
             _model = model ?? throw new ArgumentNullException(nameof(model));
             _systemPrompt = systemPrompt;
             _http = new HttpClient();

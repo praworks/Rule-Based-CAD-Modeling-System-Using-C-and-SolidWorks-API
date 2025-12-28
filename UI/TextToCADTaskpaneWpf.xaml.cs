@@ -54,54 +54,52 @@ namespace AICAD.UI
             {
                 using (var http = new HttpClient())
                 {
-                    http.Timeout = TimeSpan.FromSeconds(8);
-
-                    // 1) Generic local endpoint (LOCAL_LLM_ENDPOINT)
-                    // 2a) LM Studio (optional local provider)
                     var lmStudioEndpoint = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
                                          ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                         ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                         ?? " http://192.168.0.105:1234";
-                    try
+                                         ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine);
+                    if (!string.IsNullOrEmpty(lmStudioEndpoint))
                     {
-                        AppendStatusLine("[LLM-STATUS] Checking LM Studio: " + lmStudioEndpoint);
-                        // Try a few common model-list paths
-                        var tried = false;
-                        foreach (var p in new[] { "/v1/models", "/api/models", "/models", "/v1/model/list" })
+                        try
                         {
-                            try
+                            // perform LM Studio health-check silently to avoid duplicate status lines
+                            // Try a few common model-list paths
+                            var tried = false;
+                            foreach (var p in new[] { "/v1/models", "/api/models", "/models", "/v1/model/list" })
                             {
-                                var u = new UriBuilder(lmStudioEndpoint) { Path = p }.Uri.ToString();
-                                var r = await http.GetAsync(u).ConfigureAwait(false);
-                                tried = true;
-                                if (r.IsSuccessStatusCode)
+                                try
                                 {
-                                    anyOk = true;
-                                    var txt = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                    AppendStatusLine("[LLM-STATUS] LM Studio OK (" + p + ")");
-                                    break;
+                                    var u = new UriBuilder(lmStudioEndpoint) { Path = p }.Uri.ToString();
+                                    var r = await http.GetAsync(u).ConfigureAwait(false);
+                                    tried = true;
+                                    if (r.IsSuccessStatusCode)
+                                    {
+                                        anyOk = true;
+                                        var txt = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                        AppendStatusLine("[LLM-STATUS] LM Studio OK (" + p + ")");
+                                        break;
+                                    }
+                                }
+                                catch { }
+                            }
+                            if (!tried)
+                            {
+                                // fallback: try GET to base endpoint
+                                try
+                                {
+                                    var r3 = await http.GetAsync(lmStudioEndpoint).ConfigureAwait(false);
+                                    if (r3.IsSuccessStatusCode) anyOk = true;
+                                    AppendStatusLine($"[LLM-STATUS] LM Studio responded {(int)r3.StatusCode}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
                                 }
                             }
-                            catch { }
                         }
-                        if (!tried)
+                        catch (Exception ex)
                         {
-                            // fallback: try GET to base endpoint
-                            try
-                            {
-                                var r3 = await http.GetAsync(lmStudioEndpoint).ConfigureAwait(false);
-                                if (r3.IsSuccessStatusCode) anyOk = true;
-                                AppendStatusLine($"[LLM-STATUS] LM Studio responded {(int)r3.StatusCode}");
-                            }
-                            catch (Exception ex)
-                            {
-                                AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
-                            }
+                            AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
                     }
 
                     var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -149,8 +147,6 @@ namespace AICAD.UI
                     catch (Exception ex)
                     {
                         AppendStatusLine("[LLM-STATUS] " + dispLocal + " check failed: " + ex.Message);
-                    }
-
                     }
                 }
             }
@@ -799,11 +795,63 @@ namespace AICAD.UI
                 if (filled < 0) filled = 0;
                 if (filled > width) filled = width;
                 int empty = width - filled;
-                return new string('■', filled) + new string('□', empty);
+                // ASCII-style single-line progress bar using '=' for filled and '-' for empty
+                return "[" + new string('=', filled) + new string('-', empty) + "]";
             }
             catch
             {
-                return new string('■', width);
+                return "[" + new string('=', width) + "]";
+            }
+        }
+
+        // Show an ASCII progress bar on the console targeting `averageSeconds`.
+        // Format: [LLM-PROGRESS] [====================] {percent}% Done.
+        private async Task ShowAsciiProgress(double averageSeconds, CancellationToken token)
+        {
+            try
+            {
+                if (averageSeconds <= 0) averageSeconds = 10.0; // sensible default
+                double targetPercent = 95.0;
+                double updatesPerSecond = 10.0; // 100ms ticks
+                double totalSteps = Math.Max(1.0, averageSeconds * updatesPerSecond);
+                double increment = targetPercent / totalSteps;
+
+                double current = 0.0;
+
+                // Increase toward 95% by the estimated time
+                while (!token.IsCancellationRequested && current < targetPercent)
+                {
+                    current += increment;
+                    int pct = (int)Math.Floor(current);
+                    if (pct < 1) pct = 1;
+                    if (pct > 95) pct = 95;
+                    var bar = MakeProgressBar(pct, 20);
+                    var line = $"[LLM-PROGRESS] {bar} {pct}% Done.";
+                    Console.Write('\r' + line);
+                    try { await Task.Delay(100, token); } catch (OperationCanceledException) { break; }
+                }
+
+                // Stall at 95% until cancelled
+                if (!token.IsCancellationRequested)
+                {
+                    int pct = 95;
+                    var bar = MakeProgressBar(pct, 20);
+                    var line = $"[LLM-PROGRESS] {bar} {pct}% Done.";
+                    while (!token.IsCancellationRequested)
+                    {
+                        Console.Write('\r' + line);
+                        try { await Task.Delay(500, token); } catch (OperationCanceledException) { break; }
+                    }
+                }
+
+                // When cancelled, print final 100% line and lock it in with WriteLine
+                var finalBar = MakeProgressBar(100, 20);
+                var finalLine = $"[LLM-PROGRESS] {finalBar} 100% Done.";
+                Console.WriteLine(finalLine);
+            }
+            catch (Exception)
+            {
+                // Swallow exceptions to avoid crashing host; console output isn't critical
             }
         }
 
@@ -884,7 +932,7 @@ namespace AICAD.UI
             {
                 var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
                 System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
-                try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
+                // try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
             }
             catch { }
         }
@@ -1473,7 +1521,7 @@ namespace AICAD.UI
 
         private string GetEndpointDisplayName(string endpoint)
         {
-            if (string.IsNullOrWhiteSpace(endpoint)) return "Local HTTP LLM";
+            if (string.IsNullOrWhiteSpace(endpoint)) return "Local LLM";
             try
             {
                 var lmStudioEnv = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -1486,7 +1534,7 @@ namespace AICAD.UI
                     return "LM Studio";
             }
             catch { }
-            return "Local HTTP LLM";
+            return "Local LLM";
         }
 
         private void SetLastError(string err)
@@ -1597,7 +1645,7 @@ namespace AICAD.UI
                                  ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
                                  ?? "google/functiongemma-270m";
 
-            // 1) Try Local HTTP LLM if explicitly configured via LOCAL_LLM_ENDPOINT
+            // 1) Try Local LLM if explicitly configured via LOCAL_LLM_ENDPOINT
             try
             {
                 var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -1608,6 +1656,7 @@ namespace AICAD.UI
                 {
                     var dispTry = GetEndpointDisplayName(localEndpoint);
                     AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
+                    try { StartProgressPhase("awaiting_response"); } catch { }
                     var systemPrompt2 = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                                         ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
                                         ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
@@ -1618,6 +1667,16 @@ namespace AICAD.UI
                         var r = await localClient.GenerateAsync(prompt);
                         _client = localClient;
                         _lastModel = localClient.Model;
+                        try { _llmProgressTimer?.Stop(); } catch { }
+                        try { StartProgressPhase("success"); } catch { }
+                        try
+                        {
+                            var bar100 = MakeProgressBar(100, 20);
+                            var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
+                            AppendStatusLine(progressMsg100);
+                            try { AddinStatusLogger.Log(null, StatusConsole.FormatLlmProgressDone(bar100, 100)); } catch { }
+                        }
+                        catch { }
                         AppendStatusLine("[LLM] " + dispTry + " succeeded: " + localClient.Model);
                         return r;
                     }
@@ -1671,6 +1730,16 @@ namespace AICAD.UI
                         var r = await gemClient.GenerateAsync(prompt);
                         _client = gemClient;
                         _lastModel = gemClient.Model;
+                        try { _llmProgressTimer?.Stop(); } catch { }
+                        try { StartProgressPhase("success"); } catch { }
+                        try
+                        {
+                            var bar100 = MakeProgressBar(100, 20);
+                            var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
+                            AppendStatusLine(progressMsg100);
+                            try { AddinStatusLogger.Log(null, StatusConsole.FormatLlmProgressDone(bar100, 100)); } catch { }
+                        }
+                        catch { }
                         AppendStatusLine("[LLM] Gemini succeeded: " + gemClient.Model);
                         return r;
                     }
@@ -1686,6 +1755,7 @@ namespace AICAD.UI
             {
                 lastEx = ex;
                 AppendStatusLine("[LLM] Gemini attempt error: " + ex.Message);
+            }
             }
 
             // All attempts failed
@@ -1876,12 +1946,35 @@ namespace AICAD.UI
                     {
                         try
                         {
+                            // Predictive progress: reach 95% by the average LLM time, then creep to 99% if still waiting
                             var elapsed = _llmProgressStopwatch?.Elapsed.TotalSeconds ?? 0.0;
-                            var pct = (int)Math.Floor((elapsed / _llmAverageSeconds) * 100.0);
-                            if (pct < 0) pct = 0;
-                            if (pct > 99) pct = 99; // cap at 99% until LLM responds
+                            double targetPercent = 95.0;
+                            double pctDouble = 0.0;
+
+                            if (_llmAverageSeconds <= 0.0)
+                            {
+                                // fallback linear mapping when no average
+                                pctDouble = Math.Min(99.0, (elapsed / 10.0) * targetPercent);
+                            }
+                            else
+                            {
+                                pctDouble = (elapsed / _llmAverageSeconds) * targetPercent;
+                                if (pctDouble >= targetPercent && elapsed > _llmAverageSeconds)
+                                {
+                                    double extra = elapsed - _llmAverageSeconds;
+                                    double creep = targetPercent + Math.Min(4.0, extra * 1.0); // up to +4% (95->99)
+                                    pctDouble = Math.Min(99.0, creep);
+                                }
+                            }
+
+                            int pct = (int)Math.Floor(pctDouble);
+                            if (pct < 1) pct = 1;
+                            if (pct > 99) pct = 99;
+
                             var bar = MakeProgressBar(pct, 20);
-                            AppendStatusLine(StatusConsole.FormatLlmProgress(bar, pct));
+                            var progressMsg = StatusConsole.FormatLlmProgress(bar, pct);
+                            AppendStatusLine(progressMsg);
+                            try { AddinStatusLogger.Log("LLM", progressMsg); } catch { }
                         }
                         catch { }
                     };
@@ -1930,19 +2023,6 @@ namespace AICAD.UI
                 }
                 catch { }
 
-                // Before sending the prompt, run a quick provider status check and abort if none available.
-                bool providersOk2 = false;
-                try { providersOk2 = await CheckLlmProvidersAsync().ConfigureAwait(false); } catch { providersOk2 = false; }
-                if (!providersOk2)
-                {
-                    AppendStatusLine("[ERROR] No reachable LLM providers detected. Aborting build.");
-                    SetRealTimeStatus("No LLM providers available", Colors.DarkRed);
-                    try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); _llmProgressTimer = null; } catch { }
-                    _isBuilding = false;
-                    try { AppendStatusLine($"[Run:{_lastRunId}] ----- Build End: success=False totalMs={totalSw.ElapsedMilliseconds} error=No LLM providers available -----"); } catch { }
-                    return;
-                }
-
                 reply = await GenerateWithFallbackAsync(finalPrompt);
                 // LLM responded; finalize progress line to Done (100%) and update EMA
                 try
@@ -1969,7 +2049,9 @@ namespace AICAD.UI
                             catch { }
                             int pct = 100;
                             var bar = MakeProgressBar(pct, 20);
-                            AppendStatusLine(StatusConsole.FormatLlmProgressDone(bar, pct));
+                            var doneMsg = StatusConsole.FormatLlmProgressDone(bar, pct);
+                            AppendStatusLine(doneMsg);
+                            try { AddinStatusLogger.Log("LLM", doneMsg); } catch { }
                         }
                     }
                     catch { }
@@ -2148,6 +2230,27 @@ namespace AICAD.UI
                             try { build.Content = "Build"; build.Background = new SolidColorBrush(Colors.DodgerBlue); build.Foreground = new SolidColorBrush(Colors.White); build.IsEnabled = true; } catch { }
                         });
                         try { _isBuilding = false; } catch { }
+                    }
+                    catch { }
+
+                    // After a successful creation, load properties from the active document into the taskpane
+                    try
+                    {
+                        var doc = _swApp?.ActiveDoc as IModelDoc2;
+                        if (doc != null)
+                        {
+                            try
+                            {
+                                var ext = doc.Extension;
+                                var custPropMgr = ext?.CustomPropertyManager[""];
+                                string material = GetCustomProperty(custPropMgr, "Material");
+                                string description = GetCustomProperty(custPropMgr, "Description");
+                                string mass = GetPartMass(doc);
+                                string partNo = GetCustomProperty(custPropMgr, "PartNo");
+                                try { LoadFromProperties(material, description, mass, partNo); } catch { }
+                            }
+                            catch { }
+                        }
                     }
                     catch { }
                 }
@@ -2673,6 +2776,48 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 try { AddinStatusLogger.Error("TaskpaneWpf", "LoadFromProperties failed", ex); } catch { }
+            }
+        }
+
+        private string GetPartMass(IModelDoc2 doc)
+        {
+            try
+            {
+                if (doc == null) return "0.000";
+                var ext = doc.Extension;
+                if (ext == null) return "0.000";
+                var custPropMgr = ext.CustomPropertyManager[""];
+                if (custPropMgr == null) return "0.000";
+
+                string val = string.Empty;
+                string resolved = string.Empty;
+                custPropMgr.Get4("Mass", false, out val, out resolved);
+
+                if (!string.IsNullOrEmpty(resolved) && resolved != val && !resolved.Contains("SW-Mass"))
+                {
+                    if (double.TryParse(resolved, out double massVal))
+                    {
+                        return massVal.ToString("F3");
+                    }
+                }
+            }
+            catch { }
+            return "0.000";
+        }
+
+        private string GetCustomProperty(ICustomPropertyManager mgr, string name)
+        {
+            try
+            {
+                if (mgr == null) return string.Empty;
+                string val = string.Empty;
+                string resolved = string.Empty;
+                mgr.Get4(name, false, out val, out resolved);
+                return string.IsNullOrEmpty(resolved) ? val : resolved;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 

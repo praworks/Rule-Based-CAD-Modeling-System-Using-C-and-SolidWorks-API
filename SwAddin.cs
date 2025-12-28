@@ -33,7 +33,7 @@ namespace AICAD
 
             // 1. Hook up the Assembly Resolver FIRST
             AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
-            try { AddinStatusLogger.Log("AICadAddin", $"ConnectToSW called cookie={Cookie}"); } catch { }
+            // try { AddinStatusLogger.Log("AICadAddin", $"ConnectToSW called cookie={Cookie}"); } catch { }
 
             // Install global exception handlers to capture unhandled managed exceptions and task errors
             InstallGlobalExceptionHandlers();
@@ -42,7 +42,7 @@ namespace AICAD
             {
                 // Initialize NameEasy series manager
                 _seriesManager = new SeriesManager();
-                try { AddinStatusLogger.Log("AICadAddin", "SeriesManager initialized"); } catch { }
+                // try { AddinStatusLogger.Log("AICadAddin", "SeriesManager initialized"); } catch { }
 
                 // Create AI-CAD-December Taskpane (main) using WPF
                 var iconPath = TryGetTaskpaneIconPath();
@@ -55,50 +55,50 @@ namespace AICAD
                 {
                     _textToCadControl.BuildRequested += (s, e) =>
                     {
-                        try { AddinStatusLogger.Log("AICadAddin", "Build requested from Taskpane"); } catch { }
+                        // try { AddinStatusLogger.Log("AICadAddin", "Build requested from Taskpane"); } catch { }
                         try { AICAD.Services.LocalLogger.Log("SwAddin: wrapper BuildRequested received"); } catch { }
                         try { _ = _textToCadControl.RunBuildFromPromptAsync(); } catch { }
                     };
-                    _textToCadControl.PromptTextChanged += (s, e) => { try { AddinStatusLogger.Log("AICadAddin", $"Prompt changed (len={e.Text?.Length})"); } catch { } };
-                    _textToCadControl.ApplyPropertiesRequested += (s, e) => { try { AddinStatusLogger.Log("AICadAddin", "Apply properties requested from Taskpane"); } catch { } };
+                    _textToCadControl.PromptTextChanged += (s, e) => { /* try { AddinStatusLogger.Log("AICadAddin", $"Prompt changed (len={e.Text?.Length})"); } catch { } */ };
+                    _textToCadControl.ApplyPropertiesRequested += (s, e) => { /* try { AddinStatusLogger.Log("AICadAddin", "Apply properties requested from Taskpane"); } catch { } */ };
                 }
                 catch { }
 
-                try { AddinStatusLogger.Log("AICadAddin", "Created AI-CAD-December taskpane with WPF design"); } catch { }
+                // try { AddinStatusLogger.Log("AICadAddin", "Created AI-CAD-December taskpane with WPF design"); } catch { }
 
                 // Hook SolidWorks application events
                 AttachEventHandlers();
-                try { AddinStatusLogger.Log("AICadAddin", "Event handlers attached"); } catch { }
+                // try { AddinStatusLogger.Log("AICadAddin", "Event handlers attached"); } catch { }
 
                 // Hook regen for active document
                 try
                 {
                     HookDocRegenForActiveDocument();
-                    try { AddinStatusLogger.Log("AICadAddin", "Hooked RegenPostNotify for active document"); } catch { }
+                    // try { AddinStatusLogger.Log("AICadAddin", "Hooked RegenPostNotify for active document"); } catch { }
                 }
                 catch (Exception hookEx)
                 {
-                    try { AddinStatusLogger.Error("AICadAddin", "Failed to hook RegenPostNotify", hookEx); } catch { }
+                    // try { AddinStatusLogger.Error("AICadAddin", "Failed to hook RegenPostNotify", hookEx); } catch { }
                 }
 
                 // Initial sync
                 try
                 {
                     SyncUiFromActiveDocument();
-                    try { AddinStatusLogger.Log("AICadAddin", "Initial sync completed"); } catch { }
+                    // try { AddinStatusLogger.Log("AICadAddin", "Initial sync completed"); } catch { }
                 }
                 catch (Exception syncEx)
                 {
-                    try { AddinStatusLogger.Error("AICadAddin", "Initial sync failed", syncEx); } catch { }
+                    // try { AddinStatusLogger.Error("AICadAddin", "Initial sync failed", syncEx); } catch { }
                 }
             }
             catch (Exception ex)
             {
                 System.Windows.Forms.MessageBox.Show("Failed to create taskpane: " + ex.Message);
-                try { AddinStatusLogger.Error("AICadAddin", "Taskpane creation failed", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Taskpane creation failed", ex); } catch { }
             }
 
-            try { AddinStatusLogger.Log("AICadAddin", "ConnectToSW completed"); } catch { }
+            // try { AddinStatusLogger.Log("AICadAddin", "ConnectToSW completed"); } catch { }
             return true;
         }
 
@@ -109,11 +109,11 @@ namespace AICAD
                 (_app as SldWorks).CommandCloseNotify += OnCommandClose;
                 (_app as SldWorks).FileNewNotify2 += OnFileNewNotify2;
                 (_app as SldWorks).ActiveDocChangeNotify += OnActiveDocChange;
-                try { AddinStatusLogger.Log("AICadAddin", "Event handlers attached"); } catch { }
+                // try { AddinStatusLogger.Log("AICadAddin", "Event handlers attached"); } catch { }
             }
             catch (Exception ex)
             {
-                try { AddinStatusLogger.Error("AICadAddin", "Failed to attach event handlers", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Failed to attach event handlers", ex); } catch { }
             }
         }
 
@@ -127,11 +127,11 @@ namespace AICAD
                     (_app as SldWorks).FileNewNotify2 -= OnFileNewNotify2;
                     (_app as SldWorks).ActiveDocChangeNotify -= OnActiveDocChange;
                 }
-                try { AddinStatusLogger.Log("AICadAddin", "Event handlers detached"); } catch { }
+                // try { AddinStatusLogger.Log("AICadAddin", "Event handlers detached"); } catch { }
             }
             catch (Exception ex)
             {
-                try { AddinStatusLogger.Error("AICadAddin", "Failed to detach event handlers", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Failed to detach event handlers", ex); } catch { }
             }
         }
 
@@ -273,12 +273,12 @@ namespace AICAD
                     _activePartDoc = part;
                     _partRegenPostHandler = new DPartDocEvents_RegenPostNotifyEventHandler(OnPartRegenPost);
                     _activePartDoc.RegenPostNotify += _partRegenPostHandler;
-                    try { AddinStatusLogger.Log("AICadAddin", "RegenPostNotify hooked"); } catch { }
+                    // try { AddinStatusLogger.Log("AICadAddin", "RegenPostNotify hooked"); } catch { }
                 }
             }
             catch (Exception ex)
             {
-                try { AddinStatusLogger.Error("AICadAddin", "Error hooking RegenPostNotify", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Error hooking RegenPostNotify", ex); } catch { }
             }
         }
 
@@ -306,19 +306,19 @@ namespace AICAD
         {
             try
             {
-                try { AddinStatusLogger.Log("AICadAddin", "RegenPostNotify fired; syncing UI"); } catch { }
+                // try { AddinStatusLogger.Log("AICadAddin", "RegenPostNotify fired; syncing UI"); } catch { }
                 SyncUiFromActiveDocument();
             }
             catch (Exception ex)
             {
-                try { AddinStatusLogger.Error("AICadAddin", "Error during RegenPostNotify sync", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Error during RegenPostNotify sync", ex); } catch { }
             }
             return 0;
         }
 
         private int OnCommandClose(int command, int reason)
         {
-            try { AddinStatusLogger.Log("AICadAddin", $"Command close: ID={command}, Reason={reason}"); } catch { }
+            // try { AddinStatusLogger.Log("AICadAddin", $"Command close: ID={command}, Reason={reason}"); } catch { }
 
             if (command == 548) // Properties dialog closed
             {
@@ -341,7 +341,7 @@ namespace AICAD
                 if (docType == (int)swDocumentTypes_e.swDocPART)
                 {
                     _currentDoc = newDoc as IModelDoc2;
-                    try { AddinStatusLogger.Log("AICadAddin", "New part document created"); } catch { }
+                    // try { AddinStatusLogger.Log("AICadAddin", "New part document created"); } catch { }
                 }
             }
             catch (Exception ex)
@@ -392,7 +392,7 @@ namespace AICAD
                     try
                     {
                         _textToCadControl.WpfControl?.LoadFromProperties(material, description, mass, partNo);
-                        try { AddinStatusLogger.Log("AICadAddin", $"Synced taskpane: Mat={material}, Desc={description}, Mass={mass}, PartNo={partNo}"); } catch { }
+                        // try { AddinStatusLogger.Log("AICadAddin", $"Synced taskpane: Mat={material}, Desc={description}, Mass={mass}, PartNo={partNo}"); } catch { }
                     }
                     catch (Exception uiEx)
                     {
@@ -458,7 +458,7 @@ namespace AICAD
                     if (!string.IsNullOrEmpty(material))
                     {
                         custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                        try { AddinStatusLogger.Log("AICadAddin", $"Set Material: {material}"); } catch { }
+                        // try { AddinStatusLogger.Log("AICadAddin", $"Set Material: {material}"); } catch { }
 
                         // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
                         try
@@ -471,12 +471,12 @@ namespace AICAD
                                 {
                                     string database = "solidworks materials.sldmat";
                                     partDoc.SetMaterialPropertyName2("", database, material);
-                                    try { AddinStatusLogger.Log("AICadAddin", $"Applied material to model: {material}"); } catch { }
+                                    // try { AddinStatusLogger.Log("AICadAddin", $"Applied material to model: {material}"); } catch { }
                                 }
                             }
                             else
                             {
-                                try { AddinStatusLogger.Log("AICadAddin", "Skipping material application due to AICAD_APPLY_MATERIAL=0"); } catch { }
+                                // try { AddinStatusLogger.Log("AICadAddin", "Skipping material application due to AICAD_APPLY_MATERIAL=0"); } catch { }
                             }
                         }
                         catch (Exception matEx)
@@ -543,7 +543,7 @@ namespace AICAD
                     _textToCadTaskpaneView.DeleteView();
                     Marshal.ReleaseComObject(_textToCadTaskpaneView);
                     _textToCadTaskpaneView = null;
-                    try { AddinStatusLogger.Log("AICadAddin", "Deleted AI-CAD-December taskpane"); } catch { }
+                    // try { AddinStatusLogger.Log("AICadAddin", "Deleted AI-CAD-December taskpane"); } catch { }
                 }
 
                 if (_seriesManager != null)

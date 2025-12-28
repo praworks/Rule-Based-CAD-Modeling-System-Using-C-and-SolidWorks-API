@@ -191,7 +191,7 @@ namespace AICAD.UI
             {
                 var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
                 System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
-                try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
+                // try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
             }
             catch { }
         }

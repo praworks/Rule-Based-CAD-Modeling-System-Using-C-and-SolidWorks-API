@@ -8,21 +8,28 @@ namespace AICAD.Services
 {
     /// <summary>
     /// Calls a local HTTP LLM endpoint that implements an OpenAI-style chat/completions API.
-    /// Defaults to http://127.0.0.1:1234/v1/chat/completions and the model used in your curl example.
+    /// Defaults to http://localhost:1234/v1/chat/completions.
     /// </summary>
     public class LocalHttpLlmClient : ILlmClient, IDisposable
     {
         private readonly HttpClient _http;
         private readonly string _endpoint;
         private readonly string _model;
-        private string _detectedModel;
         private readonly string _systemPrompt;
 
-        public LocalHttpLlmClient(string endpoint = "http://127.0.0.1:1234/v1/chat/completions",
-                                  string model = "google/functiongemma-270m",
+        public LocalHttpLlmClient(string endpoint = "http://localhost:1234/v1/chat/completions",
+                                  string model = "qwen2.5-coder-3b-instruct",
                                   string systemPrompt = null)
         {
             _endpoint = endpoint ?? throw new ArgumentNullException(nameof(endpoint));
+            // Ensure endpoint includes the API path for OpenAI-style chat completions
+            if (!_endpoint.Contains("/v1/chat/completions"))
+            {
+                if (_endpoint.EndsWith("/"))
+                    _endpoint += "v1/chat/completions";
+                else
+                    _endpoint += "/v1/chat/completions";
+            }
             _model = model ?? throw new ArgumentNullException(nameof(model));
             _systemPrompt = systemPrompt;
             _http = new HttpClient();
@@ -30,31 +37,7 @@ namespace AICAD.Services
             _http.Timeout = TimeSpan.FromSeconds(180);
         }
 
-        public string Model => _detectedModel ?? _model;
-
-        private async Task<string> DetectOllamaModelAsync(Uri baseUri)
-        {
-            try
-            {
-                var tagsUrl = new UriBuilder(baseUri) { Path = "/api/tags" }.Uri.ToString();
-                var resp = await _http.GetAsync(tagsUrl).ConfigureAwait(false);
-                if (!resp.IsSuccessStatusCode) return null;
-                var txt = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                var j = JObject.Parse(txt);
-                var models = j["models"] as JArray;
-                if (models != null && models.Count > 0)
-                {
-                    var first = models[0] as JObject;
-                    if (first != null)
-                    {
-                        var nameToken = first["model"] ?? first["name"];
-                        if (nameToken != null) return nameToken.ToString();
-                    }
-                }
-            }
-            catch { }
-            return null;
-        }
+        public string Model => _model;
 
         public async Task<string> GenerateAsync(string prompt)
         {
@@ -72,59 +55,15 @@ namespace AICAD.Services
             jPayload["temperature"] = 0.7;
             jPayload["stream"] = false;
 
-            // Determine if this endpoint appears to be Ollama (default local port 11434)
-            bool useOllama = false;
-            string postUrl = _endpoint;
-            try
-            {
-                var uri = new Uri(_endpoint);
-                if (uri.Port == 11434)
-                {
-                    useOllama = true;
-                    // Ollama expects POST to /api/generate by default
-                    var b = new UriBuilder(uri) { Path = "/api/generate" };
-                    postUrl = b.Uri.ToString();
-                }
-            }
-            catch { /* ignore URI parse errors and fall back to provided endpoint */ }
-
-            // Build payload differently for Ollama-style endpoints
-            string json;
-            if (useOllama)
-            {
-                // Attempt to auto-detect an available Ollama model if possible
-                try
-                {
-                    var uri = new Uri(_endpoint);
-                    var detected = await DetectOllamaModelAsync(uri).ConfigureAwait(false);
-                    if (!string.IsNullOrWhiteSpace(detected)) _detectedModel = detected;
-                }
-                catch { }
-
-                var modelToUse = _detectedModel ?? _model;
-
-                // Combine system prompt and user prompt into a single prompt string
-                var combined = string.Empty;
-                if (!string.IsNullOrWhiteSpace(_systemPrompt)) combined += _systemPrompt + "\n";
-                combined += prompt;
-                var oPayload = new JObject();
-                if (!string.IsNullOrWhiteSpace(modelToUse)) oPayload["model"] = modelToUse;
-                oPayload["prompt"] = combined;
-                oPayload["temperature"] = 0.7;
-                json = Newtonsoft.Json.JsonConvert.SerializeObject(oPayload);
-            }
-            else
-            {
-                // Use JsonConvert.SerializeObject to avoid depending on JToken.ToString overloads
-                json = Newtonsoft.Json.JsonConvert.SerializeObject(jPayload);
-            }
+            // Use JsonConvert.SerializeObject to avoid depending on JToken.ToString overloads
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(jPayload);
 
             HttpResponseMessage resp;
             try
             {
                 using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
                 {
-                    resp = await _http.PostAsync(postUrl, content).ConfigureAwait(false);
+                    resp = await _http.PostAsync(_endpoint, content).ConfigureAwait(false);
                 }
             }
             catch (TaskCanceledException tex)
@@ -146,36 +85,11 @@ namespace AICAD.Services
             var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
             {
-                AddinStatusLogger.Error("LocalHttpLlmClient", $"HTTP {(int)resp.StatusCode} from {postUrl}", new Exception(respText));
+                AddinStatusLogger.Error("LocalHttpLlmClient", $"HTTP {(int)resp.StatusCode} from {_endpoint}", new Exception(respText));
                 // Provide clearer guidance for common local-server errors
                 if (resp.StatusCode == System.Net.HttpStatusCode.BadRequest && respText != null && respText.IndexOf("No models loaded", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     throw new InvalidOperationException($"Local LLM returned 400: No models loaded. Please load a model in the local LLM instance or change the configured model. Response: {respText}");
-                }
-                // If Ollama returned 405, try swapping to the /api/generate path if we didn't already
-                if (!useOllama && resp.StatusCode == System.Net.HttpStatusCode.MethodNotAllowed && _endpoint != null && _endpoint.Contains(":11434"))
-                {
-                    try
-                    {
-                        var uri2 = new Uri(_endpoint);
-                        var b2 = new UriBuilder(uri2) { Path = "/api/generate" };
-                        var altUrl = b2.Uri.ToString();
-                        AddinStatusLogger.Log("LocalHttpLlmClient", $"Retrying with Ollama-style endpoint: {altUrl}");
-                        using (var content2 = new StringContent(json, Encoding.UTF8, "application/json"))
-                        {
-                            resp = await _http.PostAsync(altUrl, content2).ConfigureAwait(false);
-                        }
-                        respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        if (!resp.IsSuccessStatusCode)
-                        {
-                            throw new InvalidOperationException($"LLM HTTP error {(int)resp.StatusCode}: {respText}");
-                        }
-                    }
-                    catch (Exception retryEx)
-                    {
-                        AddinStatusLogger.Error("LocalHttpLlmClient", "Retry to Ollama-style endpoint failed", retryEx);
-                        throw new InvalidOperationException($"LLM HTTP error {(int)resp.StatusCode}: {respText}");
-                    }
                 }
                 throw new InvalidOperationException($"LLM HTTP error {(int)resp.StatusCode}: {respText}");
             }

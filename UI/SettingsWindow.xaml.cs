@@ -1,6 +1,8 @@
 using System;
 using System.Net.Http;
 using System.Threading.Tasks;
+using MongoDB.Driver;
+using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -14,6 +16,9 @@ namespace AICAD.UI
         {
             InitializeComponent();
             LoadAllSettings();
+            // wire validation
+            MongoDbNameTextBox.TextChanged += MongoDbNameTextBox_TextChanged;
+            UpdateSaveAllState();
         }
 
         private void NavButton_Click(object sender, RoutedEventArgs e)
@@ -67,6 +72,7 @@ namespace AICAD.UI
                 ApiStatusTextBlock.Text = "";
                 MongoStatusTextBlock.Text = "Loaded from environment variables";
                 MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                MongoLoadedIcon.Visibility = Visibility.Visible;
             }
             catch (Exception ex)
             {
@@ -79,7 +85,7 @@ namespace AICAD.UI
         {
             try
             {
-                Environment.SetEnvironmentVariable("MONGODB_URI", MongoConnectionStringTextBox.Text ?? "", EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("MONGODB_URI", GetMongoConnectionString() ?? "", EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_DB", MongoDbNameTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
                 MongoStatusTextBlock.Text = "Saved! Restart SolidWorks.";
@@ -91,6 +97,113 @@ namespace AICAD.UI
             {
                 MongoStatusTextBlock.Text = "Failed to save: " + ex.Message;
                 MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+            }
+        }
+
+        private string GetMongoConnectionString()
+        {
+            // If masked (passwordbox used) prefer the hidden box value
+            if (MongoConnMaskToggle != null && MongoConnMaskToggle.IsChecked == true)
+            {
+                // When masked we stored value in Tag to avoid PasswordBox usage; simply return TextBox value
+                return MongoConnectionStringTextBox.Text;
+            }
+            return MongoConnectionStringTextBox.Text;
+        }
+
+        private async void TestMongoButton_Click(object sender, RoutedEventArgs e)
+        {
+            TestMongoButton.IsEnabled = false;
+            MongoStatusTextBlock.Text = "Testing...";
+            MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Blue);
+
+            var conn = GetMongoConnectionString();
+            if (string.IsNullOrWhiteSpace(conn))
+            {
+                MongoStatusTextBlock.Text = "Connection string is empty.";
+                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Orange);
+                TestMongoButton.IsEnabled = true;
+                return;
+            }
+
+            int timeoutSeconds = 5;
+            int.TryParse(TimeoutTextBox.Text ?? "5", out timeoutSeconds);
+
+            try
+            {
+                var settings = MongoClientSettings.FromConnectionString(conn);
+                settings.ConnectTimeout = TimeSpan.FromSeconds(Math.Max(1, timeoutSeconds));
+                settings.ServerSelectionTimeout = TimeSpan.FromSeconds(Math.Max(1, timeoutSeconds));
+                var client = new MongoClient(settings);
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(1, timeoutSeconds))))
+                {
+                    // Try an operation to force server selection
+                    await client.ListDatabaseNamesAsync(cts.Token).ConfigureAwait(false);
+                }
+
+                Dispatcher.Invoke(() =>
+                {
+                    MongoStatusTextBlock.Text = "✔ Connection OK";
+                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.Invoke(() =>
+                {
+                    MongoStatusTextBlock.Text = "❌ " + ex.Message;
+                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                });
+            }
+            finally
+            {
+                Dispatcher.Invoke(() => TestMongoButton.IsEnabled = true);
+            }
+        }
+
+        private void MongoConnMaskToggle_Click(object sender, RoutedEventArgs e)
+        {
+            // Simple toggle: for now we do not maintain a separate PasswordBox; we just toggle visual masking by switching FontFamily
+            if (MongoConnMaskToggle.IsChecked == true)
+            {
+                // Mask: use PasswordChar-like font by replacing characters with bullets in display but keep value in Text
+                MongoConnectionStringTextBox.FontFamily = new FontFamily("Global User Interface");
+                // no robust masking; leave text but change foreground to gray slightly to indicate masked
+                MongoConnectionStringTextBox.Foreground = new SolidColorBrush(Colors.Gray);
+            }
+            else
+            {
+                MongoConnectionStringTextBox.FontFamily = new FontFamily("Segoe UI");
+                MongoConnectionStringTextBox.Foreground = new SolidColorBrush(Colors.Black);
+            }
+        }
+
+        private void TimeoutDownButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (int.TryParse(TimeoutTextBox.Text, out var v)) { v = Math.Max(1, v - 1); TimeoutTextBox.Text = v.ToString(); }
+        }
+
+        private void TimeoutUpButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (int.TryParse(TimeoutTextBox.Text, out var v)) { v = Math.Min(120, v + 1); TimeoutTextBox.Text = v.ToString(); } else TimeoutTextBox.Text = "5";
+        }
+
+        private void MongoDbNameTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            UpdateSaveAllState();
+        }
+
+        private void UpdateSaveAllState()
+        {
+            var empty = string.IsNullOrWhiteSpace(MongoDbNameTextBox.Text);
+            btnSaveAll.IsEnabled = !empty;
+            if (empty)
+            {
+                MongoDbNameTextBox.BorderBrush = new SolidColorBrush(Colors.Red);
+            }
+            else
+            {
+                MongoDbNameTextBox.ClearValue(TextBox.BorderBrushProperty);
             }
         }
 

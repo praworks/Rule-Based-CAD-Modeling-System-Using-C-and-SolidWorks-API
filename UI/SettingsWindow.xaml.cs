@@ -1,6 +1,5 @@
 using System;
 using System.Net.Http;
-using MongoDB.Bson;
 using MongoDB.Driver;
 using System.Threading.Tasks;
 using System.Windows;
@@ -67,61 +66,14 @@ namespace AICAD.UI
                 MongoDbNameTextBox.Text = Environment.GetEnvironmentVariable("MONGODB_DB", EnvironmentVariableTarget.User) ?? "TaskPaneAddin";
 
                 ApiStatusTextBlock.Text = "";
-                // Show info icon to indicate values came from environment variables
-                MongoInfoIcon.Visibility = Visibility.Visible;
-                MongoStatusTextBlock.Text = string.Empty;
+                MongoStatusTextBlock.Text = "";
+                MongoLoadedInfoIcon.Visibility = Visibility.Visible;
                 MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
             }
             catch (Exception ex)
             {
                 MongoStatusTextBlock.Text = "Failed to load: " + ex.Message;
                 MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
-            }
-        }
-
-        private async void TestMongoButton_Click(object sender, RoutedEventArgs e)
-        {
-            TestMongoButton.IsEnabled = false;
-            MongoInfoIcon.Visibility = Visibility.Collapsed;
-            MongoStatusTextBlock.Text = "Testing connection...";
-            MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Blue);
-
-            try
-            {
-                var uri = MongoConnectionStringTextBox.Text?.Trim() ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(uri))
-                {
-                    MongoStatusTextBlock.Text = "Connection URI is empty.";
-                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Orange);
-                    return;
-                }
-
-                // Try pinging the server using the driver
-                var settings = MongoClientSettings.FromConnectionString(uri);
-                settings.ServerSelectionTimeout = TimeSpan.FromSeconds(5);
-                var client = new MongoClient(settings);
-                var dbName = string.IsNullOrWhiteSpace(MongoDbNameTextBox.Text) ? "admin" : MongoDbNameTextBox.Text.Trim();
-                var db = client.GetDatabase(dbName);
-                var cmd = new BsonDocument { { "ping", 1 } };
-                await db.RunCommandAsync<BsonDocument>(cmd).ConfigureAwait(false);
-                // success
-                Dispatcher.Invoke(() =>
-                {
-                    MongoStatusTextBlock.Text = "Connection OK";
-                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
-                });
-            }
-            catch (Exception ex)
-            {
-                Dispatcher.Invoke(() =>
-                {
-                    MongoStatusTextBlock.Text = "Connection failed: " + ex.Message;
-                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
-                });
-            }
-            finally
-            {
-                Dispatcher.Invoke(() => TestMongoButton.IsEnabled = true);
             }
         }
 
@@ -133,6 +85,7 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("MONGODB_DB", MongoDbNameTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
                 MongoStatusTextBlock.Text = "Saved! Restart SolidWorks.";
+                MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
                 MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
 
                 System.Windows.MessageBox.Show("DB settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -144,12 +97,63 @@ namespace AICAD.UI
             }
         }
 
+        private async void TestMongoButton_Click(object sender, RoutedEventArgs e)
+        {
+            // Disable button to prevent re-entry
+            TestMongoButton.IsEnabled = false;
+            MongoStatusTextBlock.Text = "Testing connection...";
+            MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Blue);
+
+            try
+            {
+                var conn = MongoConnectionStringTextBox.Text?.Trim() ?? string.Empty;
+                var dbName = MongoDbNameTextBox.Text?.Trim() ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(conn))
+                {
+                    MongoStatusTextBlock.Text = "No Connection URI entered.";
+                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Orange);
+                    return;
+                }
+
+                try
+                {
+                    var client = new MongoClient(conn);
+                    // Try a lightweight operation: list database names
+                    using (var cursor = await client.ListDatabaseNamesAsync().ConfigureAwait(false))
+                    {
+                        var any = await cursor.AnyAsync().ConfigureAwait(false);
+                    }
+
+                    Dispatcher.Invoke(() =>
+                    {
+                        MongoStatusTextBlock.Text = "Connection OK.";
+                        MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                        MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() =>
+                    {
+                        MongoStatusTextBlock.Text = "Test failed: " + ex.Message;
+                        MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                    });
+                }
+            }
+            finally
+            {
+                Dispatcher.Invoke(() => TestMongoButton.IsEnabled = true);
+            }
+        }
+
         private void LoadApiButton_Click(object sender, RoutedEventArgs e)
         {
             try
             {
                 LocalLlmEndpointTextBox.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "http://127.0.0.1:1234";
-                GeminiApiKeyTextBox.Text = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? "";
+                // Gemini key is stored in a PasswordBox in the UI
+                try { GeminiApiKeyTextBox.Password = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
                 GroqApiKeyTextBox.Text = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "";
                 LocalLlmModelTextBox.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", EnvironmentVariableTarget.User) ?? "";
                 // local system prompt
@@ -171,7 +175,7 @@ namespace AICAD.UI
             try
             {
                 Environment.SetEnvironmentVariable("LOCAL_LLM_ENDPOINT", LocalLlmEndpointTextBox.Text ?? "", EnvironmentVariableTarget.User);
-                Environment.SetEnvironmentVariable("GEMINI_API_KEY", GeminiApiKeyTextBox.Text ?? "", EnvironmentVariableTarget.User);
+                try { Environment.SetEnvironmentVariable("GEMINI_API_KEY", GeminiApiKeyTextBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
                 Environment.SetEnvironmentVariable("GROQ_API_KEY", GroqApiKeyTextBox.Text ?? "", EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("LOCAL_LLM_MODEL", LocalLlmModelTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
@@ -203,12 +207,12 @@ namespace AICAD.UI
                 {
                     bool anyTested = false;
 
-                    if (!string.IsNullOrWhiteSpace(GeminiApiKeyTextBox.Text))
+                    if (!string.IsNullOrWhiteSpace(GeminiApiKeyTextBox.Password))
                     {
                         anyTested = true;
                         try
                         {
-                            var client = new AICAD.Services.GeminiClient(GeminiApiKeyTextBox.Text.Trim());
+                            var client = new AICAD.Services.GeminiClient(GeminiApiKeyTextBox.Password.Trim());
                             var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
                             // Marshal update to UI thread
                             Dispatcher.Invoke(() =>
@@ -370,10 +374,18 @@ namespace AICAD.UI
         {
             try
             {
-                var mode = "few"; // default
-                // No direct radio buttons wired; store few by default or existing env var
+                // Determine selected sample mode
+                var mode = "few";
+                if (SampleModeZeroRadio.IsChecked == true) mode = "zero";
+                else if (SampleModeOneRadio.IsChecked == true) mode = "one";
+                else if (SampleModeFewRadio.IsChecked == true) mode = "few";
+
                 Environment.SetEnvironmentVariable("AICAD_SAMPLE_MODE", mode, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", SamplesFileTextBox.Text ?? "", EnvironmentVariableTarget.User);
+
+                // Randomize setting
+                var randomize = RandomizeSamplesCheckBox.IsChecked == true ? "1" : "0";
+                Environment.SetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", randomize, EnvironmentVariableTarget.User);
 
                 System.Windows.MessageBox.Show("Samples settings saved to environment variables. Restart SolidWorks for changes to take effect.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -387,16 +399,15 @@ namespace AICAD.UI
         {
             try
             {
-                var mode = Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", EnvironmentVariableTarget.User) ?? "";
-                switch (mode.ToLowerInvariant())
-                {
-                    case "zero": break;
-                    case "one": break;
-                    case "few": break;
-                    default: break;
-                }
+                var mode = (Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", EnvironmentVariableTarget.User) ?? "").ToLowerInvariant();
+                SampleModeZeroRadio.IsChecked = mode == "zero";
+                SampleModeOneRadio.IsChecked = mode == "one";
+                SampleModeFewRadio.IsChecked = string.IsNullOrWhiteSpace(mode) || mode == "few";
 
                 SamplesFileTextBox.Text = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? "";
+
+                var rand = Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", EnvironmentVariableTarget.User) ?? "0";
+                RandomizeSamplesCheckBox.IsChecked = rand == "1" || rand.Equals("true", StringComparison.OrdinalIgnoreCase);
             }
             catch { }
         }

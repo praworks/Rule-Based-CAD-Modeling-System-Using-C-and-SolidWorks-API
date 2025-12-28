@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
 using System.Threading;
@@ -1046,14 +1047,16 @@ namespace AICAD.UI
         {
             try
             {
-                if (_statusWindow == null || _statusWindow.IsDisposed)
+                // If window doesn't exist or isn't visible (closed), create a new WPF window
+                if (_statusWindow == null || !_statusWindow.IsVisible)
                 {
                     _statusWindow = new StatusWindow();
                     _statusWindow.CopyErrorClicked += StatusWindow_CopyErrorClicked;
                     _statusWindow.CopyRunClicked += StatusWindow_CopyRunClicked;
+                    _statusWindow.Owner = Window.GetWindow(this);
                 }
                 _statusWindow.Show();
-                _statusWindow.BringToFront();
+                _statusWindow.Activate();
             }
             catch (Exception ex) { AppendDetailedStatus("UI", "Status window error", ex); }
         }
@@ -1539,10 +1542,9 @@ namespace AICAD.UI
         private void SetLastError(string err)
         {
             _lastError = err;
-            if (_statusWindow != null && !_statusWindow.IsDisposed)
+            if (_statusWindow != null)
             {
-                _statusWindow.ErrorTextBox.Text = string.IsNullOrWhiteSpace(err) ? "—" : err;
-                // _statusWindow.ErrorTextBox.ForeColor handled in StatusWindow
+                try { _statusWindow.ErrorTextBox.Text = string.IsNullOrWhiteSpace(err) ? "—" : err; } catch { }
             }
             if (!string.IsNullOrWhiteSpace(err)) AppendStatusLine(StatusConsole.ErrorPrefix + " " + err);
         }
@@ -3259,79 +3261,62 @@ namespace AICAD.UI
                 // Always mirror to temp file for debugging
                 try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
 
-                // If the external status window exists, write there as before
-                if (_statusWindow != null && !_statusWindow.IsDisposed)
+                // If the external status window exists, write there using WPF RichTextBox
+                if (_statusWindow != null)
                 {
                     Action write = () =>
                     {
-                        var rtb = _statusWindow.StatusConsole;
-                        // Colorize certain categories for readability on dark background
                         try
                         {
-                            var color = System.Drawing.Color.Gainsboro;
+                            var rtb = _statusWindow.StatusConsole; // System.Windows.Controls.RichTextBox
                             var l = (line ?? string.Empty);
+                            SolidColorBrush brush = Brushes.Gainsboro;
                             if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                color = System.Drawing.Color.OrangeRed; // high-contrast red
-                            }
+                                brush = Brushes.OrangeRed;
                             else if (l.StartsWith("[FewShot", StringComparison.OrdinalIgnoreCase) || l.IndexOf("FewShot", StringComparison.OrdinalIgnoreCase) >= 0)
-                            {
-                                color = System.Drawing.Color.DodgerBlue; // bright blue
-                            }
+                                brush = Brushes.DodgerBlue;
                             else if (l.StartsWith(StatusConsole.StatusPrefix, StringComparison.OrdinalIgnoreCase))
-                            {
-                                color = System.Drawing.Color.Gold; // visible gold/orange
-                            }
+                                brush = Brushes.Gold;
                             else if (l.StartsWith("[Run:", StringComparison.OrdinalIgnoreCase))
-                            {
-                                color = System.Drawing.Color.Cyan; // run headers in cyan
-                            }
+                                brush = Brushes.Cyan;
                             else if (l.StartsWith("[LLM]", StringComparison.OrdinalIgnoreCase))
                             {
-                                if (l.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.LimeGreen;
-                                else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) color = System.Drawing.Color.OrangeRed;
-                                else color = System.Drawing.Color.LightSkyBlue;
+                                if (l.IndexOf("OK", StringComparison.OrdinalIgnoreCase) >= 0) brush = Brushes.LimeGreen;
+                                else if (l.IndexOf("Error", StringComparison.OrdinalIgnoreCase) >= 0 || l.IndexOf("failed", StringComparison.OrdinalIgnoreCase) >= 0) brush = Brushes.OrangeRed;
+                                else brush = Brushes.LightSkyBlue;
                             }
                             else if (l.StartsWith(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) || l.StartsWith(StatusConsole.LlmProgressPrefix, StringComparison.OrdinalIgnoreCase))
-                            {
-                                color = System.Drawing.Color.LightGreen;
-                            }
-                            rtb.SelectionColor = color;
-                        }
-                        catch { }
+                                brush = Brushes.LightGreen;
 
-                        // If this is a progress line and the last line is also a progress line, overwrite it inline
-                        try
-                        {
-                            if (((line ?? string.Empty).StartsWith(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) || (line ?? string.Empty).StartsWith(StatusConsole.LlmProgressPrefix, StringComparison.OrdinalIgnoreCase)) && rtb.Lines.Length > 0)
+                            // Overwrite last block if it's a progress line and current line is also progress
+                            try
                             {
-                                var last = rtb.Lines[rtb.Lines.Length - 1] ?? string.Empty;
-                                if (last.IndexOf(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) >= 0 || last.IndexOf(StatusConsole.LlmProgressPrefix, StringComparison.OrdinalIgnoreCase) >= 0)
+                                var doc = rtb.Document;
+                                var last = doc.Blocks.LastBlock as Paragraph;
+                                if ((l.StartsWith(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) || l.StartsWith(StatusConsole.LlmProgressPrefix, StringComparison.OrdinalIgnoreCase)) && last != null)
                                 {
-                                    int firstChar = rtb.GetFirstCharIndexFromLine(rtb.Lines.Length - 1);
-                                    if (firstChar >= 0)
+                                    var lastText = new TextRange(last.ContentStart, last.ContentEnd).Text ?? string.Empty;
+                                    if (lastText.IndexOf(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) >= 0 || lastText.IndexOf(StatusConsole.LlmProgressPrefix, StringComparison.OrdinalIgnoreCase) >= 0)
                                     {
-                                        rtb.SelectionStart = firstChar;
-                                        rtb.SelectionLength = rtb.TextLength - firstChar;
-                                        rtb.SelectedText = $"{ts} {line}\n";
-                                        rtb.SelectionStart = rtb.TextLength;
-                                        rtb.ScrollToCaret();
-                                        // already written
+                                        last.Inlines.Clear();
+                                        last.Inlines.Add(new Run($"{ts} {l}") { Foreground = brush });
+                                        rtb.ScrollToEnd();
                                         return;
                                     }
                                 }
                             }
+                            catch { }
+
+                            var p = new Paragraph(new Run($"{ts} {l}") { Foreground = brush });
+                            rtb.Document.Blocks.Add(p);
+                            rtb.ScrollToEnd();
                         }
                         catch { }
-
-                        rtb.AppendText($"{ts} {line}\n");
-                        rtb.SelectionStart = rtb.TextLength;
-                        rtb.ScrollToCaret();
                     };
 
                     try
                     {
-                        if (_statusWindow.InvokeRequired) _statusWindow.Invoke((Action)write);
+                        if (!_statusWindow.Dispatcher.CheckAccess()) _statusWindow.Dispatcher.Invoke((Action)write);
                         else write();
                     }
                     catch { }

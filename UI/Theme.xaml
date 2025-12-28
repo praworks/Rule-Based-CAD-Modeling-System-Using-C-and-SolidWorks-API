@@ -9,6 +9,28 @@
     
     <SolidColorBrush x:Key="PanelBackground" Color="#F9F9F9"/>
     <SolidColorBrush x:Key="CardBackground" Color="#FFFFFF"/>
+    <!-- Console and status window brushes -->
+    <SolidColorBrush x:Key="ConsoleBackground" Color="#000000"/>
+    <SolidColorBrush x:Key="ConsoleForeground" Color="#DCDCDC"/>
+    <!-- StatusRestBrush removed green; use panel background to avoid green flash -->
+    <SolidColorBrush x:Key="StatusRestBrush" Color="#F9F9F9"/>
+    <SolidColorBrush x:Key="StatusActiveBrush" Color="#FFF3CD"/>
+
+    <!-- Console style resources (use globally) -->
+    <FontFamily x:Key="ConsoleFontFamily">Consolas</FontFamily>
+    <sys:Double x:Key="ConsoleFontSize">12</sys:Double>
+    <sys:Double x:Key="ConsoleTabSize">4</sys:Double>
+
+    <Style x:Key="ConsoleRichTextBoxStyle" TargetType="RichTextBox">
+        <Setter Property="FontFamily" Value="{StaticResource ConsoleFontFamily}"/>
+        <Setter Property="FontSize" Value="{StaticResource ConsoleFontSize}"/>
+        <Setter Property="Background" Value="{StaticResource ConsoleBackground}"/>
+        <Setter Property="Foreground" Value="{StaticResource ConsoleForeground}"/>
+        <Setter Property="AcceptsTab" Value="True"/>
+        <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
+        <Setter Property="Padding" Value="6"/>
+    </Style>
     
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#333333"/>
     <SolidColorBrush x:Key="TextMutedBrush" Color="#666666"/>

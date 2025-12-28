@@ -94,4 +94,6 @@
     </None>
     <EmbeddedResource Include="PromptPreset.json" />
   </ItemGroup>
+  <ItemGroup>
+  </ItemGroup>
 </Project>

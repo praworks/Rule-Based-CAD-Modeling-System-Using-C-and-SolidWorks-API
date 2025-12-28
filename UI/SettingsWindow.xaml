@@ -42,6 +42,8 @@
             <!-- Map implicit control styles to the named theme styles -->
             <Style TargetType="TextBox" BasedOn="{StaticResource TextBoxStyle}" />
             <Style TargetType="Label" BasedOn="{StaticResource LabelStyle}" />
+            <!-- Default button style for this window: primary unless overridden -->
+            <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}" />
         </ResourceDictionary>
     </Window.Resources>
 

@@ -4,7 +4,7 @@ using System.Windows.Forms;
 
 namespace AICAD.UI
 {
-    public class StatusWindow : Form
+    public class StatusWindowWinForms : Form
     {
         public RichTextBox StatusConsole { get; private set; }
         public TextBox ErrorTextBox { get; private set; }
@@ -22,7 +22,7 @@ namespace AICAD.UI
         public event EventHandler CopyErrorClicked;
         public event EventHandler CopyRunClicked;
 
-        public StatusWindow()
+        public StatusWindowWinForms()
         {
             Text = "AI-CAD-December - Status Console";
             Size = new Size(800, 300);

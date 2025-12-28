@@ -48,6 +48,8 @@
         <Style TargetType="TextBox">
             <Setter Property="Margin" Value="0,2,0,6" />
             <Setter Property="Padding" Value="6" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="MinHeight" Value="28" />
             <Setter Property="Background" Value="White" />
             <Setter Property="BorderBrush" Value="#E0E0E0" />
             <Setter Property="BorderThickness" Value="1" />
@@ -102,9 +104,9 @@
                         <StackPanel x:Name="MongoPanel" Visibility="Collapsed">
                             <Label Content="MongoDB Connection" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
                             <Label Content="Connection String" />
-                            <TextBox x:Name="MongoConnectionStringTextBox" Height="26" />
+                            <TextBox x:Name="MongoConnectionStringTextBox" Height="28" />
                             <Label Content="Database Name" />
-                            <TextBox x:Name="MongoDbNameTextBox" Height="26" />
+                            <TextBox x:Name="MongoDbNameTextBox" Height="28" />
                             <TextBlock x:Name="MongoStatusTextBlock" Text="" Foreground="#333333" Margin="0,6,0,0" />
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button x:Name="LoadMongoButton" Content="Load" Style="{StaticResource FlatNavButton}" Click="LoadMongoButton_Click" />
@@ -116,16 +118,16 @@
                             <Label Content="API Keys &amp; Endpoints" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
 
                             <Label Content="Gemini API Key" />
-                            <TextBox x:Name="GeminiApiKeyTextBox" Height="26" />
+                            <TextBox x:Name="GeminiApiKeyTextBox" Height="28" />
 
                             <Label Content="Groq API Key" />
-                            <TextBox x:Name="GroqApiKeyTextBox" Height="26" />
+                            <TextBox x:Name="GroqApiKeyTextBox" Height="28" />
 
                             <Label Content="Local LLM Endpoint" />
-                            <TextBox x:Name="LocalLlmEndpointTextBox" Height="26" Text="http://localhost:1234/v1/chat/completions" />
+                            <TextBox x:Name="LocalLlmEndpointTextBox" Height="28" Text="http://localhost:1234/v1/chat/completions" />
 
                             <Label Content="Local Model" />
-                            <TextBox x:Name="LocalLlmModelTextBox" Height="26" />
+                            <TextBox x:Name="LocalLlmModelTextBox" Height="28" />
 
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button x:Name="TestApiButton" Content="Test API" Style="{StaticResource FlatNavButton}" Click="TestApiButton_Click" />
@@ -137,7 +139,7 @@
                         <StackPanel x:Name="NameEasyPanel" Visibility="Collapsed">
                             <Label Content="NameEasy Settings" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
                             <Label Content="Preset Folder" />
-                            <TextBox x:Name="NameEasyFolderTextBox" Height="26" />
+                            <TextBox x:Name="NameEasyFolderTextBox" Height="28" />
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button x:Name="BrowseNameEasyButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseNameEasyButton_Click" />
                                 <Button x:Name="SaveNameEasyButton" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveNameEasyButton_Click" Margin="8,0,0,0" />
@@ -147,7 +149,7 @@
                         <StackPanel x:Name="SamplesPanel" Visibility="Collapsed">
                             <Label Content="Samples Folder" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
                             <Label Content="Samples JSONL File" />
-                            <TextBox x:Name="SamplesFileTextBox" Height="26" />
+                            <TextBox x:Name="SamplesFileTextBox" Height="28" />
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button x:Name="BrowseSamplesButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseSamplesButton_Click" />
                                 <Button x:Name="SaveSamplesButton" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveSamplesButton_Click" Margin="8,0,0,0" />

@@ -44,6 +44,8 @@
             <Style TargetType="Label" BasedOn="{StaticResource LabelStyle}" />
             <!-- Default button style for this window: primary unless overridden -->
             <Style TargetType="Button" BasedOn="{StaticResource PrimaryButton}" />
+
+            <!-- TabItem styling moved to Theme.xaml (global) -->
         </ResourceDictionary>
     </Window.Resources>
 
@@ -54,19 +56,29 @@
         </Grid.ColumnDefinitions>
 
         <Border Grid.Column="0" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="8" CornerRadius="4">
-            <StackPanel>
-                <TextBlock Text="Settings" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeHeader}" FontWeight="Bold" Margin="4,0,0,10" />
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
 
-                <Button x:Name="btnGeneral" Content="General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" />
-                <Button x:Name="btnMongo" Content="Database Configuration" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" />
-                <Button x:Name="btnApiKeys" Content="LLM" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" />
-                <Button x:Name="btnNameEasy" Content="NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" />
-                <Button x:Name="btnSamples" Content="Context Examples" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" />
+                <StackPanel Grid.Row="0">
+                    <TextBlock Text="Settings" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeHeader}" FontWeight="Bold" Margin="4,0,0,10" />
 
-                <StackPanel Margin="0,18,0,0">
+                    <Button x:Name="btnGeneral" Content="General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" />
+                    <Button x:Name="btnMongo" Content="Database Configuration" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" />
+                    <Button x:Name="btnApiKeys" Content="LLM" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" />
+                    <Button x:Name="btnNameEasy" Content="NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" />
+                    <Button x:Name="btnSamples" Content="Context Examples" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" />
+                </StackPanel>
+
+                <!-- Spacer row (Grid.Row=1) intentionally left empty to push the save button to the bottom -->
+
+                <StackPanel Grid.Row="2" HorizontalAlignment="Stretch">
                     <Button x:Name="btnSaveAll" Content="Save All" Style="{StaticResource PrimaryButton}" Click="SaveAll_Click" />
                 </StackPanel>
-            </StackPanel>
+            </Grid>
         </Border>
 
         <Border Grid.Column="1" Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="12" Margin="12,0,0,0" CornerRadius="4">

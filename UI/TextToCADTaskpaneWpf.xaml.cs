@@ -212,9 +212,7 @@ namespace AICAD.UI
             }
             catch { }
 
-            // Wire up New Bottom button
-            if (this.FindName("btnNewBottom") is Button btnNewBottom)
-                btnNewBottom.Click += BtnNewBottom_Click;
+            // 'New' button removed
 
             // Load adaptive LLM average from settings (persisted between runs)
             try
@@ -554,14 +552,63 @@ namespace AICAD.UI
             {
                 var idx = shapePreset.SelectedIndex;
                 var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_preset_selection.log");
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] SelectionChanged: idx={idx}, _promptPresets.Count={_promptPresets?.Count ?? -1}\n");
-                if (_promptPresets == null || idx <= 0 || idx > _promptPresets.Count)
+                var sel = shapePreset.SelectedItem as System.Windows.Controls.ComboBoxItem;
+                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] SelectionChanged: idx={idx}, selTag={(sel?.Tag==null?"null":"set")}, _promptPresets.Count={_promptPresets?.Count ?? -1}\n");
+
+                if (sel == null || sel.Tag == null)
                 {
+                    // Fallback: some ComboBox selections may expose the Content/string instead of the ComboBoxItem.
+                    // Try to map using SelectedIndex against the loaded _promptPresets (preserve original behavior).
+                    if (_promptPresets != null && idx > 0 && idx <= _promptPresets.Count)
+                    {
+                        try
+                        {
+                            var itemFb = _promptPresets[idx - 1];
+                            var promptFb = itemFb["prompt"]?.ToString() ?? string.Empty;
+                            PromptText = promptFb;
+                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback set prompt (index): '{promptFb}'\n");
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback parse failed: {ex.Message}\n");
+                        }
+                    }
+
                     PromptText = string.Empty;
                     System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Clearing prompt text\n");
                     return;
                 }
-                var item = _promptPresets[idx - 1];
+
+                var token = sel.Tag as Newtonsoft.Json.Linq.JToken;
+                Newtonsoft.Json.Linq.JObject item = null;
+                if (token is Newtonsoft.Json.Linq.JObject jo) item = jo;
+                else if (token != null) item = token.ToObject<Newtonsoft.Json.Linq.JObject>();
+
+                if (item == null)
+                {
+                    // As a last resort, attempt the index fallback again
+                    if (_promptPresets != null && idx > 0 && idx <= _promptPresets.Count)
+                    {
+                        try
+                        {
+                            var itemFb = _promptPresets[idx - 1];
+                            var promptFb = itemFb["prompt"]?.ToString() ?? string.Empty;
+                            PromptText = promptFb;
+                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback set prompt (index2): '{promptFb}'\n");
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback parse failed2: {ex.Message}\n");
+                        }
+                    }
+
+                    PromptText = string.Empty;
+                    System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Clearing prompt text (tag parse failed)\n");
+                    return;
+                }
+
                 var prompt = item["prompt"]?.ToString() ?? string.Empty;
                 PromptText = prompt;
                 System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Set prompt: '{prompt}'\n");
@@ -585,7 +632,7 @@ namespace AICAD.UI
                 sb.AppendLine($"[{DateTime.UtcNow:O}] TryLoadPromptPresets start. BaseDir={baseDir}");
 
                 // ensure dropdown always has a default entry so UI isn't empty
-                try { shapePreset.Items.Clear(); shapePreset.Items.Add("— none —"); shapePreset.SelectedIndex = 0; } catch { }
+                try { shapePreset.Items.Clear(); shapePreset.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "— none —" }); shapePreset.SelectedIndex = 0; } catch { }
 
                 // Attempt to load from MongoDB if environment variable is provided
                 try
@@ -724,14 +771,15 @@ namespace AICAD.UI
                 {
                     sb.AppendLine($"[{DateTime.UtcNow:O}] Populating combo with {_promptPresets.Count} presets");
                     shapePreset.Items.Clear();
-                    shapePreset.Items.Add("— none —");
+                    shapePreset.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "— none —" });
                     foreach (var it in _promptPresets)
                     {
                         var id = it["id"]?.ToString() ?? "";
                         var desc = it["description"]?.ToString() ?? "";
                         var display = string.IsNullOrWhiteSpace(id) ? desc : ($"{id} - {desc}");
-                        shapePreset.Items.Add(display);
-                        sb.AppendLine($"[{DateTime.UtcNow:O}] Added item: {display}");
+                        var cbi = new System.Windows.Controls.ComboBoxItem { Content = display, Tag = it };
+                        shapePreset.Items.Add(cbi);
+                        sb.AppendLine($"[{DateTime.UtcNow:O}] Added item: {display} (tag set)");
                     }
                     shapePreset.SelectedIndex = 0;
                     sb.AppendLine($"[{DateTime.UtcNow:O}] Combo populated with {shapePreset.Items.Count} items");
@@ -3348,18 +3396,7 @@ namespace AICAD.UI
             catch { }
         }
 
-        private void BtnNewBottom_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var win = new BlankWebView2Window();
-                win.Show();
-            }
-            catch (System.Exception ex)
-            {
-                MessageBox.Show($"Failed to open WebView2 window: {ex.Message}", "WebView2 Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
+        // 'New Bottom' functionality removed
 
         private const int WM_GETDLGCODE = 0x0087;
         private const int DLGC_WANTALLKEYS = 0x0004;

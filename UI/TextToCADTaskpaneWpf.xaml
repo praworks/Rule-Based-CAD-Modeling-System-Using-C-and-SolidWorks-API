@@ -10,8 +10,13 @@
              Width="Auto" Height="Auto"
              HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
     <UserControl.Resources>
-        <ui:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
-        <ui:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter" />
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="Theme.xaml"/>
+            </ResourceDictionary.MergedDictionaries>
+            <ui:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
+            <ui:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter" />
+        </ResourceDictionary>
     </UserControl.Resources>
 
     <Grid Margin="6,2,6,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
@@ -24,19 +29,18 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" BorderBrush="#FFEEEEEE" BorderThickness="0,0,0,1" Margin="0,0,0,3">
+        <Border Grid.Row="0" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="0,0,0,1" Margin="0,0,0,3" Background="Transparent">
             <WrapPanel Orientation="Horizontal" VerticalAlignment="Top">
-                <Button Content="New Project" Padding="8,2" Margin="0,0,5,3" Background="Transparent"/>
                 <Button Content="Import" Padding="8,2" Margin="0,0,5,3" Background="Transparent"/>
-                <Button x:Name="addSeriesButton" Content="+ Series" Padding="8,2" Margin="0,0,5,3" Background="Transparent" Foreground="#005A9E"/>
+                <Button x:Name="addSeriesButton" Content="+ Series" Padding="8,2" Margin="0,0,5,3" Background="Transparent" Foreground="{StaticResource AccentBrush}"/>
             </WrapPanel>
         </Border>
 
         <StackPanel Grid.Row="1" Margin="0,0,0,4">
 
-            <Border Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
+            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
                 <StackPanel x:Name="KaraokeLinesPanel">
-                    <Label Content="Select Series" Foreground="#005A9E" FontWeight="SemiBold" Padding="0"/>
+                    <Label Content="Select Series" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
                     <DockPanel>
                         <Label Content="Series:" FontSize="10" Foreground="Gray" Padding="0"/>
                         <Label x:Name="nextSequenceLabel" Content="Next Sequence: 0018" FontStyle="Italic" Foreground="Gray" FontSize="10" HorizontalAlignment="Right"/>
@@ -49,9 +53,9 @@
                 </StackPanel>
             </Border>
 
-            <Border Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
+            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
                 <StackPanel>
-                    <Label Content="Material" Foreground="#005A9E" FontWeight="SemiBold" Padding="0"/>
+                    <Label Content="Material" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
                     <Label Content="Select Material:" FontSize="10" Foreground="Gray" Padding="0"/>
                     <ComboBox x:Name="materialComboBox" Margin="0,1,0,0" SelectedIndex="0" IsEditable="True">
                         <ComboBoxItem>Steel, Mild</ComboBoxItem>
@@ -80,39 +84,39 @@
                 </StackPanel>
             </Border>
 
-            <Border Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
+            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
                 <StackPanel>
-                    <Label Content="Type Description" Foreground="#005A9E" FontWeight="SemiBold" Padding="0"/>
+                    <Label Content="Type Description" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
                     <Label Content="Description:" FontSize="10" Foreground="Gray" Padding="0"/>
-                    <TextBox x:Name="typeDescriptionTextBox" Margin="0,1,0,0" Height="22" IsReadOnly="False" IsEnabled="True"/>
+                    <TextBox x:Name="typeDescriptionTextBox" Margin="0,1,0,0" Height="22" IsReadOnly="False" IsEnabled="True" Style="{StaticResource TextBoxStyle}"/>
                 </StackPanel>
             </Border>
 
-            <Border Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
+            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
                 <StackPanel>
-                    <Label Content="Weight" Foreground="#005A9E" FontWeight="SemiBold" Padding="0"/>
+                    <Label Content="Weight" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
                     <Label Content="Weight (kg):" FontSize="10" Foreground="Gray" Padding="0"/>
-                    <TextBox x:Name="weightTextBox" Margin="0,1,0,0" Height="22" Background="#FAFAFA" IsReadOnly="True"/>
+                    <TextBox x:Name="weightTextBox" Margin="0,1,0,0" Height="22" IsReadOnly="True" Style="{StaticResource TextBoxStyle}"/>
                 </StackPanel>
             </Border>
 
-            <Border Background="#F9F9F9" BorderBrush="#E0E0E0" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
+            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
                 <StackPanel>
-                    <Label Content="Generated Name Preview" Foreground="#005A9E" FontWeight="SemiBold" Padding="0"/>
-                    <TextBox x:Name="previewTextBox" Text="ASM-0018" FontWeight="Bold" HorizontalContentAlignment="Center" IsReadOnly="True" Margin="0,2,0,0" Height="20" VerticalContentAlignment="Center" BorderBrush="#005A9E"/>
+                    <Label Content="Generated Name Preview" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
+                    <TextBox x:Name="previewTextBox" Text="ASM-0018" FontWeight="Bold" HorizontalContentAlignment="Center" IsReadOnly="True" Margin="0,2,0,0" Height="20" VerticalContentAlignment="Center" Style="{StaticResource TextBoxStyle}"/>
                 </StackPanel>
             </Border>
 
             <StackPanel Margin="0,3,0,0">
                 <Button x:Name="saveWithNameButton" 
-                        Content="Save With This Name" 
-                        Height="22" Margin="0,0,0,2" 
-                        Background="#0066CC" Foreground="White" FontWeight="Bold" BorderThickness="0"/>
+                    Content="Save With This Name" 
+                    Height="22" Margin="0,0,0,2" 
+                    Style="{StaticResource PrimaryButton}"/>
 
                 <Button x:Name="applyPropertiesButton" 
-                        Content="Apply Properties" 
-                        Height="22" Margin="0,0,0,2" 
-                        Background="#F0F0F0" Foreground="#003366" BorderBrush="#CCCCCC" BorderThickness="1"/>
+                    Content="Apply Properties" 
+                    Height="22" Margin="0,0,0,2" 
+                    Style="{StaticResource PrimaryButton}"/>
             </StackPanel>
 
         </StackPanel>
@@ -125,7 +129,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <Border Grid.Row="1" Background="Transparent" CornerRadius="6" Padding="12,4" Margin="0,0,0,4">
+                <Border Grid.Row="1" Background="Transparent" CornerRadius="6" Padding="12,4" Margin="0,0,0,4">
                 <StackPanel x:Name="ProgressStatusPanel">
                     <ItemsControl x:Name="StepsItemsControl" Margin="0,0,0,2">
                         <ItemsControl.ItemTemplate>
@@ -145,7 +149,7 @@
                                         <TextBlock Text="{Binding Message}" FontSize="10" Foreground="Gray"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding BarString}" FontFamily="Consolas" FontSize="12" VerticalAlignment="Center" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                        <TextBlock Text="{Binding BarString}" FontFamily="{StaticResource ConsoleFontFamily}" FontSize="12" VerticalAlignment="Center" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
                                         <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="6,0,0,0" FontSize="10" VerticalAlignment="Center" Foreground="#007ACC" FontWeight="SemiBold" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
                                     </StackPanel>
                                 </Grid>
@@ -161,8 +165,8 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="6" Foreground="#007ACC" Background="#E0E0E0" BorderThickness="0"/>
-                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="#007ACC" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="6" Foreground="{StaticResource AccentBrush}" Background="{StaticResource InputBorderBrush}" BorderThickness="0"/>
+                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="{StaticResource AccentBrush}" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
             </Grid>
 
             <Grid Grid.Row="3">
@@ -171,8 +175,8 @@
                     <ColumnDefinition Width="90"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="prompt" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" Text="Enter prompt..." GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" BorderBrush="#FFCCCCCC" Height="100" VerticalAlignment="Center"/>
-                <Button x:Name="build" Grid.Column="1" Content="Build 🚀" Margin="4,0,0,0" Background="#FF007ACC" Foreground="White" FontWeight="SemiBold" BorderThickness="0" Height="100" VerticalAlignment="Center"/>
+                <TextBox x:Name="prompt" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" Text="Enter prompt..." GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" Height="100" VerticalAlignment="Center" Style="{StaticResource TextBoxStyle}"/>
+                <Button x:Name="build" Grid.Column="1" Content="Build 🚀" Margin="4,0,0,0" Style="{StaticResource PrimaryButton}" Height="100" VerticalAlignment="Center"/>
             </Grid>
         </Grid>
 
@@ -203,7 +207,7 @@
                 <Button x:Name="btnHistory" Content="History" Padding="6,1" Margin="3,0,0,0" FontSize="11"/>
                 <Button x:Name="btnStatus" Content="👁️" Padding="6,1" Margin="3,0,0,0"/>
                 <Button x:Name="btnSettings" Content="⚙️" ToolTip="Settings" Padding="4,1" Margin="3,0,0,0"/>
-                <Button x:Name="btnNewBottom" Content="New Bottom" Padding="6,1" Margin="3,0,0,0"/>
+                <!-- New Bottom button removed -->
             </StackPanel>
         </Grid>
     </Grid>

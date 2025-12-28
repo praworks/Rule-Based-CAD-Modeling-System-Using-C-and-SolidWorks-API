@@ -4,6 +4,7 @@
         Title="Status Console"
         Height="300" Width="800"
         WindowStartupLocation="CenterOwner"
+        Topmost="True"
         MinHeight="200" MinWidth="400">
 
     <Window.Resources>

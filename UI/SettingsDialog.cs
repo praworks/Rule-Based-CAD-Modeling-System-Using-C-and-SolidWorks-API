@@ -222,35 +222,21 @@ namespace AICAD.UI
             var samplesPanel = SamplesTab.CreatePanel(this);
             var nameEasyPanel = NameEasyTab.CreatePanel(this);
 
-            // Create and style sidebar buttons in a modern left-aligned menu style
-            void StyleSidebarButton(Button b)
-            {
-                b.Dock = DockStyle.Top;
-                b.Height = 50;
-                b.FlatStyle = FlatStyle.Flat;
-                b.FlatAppearance.BorderSize = 0;
-                b.TextAlign = ContentAlignment.MiddleLeft;
-                b.Padding = new Padding(20, 0, 0, 0);
-                b.Font = new Font("Segoe UI", 10F, FontStyle.Regular);
-                b.Cursor = Cursors.Hand;
-            }
-
-            var btnDb = new Button { Text = "Database Connection", Tag = dbPanel };
-            var btnLlm = new Button { Text = "AI & LLM Models", Tag = llmPanel };
-            var btnSamples = new Button { Text = "Training Samples", Tag = samplesPanel };
-            var btnNameEasy = new Button { Text = "NameEasy Database", Tag = nameEasyPanel };
-
-            StyleSidebarButton(btnDb);
-            StyleSidebarButton(btnLlm);
-            StyleSidebarButton(btnSamples);
-            StyleSidebarButton(btnNameEasy);
+            // Add nav buttons
+            var btnDb = new Button { Text = "Database", Tag = dbPanel };
+            var btnLlm = new Button { Text = "LLM Settings", Tag = llmPanel };
+            var btnSamples = new Button { Text = "Samples", Tag = samplesPanel };
+            var btnNameEasy = new Button { Text = "NameEasy", Tag = nameEasyPanel };
+            UITheme.ApplyNavButtonStyle(btnDb, false);
+            UITheme.ApplyNavButtonStyle(btnLlm, false);
+            UITheme.ApplyNavButtonStyle(btnSamples, false);
+            UITheme.ApplyNavButtonStyle(btnNameEasy, false);
 
             btnDb.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
             btnLlm.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
             btnSamples.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
             btnNameEasy.Click += (s, e) => { ActivateTab((Button)s, _navPanel); };
 
-            // Add in order so top-down stacking reads naturally
             _navPanel.Controls.Add(btnDb);
             _navPanel.Controls.Add(btnLlm);
             _navPanel.Controls.Add(btnSamples);
@@ -282,21 +268,10 @@ namespace AICAD.UI
 
         private void ActivateTab(Button activeBtn, Control navPanel)
         {
-            foreach (Control c in navPanel.Controls)
-            {
-                if (c is Button b)
-                {
-                    b.BackColor = Color.White;
-                    b.ForeColor = Color.Black;
-                    b.Font = new Font("Segoe UI", 10F, FontStyle.Regular);
-                }
-            }
+            foreach (Control c in navPanel.Controls) 
+                if (c is Button b) UITheme.ApplyNavButtonStyle(b, false);
             
-            // Highlight the active one
-            activeBtn.BackColor = Color.FromArgb(0, 120, 215);
-            activeBtn.ForeColor = Color.White;
-            activeBtn.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
-
+            UITheme.ApplyNavButtonStyle(activeBtn, true);
             ShowPanel((Control)activeBtn.Tag);
         }
 
@@ -543,24 +518,13 @@ namespace AICAD.UI
         {
             try
             {
-                // 1. Save Mongo
                 BtnSaveMongo_Click(sender, e);
-                
-                // 2. Save API Keys
                 BtnSaveApiKey_Click(sender, e);
-
-                // 3. Save NameEasy settings (ensure main Apply covers tab settings)
-                BtnSaveNameEasy_Click(sender, e);
-
-                // 4. Save Samples
-                try { BtnSaveSamples_Click(sender, e); } catch { }
-
-                MessageBox.Show("All settings have been successfully applied.\nPlease restart SolidWorks for changes to take effect.", 
-                                "Settings Applied", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
             {
-                MessageBox.Show("An error occurred while saving settings:\n" + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show("Failed: " + ex.Message, "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 

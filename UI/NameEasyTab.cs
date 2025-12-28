@@ -8,59 +8,45 @@ namespace AICAD.UI
     {
         public static Panel CreatePanel(SettingsDialog host)
         {
-            var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(30) }; // Increased padding for "breathing room"
+            var panel = new Panel { Dock = DockStyle.Fill, Padding = new Padding(20) };
             UITheme.ApplyPanelStyle(panel);
 
-            // Use a clean layout for the inputs
-            var table = new TableLayoutPanel { Dock = DockStyle.Top, ColumnCount = 3, AutoScroll = true, Height = 150 };
+            var table = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3 };
             table.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
             table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 100));
+            table.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120));
 
-            // ROW 1: Label
-            var lblPath = new Label 
-            { 
-                Text = "Database Path:", 
-                Dock = DockStyle.Fill, 
-                TextAlign = ContentAlignment.BottomLeft, // Align text to bottom of label for better visual flow with textbox
-                Font = new Font("Segoe UI", 9F, FontStyle.Bold) 
-            };
+            var lblPath = new Label { Text = "Database Path:", Dock = DockStyle.Fill, Padding = new Padding(0,12,6,0), AutoSize = true, TextAlign = ContentAlignment.MiddleLeft };
             UITheme.ApplyLabelStyle(lblPath);
-
-            // ROW 2: Input + Browse Button
-            host._txtNameEasyPath = new TextBox { Dock = DockStyle.Fill, Font = new Font("Segoe UI", 10F) }; // Slightly larger font
+            host._txtNameEasyPath = new TextBox { Dock = DockStyle.Fill, Margin = new Padding(6,8,6,8) };
             UITheme.ApplyTextBoxStyle(host._txtNameEasyPath);
-            
-            host._btnBrowseNameEasy = new Button { Text = "Browse...", Height = 28, Dock = DockStyle.Top };
+            host._btnBrowseNameEasy = new Button { Text = "Browse...", Width = 120, Height = 30, Margin = new Padding(6,8,0,8) };
             UITheme.ApplyButtonStyle(host._btnBrowseNameEasy, false);
             host._btnBrowseNameEasy.Click += host.BtnBrowseNameEasy_Click;
 
-            // ROW 3: Helper Text
-            host._lblNameEasyInfo = new Label 
-            { 
-                Text = "Select the location for the 'NameEasy.db' file.\nDefault: Add-in installation folder.", 
-                Dock = DockStyle.Fill, 
-                ForeColor = Color.Gray, 
-                AutoSize = true, 
-                Padding = new Padding(0, 5, 0, 0) 
-            };
-            
-            // Layout Logic
-            table.Controls.Add(lblPath, 0, 0); 
-            table.SetColumnSpan(lblPath, 2); // Label spans across
+            table.RowCount = 3;
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45));
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 50));
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 55));
 
-            table.Controls.Add(host._txtNameEasyPath, 0, 1);
-            table.SetColumnSpan(host._txtNameEasyPath, 2); // Textbox takes more space
-            
-            table.Controls.Add(host._btnBrowseNameEasy, 2, 1); // Button on the right
+            table.Controls.Add(lblPath, 0, 0);
+            table.Controls.Add(host._txtNameEasyPath, 1, 0);
+            table.Controls.Add(host._btnBrowseNameEasy, 2, 0);
 
-            table.Controls.Add(host._lblNameEasyInfo, 0, 2);
+            host._lblNameEasyInfo = new Label { Text = "Choose where to store the NameEasy.db database. Default: add-in folder.", Dock = DockStyle.Fill, ForeColor = Color.Gray, AutoSize = false, Padding = new Padding(0,16,0,0), TextAlign = ContentAlignment.TopLeft };
+            UITheme.ApplyLabelStyle(host._lblNameEasyInfo);
             table.SetColumnSpan(host._lblNameEasyInfo, 3);
+            table.Controls.Add(host._lblNameEasyInfo, 0, 1);
 
             panel.Controls.Add(table);
 
-            // REMOVED: The local "Save" button and actionPanel. 
-            // We rely on the global Apply button now.
+            var actionPanel = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 60, FlowDirection = FlowDirection.RightToLeft, Padding = new Padding(0, 12, 12, 12) };
+            host._btnSaveNameEasy = new Button { Text = "Save", Width = 110, Height = 34, Anchor = AnchorStyles.Bottom | AnchorStyles.Right };
+            UITheme.ApplyButtonStyle(host._btnSaveNameEasy, true);
+            host._btnSaveNameEasy.Click += host.BtnSaveNameEasy_Click;
+            actionPanel.Controls.Add(host._btnSaveNameEasy);
+
+            panel.Controls.Add(actionPanel);
 
             return panel;
         }

@@ -6,13 +6,15 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              mc:Ignorable="d" 
              d:DesignWidth="472" d:DesignHeight="1200"
-             Focusable="True">
+             Focusable="True"
+             Width="Auto" Height="Auto"
+             HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
     <UserControl.Resources>
         <ui:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
         <ui:EnumToVisibilityConverter x:Key="EnumToVisibilityConverter" />
     </UserControl.Resources>
 
-    <Grid Margin="6,2,6,0">
+    <Grid Margin="6,2,6,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" MinHeight="35"/>
             <RowDefinition Height="Auto"/>

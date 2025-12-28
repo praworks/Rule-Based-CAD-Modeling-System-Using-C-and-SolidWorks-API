@@ -104,48 +104,16 @@
                         <StackPanel x:Name="MongoPanel" Visibility="Collapsed">
                             <Label Content="Database Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
                             <Label Content="Connection URI" />
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="40" />
-                                </Grid.ColumnDefinitions>
-                                <TextBox x:Name="MongoConnectionStringTextBox" Height="28" Grid.Column="0" />
-                                <ToggleButton x:Name="MongoConnMaskToggle" Grid.Column="1" Content="👁" Width="32" Height="24" Margin="6,0,0,0" Click="MongoConnMaskToggle_Click" ToolTip="Show/Hide connection string" />
-                            </Grid>
+                            <TextBox x:Name="MongoConnectionStringTextBox" Height="28" />
                             <Label Content="Target Database Name" />
                             <TextBox x:Name="MongoDbNameTextBox" Height="28" />
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,0">
-                                <TextBlock Text="" Width="18" />
-                                <TextBlock x:Name="MongoLoadedIcon" Text="🛈" ToolTip="Value loaded from System Environment Variables." Visibility="Collapsed" Foreground="Gray" />
-                                <TextBlock x:Name="MongoStatusTextBlock" Text="" Foreground="#333333" Margin="8,0,0,0" />
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
+                                <TextBlock x:Name="MongoInfoIcon" Text="🛈" FontSize="14" Foreground="{StaticResource AccentBrush}" ToolTip="Value loaded from System Environment Variables" Visibility="Collapsed" />
+                                <TextBlock x:Name="MongoStatusTextBlock" Text="" Foreground="#333333" Margin="6,0,0,0" />
                             </StackPanel>
-
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                 <Button x:Name="LoadMongoButton" Content="Reset to Defaults" Style="{StaticResource FlatNavButton}" Click="LoadMongoButton_Click" />
                                 <Button x:Name="TestMongoButton" Content="Test Connection" Style="{StaticResource PrimaryButton}" Click="TestMongoButton_Click" Margin="8,0,0,0" />
-                            </StackPanel>
-
-                            <Separator Margin="0,12,0,12" />
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,6">
-                                <CheckBox x:Name="OfflineCachingCheckBox" Content="Enable Offline Caching" />
-                            </StackPanel>
-
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,6">
-                                <Label Content="Connection Timeout (s)" VerticalAlignment="Center" />
-                                <StackPanel Orientation="Horizontal" Margin="8,0,0,0">
-                                    <Button x:Name="TimeoutDownButton" Content="-" Width="24" Click="TimeoutDownButton_Click" />
-                                    <TextBox x:Name="TimeoutTextBox" Text="5" Width="48" HorizontalContentAlignment="Center" Margin="4,0" />
-                                    <Button x:Name="TimeoutUpButton" Content="+" Width="24" Click="TimeoutUpButton_Click" />
-                                </StackPanel>
-                            </StackPanel>
-
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,0,6">
-                                <Label Content="Log Level" VerticalAlignment="Center" />
-                                <ComboBox x:Name="LogLevelComboBox" Width="160" Margin="8,0,0,0">
-                                    <ComboBoxItem>Error Only</ComboBoxItem>
-                                    <ComboBoxItem>Info</ComboBoxItem>
-                                    <ComboBoxItem>Verbose</ComboBoxItem>
-                                </ComboBox>
                             </StackPanel>
                         </StackPanel>
 

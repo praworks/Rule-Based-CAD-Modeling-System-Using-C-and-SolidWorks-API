@@ -42,6 +42,7 @@ namespace AICAD.UI
                 LoadMongoButton_Click(null, null);
                 LoadApiButton_Click(null, null);
                 try { LoadSamplesButton_Click(null, null); } catch { }
+                try { LoadNameEasySettings(); } catch { }
             }
             catch { }
         }
@@ -340,15 +341,52 @@ namespace AICAD.UI
             if (string.IsNullOrEmpty(path)) return;
             try
             {
-                if (AICAD.Services.SettingsManager.SetDatabasePath(path))
-                    System.Windows.MessageBox.Show("Path saved. Restart SolidWorks.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+                var ok = AICAD.Services.SettingsManager.SetDatabasePath(path);
+
+                // Persist the NameEasy boolean flags to registry under same branch
+                try
+                {
+                    using (var reg = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(@"Software\AI-CAD\NameEasy"))
+                    {
+                        if (reg != null)
+                        {
+                            reg.SetValue("AutoUpdateMaterial", (ChkAutoUpdateMaterial.IsChecked == true) ? "1" : "0");
+                            reg.SetValue("AutoUpdateDescription", (ChkAutoUpdateDescription.IsChecked == true) ? "1" : "0");
+                        }
+                    }
+                }
+                catch { }
+
+                if (ok)
+                    System.Windows.MessageBox.Show("Settings saved. Restart SolidWorks.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
                 else
-                    System.Windows.MessageBox.Show("Failed to save path.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    System.Windows.MessageBox.Show("Failed to save settings.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show("Error: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
+        }
+
+        private void LoadNameEasySettings()
+        {
+            try
+            {
+                // Load database path using existing SettingsManager helper
+                try { NameEasyFolderTextBox.Text = AICAD.Services.SettingsManager.GetDatabasePath(); } catch { }
+
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\AI-CAD\NameEasy"))
+                {
+                    if (key != null)
+                    {
+                        var mat = key.GetValue("AutoUpdateMaterial")?.ToString() ?? "0";
+                        var desc = key.GetValue("AutoUpdateDescription")?.ToString() ?? "0";
+                        ChkAutoUpdateMaterial.IsChecked = (mat == "1" || mat.Equals("true", StringComparison.OrdinalIgnoreCase));
+                        ChkAutoUpdateDescription.IsChecked = (desc == "1" || desc.Equals("true", StringComparison.OrdinalIgnoreCase));
+                    }
+                }
+            }
+            catch { }
         }
 
         private void BrowseSamplesButton_Click(object sender, RoutedEventArgs e)

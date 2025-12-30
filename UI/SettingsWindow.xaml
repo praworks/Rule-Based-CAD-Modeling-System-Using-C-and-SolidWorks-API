@@ -298,9 +298,16 @@
                             <Label Content="NameEasy Settings" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
                             <Label Content="Preset Folder" />
                             <TextBox x:Name="NameEasyFolderTextBox" Height="28" />
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button x:Name="BrowseNameEasyButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseNameEasyButton_Click" />
-                                <Button x:Name="SaveNameEasyButton" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveNameEasyButton_Click" Margin="8,0,0,0" />
+                            <StackPanel Orientation="Vertical" Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <CheckBox x:Name="ChkAutoUpdateMaterial" Content="Auto update Material" Margin="0,0,12,0" />
+                                    <CheckBox x:Name="ChkAutoUpdateDescription" Content="Auto-update Description" />
+                                </StackPanel>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                    <Button x:Name="BrowseNameEasyButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseNameEasyButton_Click" />
+                                    <Button x:Name="SaveNameEasyButton" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveNameEasyButton_Click" Margin="8,0,0,0" />
+                                </StackPanel>
                             </StackPanel>
                         </StackPanel>
 

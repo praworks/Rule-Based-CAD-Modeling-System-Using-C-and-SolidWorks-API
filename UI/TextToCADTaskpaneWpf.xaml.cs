@@ -373,9 +373,13 @@ namespace AICAD.UI
                 catch { }
             }
             catch { }
-            // Set initial version
+            // Set initial version (UI element may have been removed; guard with FindName)
             var ver = GetAddinVersion();
-            lblVersion.Content = ver;
+            var lblVersionLbl = FindName("lblVersion") as Label;
+            if (lblVersionLbl != null)
+            {
+                try { lblVersionLbl.Content = ver; } catch { }
+            }
 
             // Wire up event handlers
             // Load presets from PromtPreset.json (if present)
@@ -444,7 +448,11 @@ namespace AICAD.UI
             btnSettings.Click += BtnSettings_Click;
             btnThumbUp.Click += async (s, e) => await SubmitFeedbackAsync(true);
             btnThumbDown.Click += async (s, e) => await SubmitFeedbackAsync(false);
-            addSeriesButton.Click += AddSeriesButton_Click;
+            var addSeriesBtn = FindName("addSeriesButton") as Button;
+            if (addSeriesBtn != null)
+            {
+                addSeriesBtn.Click += AddSeriesButton_Click;
+            }
             seriesComboBox.SelectionChanged += SeriesComboBox_SelectionChanged;
             saveWithNameButton.Click += SaveWithNameButton_Click;
             applyPropertiesButton.Click += ApplyPropertiesButton_Click;
@@ -1462,11 +1470,13 @@ namespace AICAD.UI
                 Dispatcher.Invoke(() =>
                 {
                     _karaokeLineBlocks = new System.Collections.Generic.List<TextBlock>();
-                    if (KaraokeLinesPanel != null)
+                    var karaokePanel = FindName("KaraokeLinesPanel") as System.Windows.Controls.Panel;
+                    var karaokeStatus = FindName("KaraokeStatus") as TextBlock;
+                    if (karaokePanel != null)
                     {
-                        foreach (var child in KaraokeLinesPanel.Children)
+                        foreach (var child in karaokePanel.Children)
                         {
-                            if (child is TextBlock tb && tb != KaraokeStatus)
+                            if (child is TextBlock tb && tb != karaokeStatus)
                             {
                                 try { tb.Foreground = new SolidColorBrush(Colors.Gray); } catch { }
                                 _karaokeLineBlocks.Add(tb);
@@ -2528,7 +2538,8 @@ namespace AICAD.UI
                 _selectedSeries = seriesComboBox.SelectedItem?.ToString();
                 if (string.IsNullOrWhiteSpace(_selectedSeries) || _seriesManager == null)
                 {
-                    nextSequenceLabel.Content = "Next Sequence: --";
+                    var nextSeqLbl = FindName("nextSequenceLabel") as Label;
+                    if (nextSeqLbl != null) nextSeqLbl.Content = "Next Sequence: --";
                     previewTextBox.Text = string.Empty;
                     saveWithNameButton.IsEnabled = false;
                     applyPropertiesButton.IsEnabled = false;
@@ -2538,7 +2549,8 @@ namespace AICAD.UI
                 _seriesManager.AddSeries(_selectedSeries, "Auto-added", "0000");
                 _nextSequence = _seriesManager.GetNextSequence(_selectedSeries);
                 var partName = _seriesManager.GeneratePartName(_selectedSeries, _nextSequence);
-                nextSequenceLabel.Content = $"Next Sequence: {_nextSequence:0000}";
+                var nextSeqLbl2 = FindName("nextSequenceLabel") as Label;
+                if (nextSeqLbl2 != null) nextSeqLbl2.Content = $"Next Sequence: {_nextSequence:0000}";
                 previewTextBox.Text = partName;
                 saveWithNameButton.IsEnabled = true;
                 applyPropertiesButton.IsEnabled = true;
@@ -2547,7 +2559,8 @@ namespace AICAD.UI
             {
                 saveWithNameButton.IsEnabled = false;
                 applyPropertiesButton.IsEnabled = false;
-                nextSequenceLabel.Content = "Next Sequence: --";
+                var nextSeqLbl2 = FindName("nextSequenceLabel") as Label;
+                if (nextSeqLbl2 != null) nextSeqLbl2.Content = "Next Sequence: --";
                 previewTextBox.Text = string.Empty;
                 AddinLogger.Error("Naming", "Failed to update preview", ex);
             }

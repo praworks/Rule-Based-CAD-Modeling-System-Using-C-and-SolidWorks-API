@@ -1,6 +1,20 @@
+<!--
+    Theme.xaml — centralized UI tokens and styles for WPF.
+
+    Purpose: Provide a single source of truth for colors, fonts, sizes,
+    and reusable styles so XAML views remain consistent and easy to
+    maintain.
+
+    Five reasons to use these theme tokens:
+    1) Consistency: ensures a uniform appearance across all views.
+    2) Maintainability: change one token to update the whole app.
+    3) Theming: swap or extend dictionaries to support light/dark themes.
+    4) Reuse: avoid duplicated literal values and accidental drift.
+    5) Runtime flexibility: allow resource overrides and user preferences.
+-->
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
+                                        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                                        xmlns:sys="clr-namespace:System;assembly=mscorlib">
 
     <SolidColorBrush x:Key="AccentBrush" Color="#005A9E"/>
     <SolidColorBrush x:Key="AccentHoverBrush" Color="#006BB3"/>
@@ -20,6 +34,20 @@
     <FontFamily x:Key="ConsoleFontFamily">Consolas</FontFamily>
     <sys:Double x:Key="ConsoleFontSize">12</sys:Double>
     <sys:Double x:Key="ConsoleTabSize">4</sys:Double>
+    <sys:Double x:Key="ProgressBarHeight">6</sys:Double>
+
+    <!-- Additional design tokens centralized from XAML -->
+    <SolidColorBrush x:Key="RunningIconBrush" Color="#FFC107"/>
+    <SolidColorBrush x:Key="SuccessIconBrush" Color="#28A745"/>
+    <SolidColorBrush x:Key="ErrorIconBrush" Color="#DC3545"/>
+    <SolidColorBrush x:Key="ProgressPercentBrush" Color="#007ACC"/>
+
+    <sys:Double x:Key="FontSizeLarge">14</sys:Double>
+    <sys:Double x:Key="FontSizeTask">11</sys:Double>
+    <sys:Double x:Key="FontSizeSmall">10</sys:Double>
+    <sys:Double x:Key="FontSizeKaraoke">13</sys:Double>
+
+    <CornerRadius x:Key="CardCornerRadius">6</CornerRadius>
 
     <Style x:Key="ConsoleRichTextBoxStyle" TargetType="RichTextBox">
         <Setter Property="FontFamily" Value="{StaticResource ConsoleFontFamily}"/>

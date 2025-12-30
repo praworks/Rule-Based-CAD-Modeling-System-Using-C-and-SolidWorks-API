@@ -8,7 +8,9 @@
              d:DesignWidth="472" d:DesignHeight="1200"
              Focusable="True"
              Width="Auto" Height="Auto"
-             HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+             HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+             Background="Transparent">
+
     <UserControl.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
@@ -19,9 +21,8 @@
         </ResourceDictionary>
     </UserControl.Resources>
 
-    <Grid Margin="6,2,6,0" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+    <Grid Margin="8" HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" MinHeight="35"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -29,35 +30,31 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <Border Grid.Row="0" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="0,0,0,1" Margin="0,0,0,3" Background="Transparent">
-            <WrapPanel Orientation="Horizontal" VerticalAlignment="Top">
-                <Button Content="Import" Padding="8,2" Margin="0,0,5,3" Background="Transparent"/>
-                <Button x:Name="addSeriesButton" Content="+ Series" Padding="8,2" Margin="0,0,5,3" Background="Transparent" Foreground="{StaticResource AccentBrush}"/>
-            </WrapPanel>
-        </Border>
+        <StackPanel Grid.Row="0">
 
-        <StackPanel Grid.Row="1" Margin="0,0,0,4">
-
-            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
-                <StackPanel x:Name="KaraokeLinesPanel">
-                    <Label Content="Select Series" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
-                    <DockPanel>
-                        <Label Content="Series:" FontSize="10" Foreground="Gray" Padding="0"/>
-                        <Label x:Name="nextSequenceLabel" Content="Next Sequence: 0018" FontStyle="Italic" Foreground="Gray" FontSize="10" HorizontalAlignment="Right"/>
-                    </DockPanel>
-                    <ComboBox x:Name="seriesComboBox" Margin="0,1,0,2" SelectedIndex="0">
+            <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Grid.Column="0" Content="Select Series" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
+                    <ComboBox Grid.Column="1" x:Name="seriesComboBox" SelectedIndex="0" HorizontalAlignment="Right" Height="26" VerticalContentAlignment="Center" Width="370" Background="{x:Null}">
                         <ComboBoxItem>ASM</ComboBoxItem>
                         <ComboBoxItem>PRT</ComboBoxItem>
                         <ComboBoxItem>DRW</ComboBoxItem>
                     </ComboBox>
-                </StackPanel>
+                </Grid>
             </Border>
 
-            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
-                <StackPanel>
-                    <Label Content="Material" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
-                    <Label Content="Select Material:" FontSize="10" Foreground="Gray" Padding="0"/>
-                    <ComboBox x:Name="materialComboBox" Margin="0,1,0,0" SelectedIndex="0" IsEditable="True">
+            <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Grid.Column="0" Content="Material" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
+                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="0" IsEditable="True" Height="26" VerticalContentAlignment="Center" Margin="24,0,0,0" Width="370" HorizontalAlignment="Right" Background="{x:Null}">
                         <ComboBoxItem>Steel, Mild</ComboBoxItem>
                         <ComboBoxItem>Aluminum 1060 Alloy</ComboBoxItem>
                         <ComboBoxItem>Stainless Steel</ComboBoxItem>
@@ -81,47 +78,56 @@
                         <ComboBoxItem>316 Stainless</ComboBoxItem>
                         <ComboBoxItem>Custom</ComboBoxItem>
                     </ComboBox>
-                </StackPanel>
+                </Grid>
             </Border>
 
-            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
-                <StackPanel>
-                    <Label Content="Type Description" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
-                    <Label Content="Description:" FontSize="10" Foreground="Gray" Padding="0"/>
-                    <TextBox x:Name="typeDescriptionTextBox" Margin="0,1,0,0" Height="22" IsReadOnly="False" IsEnabled="True" Style="{StaticResource TextBoxStyle}"/>
-                </StackPanel>
+            <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Grid.Column="0" Content="Description" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
+                    <TextBox Grid.Column="1" x:Name="typeDescriptionTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="False" IsEnabled="True" Style="{StaticResource TextBoxStyle}" Margin="10,0,0,0" Width="370" HorizontalAlignment="Right"/>
+                </Grid>
             </Border>
 
-            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
-                <StackPanel>
-                    <Label Content="Weight" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
-                    <Label Content="Weight (kg):" FontSize="10" Foreground="Gray" Padding="0"/>
-                    <TextBox x:Name="weightTextBox" Margin="0,1,0,0" Height="22" IsReadOnly="True" Style="{StaticResource TextBoxStyle}"/>
-                </StackPanel>
+            <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Grid.Column="0" Content="Weight" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
+                    <TextBox Grid.Column="1" x:Name="weightTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="True" Style="{StaticResource TextBoxStyle}" Margin="31,0,0,0" Width="370" HorizontalAlignment="Right"/>
+                </Grid>
             </Border>
 
-            <Border Background="{StaticResource PanelBackground}" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="1" Margin="0,0,0,2" Padding="4,2">
-                <StackPanel>
-                    <Label Content="Generated Name Preview" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Padding="0"/>
-                    <TextBox x:Name="previewTextBox" Text="ASM-0018" FontWeight="Bold" HorizontalContentAlignment="Center" IsReadOnly="True" Margin="0,2,0,0" Height="20" VerticalContentAlignment="Center" Style="{StaticResource TextBoxStyle}"/>
-                </StackPanel>
+            <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,8" Padding="4,2">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Label Grid.Column="0" Content="Generated Name Preview" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0"/>
+                    <TextBox Grid.Column="1" x:Name="previewTextBox" Text="ASM-0018" FontWeight="Bold" HorizontalContentAlignment="Center" VerticalContentAlignment="Center" IsReadOnly="True" Height="26" Style="{StaticResource TextBoxStyle}" Width="100"/>
+                </Grid>
             </Border>
 
-            <StackPanel Margin="0,3,0,0">
+            <StackPanel Margin="0,4,0,0">
                 <Button x:Name="saveWithNameButton" 
                     Content="Save With This Name" 
-                    Height="22" Margin="0,0,0,2" 
-                    Style="{StaticResource PrimaryButton}"/>
+                    Height="26" Margin="0,0,0,4" 
+                    Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"/>
 
                 <Button x:Name="applyPropertiesButton" 
                     Content="Apply Properties" 
-                    Height="22" Margin="0,0,0,2" 
-                    Style="{StaticResource PrimaryButton}"/>
+                    Height="26" Margin="0,0,0,2" 
+                    Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"/>
             </StackPanel>
-
         </StackPanel>
 
-        <Grid Grid.Row="3" Margin="0,2,0,0">
+        <Grid Grid.Row="2" Margin="0,8,0,0">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
@@ -129,70 +135,70 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-                <Border Grid.Row="1" Background="Transparent" CornerRadius="6" Padding="12,4" Margin="0,0,0,4">
+            <Border Grid.Row="1" Background="Transparent" CornerRadius="{StaticResource CardCornerRadius}" Padding="8,4" Margin="0,0,0,4">
                 <StackPanel x:Name="ProgressStatusPanel">
-                    <ItemsControl x:Name="StepsItemsControl" Margin="0,0,0,2">
+                    <ItemsControl x:Name="StepsItemsControl" Margin="0,0,0,6">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Margin="0,2">
+                                <Grid Margin="0,3">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="28"/>
                                         <ColumnDefinition Width="*"/>
                                         <ColumnDefinition Width="80"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="●" Foreground="Gray" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Pending}"/>
-                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="⟳" Foreground="#FFC107" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Running}"/>
-                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="✔" Foreground="#28A745" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Success}"/>
-                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="14" Text="⚠" Foreground="#DC3545" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Error}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="●" Foreground="{StaticResource TextMutedBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Pending}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="⟳" Foreground="{StaticResource RunningIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Running}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="✔" Foreground="{StaticResource SuccessIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Success}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="⚠" Foreground="{StaticResource ErrorIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Error}"/>
+
                                     <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="11"/>
-                                        <TextBlock Text="{Binding Message}" FontSize="10" Foreground="Gray"/>
+                                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="{StaticResource FontSizeTask}"/>
+                                        <TextBlock Text="{Binding Message}" FontSize="{StaticResource FontSizeSmall}" Foreground="{StaticResource TextMutedBrush}"/>
                                     </StackPanel>
+
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding BarString}" FontFamily="{StaticResource ConsoleFontFamily}" FontSize="12" VerticalAlignment="Center" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
-                                        <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="6,0,0,0" FontSize="10" VerticalAlignment="Center" Foreground="#007ACC" FontWeight="SemiBold" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                        <TextBlock Text="{Binding BarString}" FontFamily="{StaticResource ConsoleFontFamily}" FontSize="{StaticResource ConsoleFontSize}" VerticalAlignment="Center" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                        <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="6,0,0,0" FontSize="{StaticResource FontSizeSmall}" VerticalAlignment="Center" Foreground="{StaticResource ProgressPercentBrush}" FontWeight="SemiBold" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock x:Name="KaraokeStatus" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,4" Foreground="#333333"/>
+                    <TextBlock x:Name="KaraokeStatus" FontSize="{StaticResource FontSizeKaraoke}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,4" Foreground="{StaticResource TextPrimaryBrush}"/>
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Row="2" Margin="0,0,0,5">
+            <Grid Grid.Row="2" Margin="0,4,0,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="6" Foreground="{StaticResource AccentBrush}" Background="{StaticResource InputBorderBrush}" BorderThickness="0"/>
-                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="{StaticResource AccentBrush}" FontSize="10" Margin="6,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="{StaticResource ProgressBarHeight}" Foreground="{StaticResource AccentBrush}" Background="{StaticResource InputBorderBrush}" BorderThickness="0"/>
+                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeSmall}" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
             </Grid>
 
-            <Grid Grid.Row="3">
+            <Grid Grid.Row="3" Margin="0,0,0,4">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="90"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="prompt" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" Text="Enter prompt..." GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" Height="100" VerticalAlignment="Center" Style="{StaticResource TextBoxStyle}"/>
-                <Button x:Name="build" Grid.Column="1" Content="Build 🚀" Margin="4,0,0,0" Style="{StaticResource PrimaryButton}" Height="100" VerticalAlignment="Center"/>
+                <TextBox x:Name="prompt" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" Text="Enter prompt..." GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" Style="{StaticResource TextBoxStyle}" Margin="0,0,4,0"/>
+
+                <Button x:Name="build" Grid.Column="1" Content="Build 🚀" Height="26" VerticalAlignment="Top" Style="{StaticResource PrimaryButton}"/>
             </Grid>
         </Grid>
 
-            <Grid Grid.Row="4" Margin="0,0,0,0">
+        <Grid Grid.Row="3" Margin="0,4,0,8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <Label x:Name="presetLabel" Grid.Column="0" Content="Preset:" VerticalAlignment="Center" Foreground="DimGray" FontSize="11"/>
-            <!-- Items are populated at runtime by TryLoadPromptPresets() in code-behind -->
-            <ComboBox x:Name="shapePreset" Grid.Column="1" VerticalAlignment="Center" SelectedIndex="0" Margin="4,0" Height="24" />
-            <Label x:Name="lblVersion" Grid.Column="2" Foreground="Silver" Content="v1.0" VerticalAlignment="Center" FontSize="9"/>
+            <ComboBox x:Name="shapePreset" Grid.Column="1" SelectedIndex="0" Height="26" VerticalContentAlignment="Center" Margin="4,0,4,0" />
         </Grid>
 
-        <Grid Grid.Row="5">
+        <Grid Grid.Row="4" Margin="0,2,0,0">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto"/>
                 <ColumnDefinition Width="*"/>
@@ -201,13 +207,12 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal">
                 <Button x:Name="btnThumbDown" Content="👎" Background="Transparent" BorderThickness="0" Margin="0,0,3,0"/>
                 <Button x:Name="btnThumbUp" Content="👍" Background="Transparent" BorderThickness="0"/>
-                <Label x:Name="feedbackLabel" Content="Successful?" Foreground="DimGray" VerticalAlignment="Center" Margin="3,0,0,0" FontSize="11"/>
+                <Label x:Name="feedbackLabel" Content="Successful?" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="3,0,0,0" FontSize="{StaticResource FontSizeTask}"/>
             </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button x:Name="btnHistory" Content="History" Padding="6,1" Margin="3,0,0,0" FontSize="11"/>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="btnHistory" Content="History" Padding="6,1" Margin="3,0,0,0" FontSize="{StaticResource FontSizeTask}"/>
                 <Button x:Name="btnStatus" Content="👁️" Padding="6,1" Margin="3,0,0,0"/>
                 <Button x:Name="btnSettings" Content="⚙️" ToolTip="Settings" Padding="4,1" Margin="3,0,0,0"/>
-                <!-- New Bottom button removed -->
             </StackPanel>
         </Grid>
     </Grid>

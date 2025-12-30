@@ -14,6 +14,14 @@ namespace AICAD.UI
         public static Color MutedText = Color.FromArgb(100, 100, 100);        // Labels/Hints
         public static Color BorderGray = Color.FromArgb(200, 200, 200);       // Subtle borders
 
+        // Status / Console colors (for WinForms parts)
+        public static Color StatusRest = Color.FromArgb(249, 249, 249); // #F9F9F9
+        public static Color StatusActive = Color.FromArgb(255, 243, 205); // #FFF3CD
+
+        public static Color ConsoleBackground = Color.Black;
+        public static Color ConsoleForeground = Color.FromArgb(220, 220, 220); // #DCDCDC
+        public static Font ConsoleFont = new Font("Consolas", 9f, FontStyle.Regular);
+
         // Standard Font for Modern Windows Apps
         public static Font MainFont = new Font("Segoe UI", 10f, FontStyle.Regular);
         public static Font BoldFont = new Font("Segoe UI", 10f, FontStyle.Bold);

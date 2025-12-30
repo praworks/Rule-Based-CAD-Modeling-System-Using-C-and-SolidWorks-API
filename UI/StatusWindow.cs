@@ -16,8 +16,6 @@ namespace AICAD.UI
         private Button _btnCopyRun;
         private bool _expanded = false;
         private Timer _restTimer;
-        private Color _restColor = Color.FromArgb(179, 229, 179); // Pastel green
-        private Color _activeColor = Color.FromArgb(255, 243, 205); // Light yellow when active
 
         public event EventHandler CopyErrorClicked;
         public event EventHandler CopyRunClicked;
@@ -31,7 +29,7 @@ namespace AICAD.UI
             WindowState = FormWindowState.Normal;
             MinimizeBox = true;
             MaximizeBox = true;
-            BackColor = _restColor;
+            BackColor = Theme.StatusRest;
 
             _restTimer = new Timer { Interval = 3000 };
             _restTimer.Tick += (s, e) => RestoreRestState();
@@ -47,7 +45,7 @@ namespace AICAD.UI
                 ColumnCount = 1,
                 RowCount = 3,
                 Padding = new Padding(10),
-                BackColor = _restColor
+                BackColor = Theme.StatusRest
             };
             root.RowStyles.Add(new RowStyle(SizeType.Absolute, 35));    // toolbar
             root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));    // console
@@ -106,9 +104,9 @@ namespace AICAD.UI
             {
                 Dock = DockStyle.Fill,
                 ReadOnly = true,
-                BackColor = Color.Black,
-                ForeColor = Color.Gainsboro,
-                Font = new Font("Consolas", 9f, FontStyle.Regular),
+                BackColor = Theme.ConsoleBackground,
+                ForeColor = Theme.ConsoleForeground,
+                Font = Theme.ConsoleFont,
                 BorderStyle = BorderStyle.FixedSingle,
                 WordWrap = false,
                 HideSelection = false
@@ -210,12 +208,12 @@ namespace AICAD.UI
         {
             try
             {
-                BackColor = _activeColor;
+                BackColor = Theme.StatusActive;
                 // also set root/backing controls if present
                 foreach (Control c in Controls)
                 {
                     if (c is TableLayoutPanel tbl)
-                        tbl.BackColor = _activeColor;
+                    tbl.BackColor = Theme.StatusActive;
                 }
                 _restTimer.Stop();
                 _restTimer.Start();
@@ -228,11 +226,11 @@ namespace AICAD.UI
             try
             {
                 _restTimer.Stop();
-                BackColor = _restColor;
+                BackColor = Theme.StatusRest;
                 foreach (Control c in Controls)
                 {
                     if (c is TableLayoutPanel tbl)
-                        tbl.BackColor = _restColor;
+                    tbl.BackColor = Theme.StatusRest;
                 }
             }
             catch { }

@@ -6,6 +6,10 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
+using Newtonsoft.Json.Linq;
+using System.Text;
+using System.Diagnostics;
+using System.Linq;
 
 namespace AICAD.UI
 {
@@ -31,6 +35,7 @@ namespace AICAD.UI
             GeneralPanel.Visibility = panelName == "GeneralPanel" ? Visibility.Visible : Visibility.Collapsed;
             MongoPanel.Visibility = panelName == "MongoPanel" ? Visibility.Visible : Visibility.Collapsed;
             ApiKeysPanel.Visibility = panelName == "ApiKeysPanel" ? Visibility.Visible : Visibility.Collapsed;
+            AccountPanel.Visibility = panelName == "AccountPanel" ? Visibility.Visible : Visibility.Collapsed;
             NameEasyPanel.Visibility = panelName == "NameEasyPanel" ? Visibility.Visible : Visibility.Collapsed;
             SamplesPanel.Visibility = panelName == "SamplesPanel" ? Visibility.Visible : Visibility.Collapsed;
         }
@@ -430,6 +435,128 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show("Failed to save samples settings: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private async void GoogleSignIn_Click(object sender, RoutedEventArgs e)
+        {
+            GoogleSignInButton.IsEnabled = false;
+            var prevContent = GoogleSignInButton.Content;
+            GoogleSignInButton.Content = "Signing in...";
+
+            try
+            {
+                var cfg = AICAD.Services.GoogleOAuthConfig.Load();
+                if (cfg == null || string.IsNullOrWhiteSpace(cfg.ClientId))
+                {
+                    System.Windows.MessageBox.Show("Google OAuth client not configured. Set GOOGLE_OAUTH_CLIENT_ID or GOOGLE_OAUTH_CLIENT_FILE.", "Configuration Required", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+
+                string tokenJson = null;
+                try
+                {
+                    tokenJson = await AICAD.Services.OAuthDesktopHelper.AuthorizeAsync(cfg.ClientId, cfg.Scopes?.ToArray()).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    Dispatcher.Invoke(() => System.Windows.MessageBox.Show("OAuth failed: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error));
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(tokenJson))
+                {
+                    try
+                    {
+                        AICAD.Services.TokenManager.SaveTokenJson(tokenJson);
+
+                        // Try parse id_token from token response to extract user info
+                        var j = JObject.Parse(tokenJson);
+                        var idToken = j.Value<string>("id_token");
+                        if (!string.IsNullOrWhiteSpace(idToken))
+                        {
+                            var payload = DecodeJwtPayload(idToken);
+                            if (payload != null)
+                            {
+                                var name = payload.Value<string>("name") ?? payload.Value<string>("preferred_username");
+                                var email = payload.Value<string>("email");
+                                Dispatcher.Invoke(() =>
+                                {
+                                    if (!string.IsNullOrWhiteSpace(name)) DisplayNameTextBox.Text = name;
+                                    if (!string.IsNullOrWhiteSpace(email)) EmailTextBox.Text = email;
+                                    GoogleSignOutButton.IsEnabled = true;
+                                });
+                            }
+                        }
+
+                        Dispatcher.Invoke(() => System.Windows.MessageBox.Show("Signed in successfully.", "Signed In", MessageBoxButton.OK, MessageBoxImage.Information));
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.Invoke(() => System.Windows.MessageBox.Show("Failed to save token: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error));
+                    }
+                }
+            }
+            finally
+            {
+                GoogleSignInButton.IsEnabled = true;
+                GoogleSignInButton.Content = prevContent;
+            }
+        }
+
+        private void GoogleSignOut_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Remove stored credential (cmdkey /delete)
+                var target = "SolidWorksTextToCAD_OAuthToken";
+                try
+                {
+                    var psi = new ProcessStartInfo
+                    {
+                        FileName = "cmdkey",
+                        Arguments = $"/delete:{target}",
+                        CreateNoWindow = true,
+                        UseShellExecute = false,
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true
+                    };
+                    using (var p = Process.Start(psi)) { p.WaitForExit(3000); }
+                }
+                catch { }
+
+                DisplayNameTextBox.Text = string.Empty;
+                EmailTextBox.Text = string.Empty;
+                GoogleSignOutButton.IsEnabled = false;
+                System.Windows.MessageBox.Show("Signed out (local UI only).", "Signed Out", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show("Sign-out failed: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private static JObject DecodeJwtPayload(string jwt)
+        {
+            try
+            {
+                var parts = jwt.Split('.');
+                if (parts.Length < 2) return null;
+                var payload = parts[1];
+                // base64url -> base64
+                payload = payload.Replace('-', '+').Replace('_', '/');
+                switch (payload.Length % 4)
+                {
+                    case 2: payload += "=="; break;
+                    case 3: payload += "="; break;
+                }
+                var bytes = Convert.FromBase64String(payload);
+                var json = Encoding.UTF8.GetString(bytes);
+                return JObject.Parse(json);
+            }
+            catch
+            {
+                return null;
             }
         }
 

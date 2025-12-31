@@ -63,15 +63,16 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <StackPanel Grid.Row="0">
-                    <TextBlock Text="Settings" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeHeader}" FontWeight="Bold" Margin="4,0,0,10" />
+                    <StackPanel Grid.Row="0">
+                        <TextBlock Text="Settings" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeHeader}" FontWeight="Bold" Margin="4,0,0,10" />
 
-                    <Button x:Name="btnGeneral" Content="General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" />
-                    <Button x:Name="btnMongo" Content="Database Configuration" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" />
-                    <Button x:Name="btnApiKeys" Content="LLM" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" />
-                    <Button x:Name="btnNameEasy" Content="NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" />
-                    <Button x:Name="btnSamples" Content="Context Examples" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" />
-                </StackPanel>
+                        <Button x:Name="btnGeneral" Content="General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" />
+                        <Button x:Name="btnMongo" Content="Database Configuration" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" />
+                        <Button x:Name="btnApiKeys" Content="LLM Settings" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" />
+                        <Button x:Name="btnAccount" Content="Account" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="AccountPanel" />
+                        <Button x:Name="btnNameEasy" Content="NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" />
+                        <Button x:Name="btnSamples" Content="Context Examples" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" />
+                    </StackPanel>
 
                 <!-- Spacer row (Grid.Row=1) intentionally left empty to push the save button to the bottom -->
 
@@ -292,6 +293,35 @@
                             </StackPanel>
 
                             <TextBlock x:Name="ApiStatusTextBlock" Text="" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,8,0,0" />
+                        </StackPanel>
+
+                        <StackPanel x:Name="AccountPanel" Visibility="Collapsed">
+                            <Label Content="User Account" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+
+                            <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
+                                <StackPanel>
+                                    <Label Content="Account Details" FontWeight="SemiBold" />
+
+                                    <Label Content="Display Name" />
+                                    <TextBox x:Name="DisplayNameTextBox" Height="28" />
+
+                                    <Label Content="Email" />
+                                    <TextBox x:Name="EmailTextBox" Height="28" />
+
+                                    <Label Content="Avatar" />
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Width="64" Height="64" Background="{StaticResource BorderLightBrush}" CornerRadius="6" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                            <TextBlock Text="👤" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="28" />
+                                        </Border>
+                                        <StackPanel Margin="12,0,0,0">
+                                            <Button x:Name="GoogleSignInButton" Content="Sign in with Google" Style="{StaticResource PrimaryButton}" Click="GoogleSignIn_Click" />
+                                            <Button x:Name="GoogleSignOutButton" Content="Sign out" Style="{StaticResource FlatNavButton}" Click="GoogleSignOut_Click" IsEnabled="False" Margin="0,6,0,0" />
+                                        </StackPanel>
+                                    </StackPanel>
+
+                                    <TextBlock Text="Note: Google sign-in UI is added here for the mockup and is not wired to backend authentication yet." Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="NameEasyPanel" Visibility="Collapsed">

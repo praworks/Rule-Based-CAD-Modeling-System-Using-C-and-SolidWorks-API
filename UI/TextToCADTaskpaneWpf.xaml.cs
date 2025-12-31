@@ -34,6 +34,11 @@ namespace AICAD.UI
         private DateTime _lastEnsureNativeFocusUtc = DateTime.MinValue;
         private readonly object _ensureNativeFocusLock = new object();
 
+        // Batched key-logger to avoid synchronous disk I/O on the UI thread.
+        private static readonly System.Collections.Concurrent.ConcurrentQueue<string> _keyLogQueue = new System.Collections.Concurrent.ConcurrentQueue<string>();
+        private static System.Threading.Timer _keyLogTimer;
+        private static readonly object _keyLogTimerLock = new object();
+
         private ObservableCollection<StepViewModel> _steps = new ObservableCollection<StepViewModel>();
         private readonly ISldWorks _swApp;
         private JArray _promptPresets;
@@ -204,6 +209,22 @@ namespace AICAD.UI
         {
             InitializeComponent();
             _swApp = swApp;
+
+            // Initialize the background key-log flush timer only if key logging is enabled via env var.
+            try
+            {
+                if (System.Environment.GetEnvironmentVariable("AICAD_KEYLOG") == "1")
+                {
+                    lock (_keyLogTimerLock)
+                    {
+                        if (_keyLogTimer == null)
+                        {
+                            _keyLogTimer = new System.Threading.Timer(FlushKeyLogQueue, null, 2000, 2000);
+                        }
+                    }
+                }
+            }
+            catch { }
 
             // Bind steps collection to the UI ItemsControl
             try
@@ -987,9 +1008,32 @@ namespace AICAD.UI
         {
             try
             {
-                var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
-                System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
-                // try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
+                // Disabled by default. Enable by setting environment variable AICAD_KEYLOG=1
+                var enabled = System.Environment.GetEnvironmentVariable("AICAD_KEYLOG");
+                if (string.IsNullOrEmpty(enabled) || enabled != "1") return;
+
+                var entry = DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine;
+                _keyLogQueue.Enqueue(entry);
+            }
+            catch { }
+        }
+
+        private static void FlushKeyLogQueue(object state)
+        {
+            try
+            {
+                if (_keyLogQueue.IsEmpty) return;
+                var sb = new System.Text.StringBuilder();
+                while (_keyLogQueue.TryDequeue(out var s))
+                {
+                    sb.Append(s);
+                    if (sb.Length > 32 * 1024) break; // flush in chunks
+                }
+                if (sb.Length > 0)
+                {
+                    var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
+                    System.IO.File.AppendAllText(path, sb.ToString());
+                }
             }
             catch { }
         }

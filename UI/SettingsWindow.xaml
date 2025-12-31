@@ -345,12 +345,17 @@
                             <Label Content="Context Examples" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
                             <Label Content="Samples JSONL File" />
                             <TextBox x:Name="SamplesFileTextBox" Height="28" />
-
                             <Label Content="Example Mode" />
                             <StackPanel Orientation="Horizontal">
                                 <RadioButton x:Name="SampleModeZeroRadio" Content="Zero-shot" GroupName="SampleMode" />
                                 <RadioButton x:Name="SampleModeOneRadio" Content="One-shot" GroupName="SampleMode" Margin="8,0,0,0" />
                                 <RadioButton x:Name="SampleModeFewRadio" Content="Few-shot" GroupName="SampleMode" Margin="8,0,0,0" />
+                            </StackPanel>
+
+                            <StackPanel Orientation="Vertical" Margin="0,8,0,0">
+                                <CheckBox x:Name="ChkUseFewShot" Content="Enable Few-shot Examples" />
+                                <CheckBox x:Name="ChkForceKeyShots" Content="Prefer Key Shots Only (force key shots)" Margin="0,4,0,0" />
+                                <CheckBox x:Name="ChkForceStaticFewShot" Content="Force Static Built-in Examples (ignore DB)" Margin="0,4,0,0" />
                             </StackPanel>
 
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,0">

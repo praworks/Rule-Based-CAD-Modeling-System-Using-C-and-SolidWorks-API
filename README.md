@@ -38,15 +38,15 @@ Notes:
 - Dimensions are interpreted in millimeters.
 
 ## Data storage (default: MongoDB)
-- By default, the add-in will log runs and feedback to MongoDB when available.
+- By default, the add-in will log runs and run_feedback to MongoDB when available.
 - Configure via environment variables (User scope is fine):
 	- `MONGODB_URI` — your connection string (e.g., `mongodb://localhost:27017` or Atlas SRV URI)
 	- `MONGODB_DB` — database name (default: `TaskPaneAddin`)
 	- `MONGODB_COLLECTION` — main collection for run logs (default: `SW`)
 - Positive examples (thumb-up) are stored in `good_feedback` collection.
-- If MongoDB is unavailable, the add-in falls back to:
-	- File-based JSONL logs at `nl2cad.db.jsonl`
-	- SQLite for run/step history and few-shot retrieval at `feedback.db`
+ - If MongoDB is unavailable, the add-in falls back to:
+	 - File-based JSONL logs at `nl2cad.db.jsonl`
+	 - SQLite for run/step history and few-shot retrieval at `run_feedback.db`
 
 	## Secrets
 

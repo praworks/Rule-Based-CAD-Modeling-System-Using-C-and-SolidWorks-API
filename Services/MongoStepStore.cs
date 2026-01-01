@@ -16,7 +16,7 @@ namespace AICAD.Services
         private readonly IMongoDatabase _db;
         private readonly IMongoCollection<BsonDocument> _runs;
         private readonly IMongoCollection<BsonDocument> _steps;
-        private readonly IMongoCollection<BsonDocument> _feedback;
+        private readonly IMongoCollection<BsonDocument> _runFeedback;
         public string LastError { get; private set; }
 
         public MongoStepStore(string connectionString, string databaseName)
@@ -34,7 +34,7 @@ namespace AICAD.Services
                 _db = client.GetDatabase(databaseName);
                 _runs = _db.GetCollection<BsonDocument>("runs");
                 _steps = _db.GetCollection<BsonDocument>("steps");
-                _feedback = _db.GetCollection<BsonDocument>("feedback2");
+                _runFeedback = _db.GetCollection<BsonDocument>("run_feedback");
                 LastError = null;
                 AddinStatusLogger.Log("MongoStepStore", "ctor: connected to mongo");
             }
@@ -132,7 +132,7 @@ namespace AICAD.Services
                     { "thumb", up ? "up" : "down" },
                     { "comment", comment ?? string.Empty }
                 };
-                await _feedback.InsertOneAsync(doc).ConfigureAwait(false);
+                await _runFeedback.InsertOneAsync(doc).ConfigureAwait(false);
                 LastError = null;
                 AddinStatusLogger.Log("MongoStepStore", $"SaveFeedbackAsync succeeded run={runKey} thumb={up}");
                 return true;

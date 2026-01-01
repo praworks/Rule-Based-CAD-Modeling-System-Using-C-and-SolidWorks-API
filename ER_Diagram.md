@@ -5,7 +5,7 @@
 ```mermaid
 erDiagram
     RUNS ||--o{ STEPS : contains
-    RUNS ||--o{ FEEDBACK : receives
+    RUNS ||--o{ RUN_FEEDBACK : receives
     RUNS ||--o{ GOOD_FEEDBACK : generates
     
     RUNS {
@@ -29,11 +29,11 @@ erDiagram
         string error "Step error message"
     }
     
-    FEEDBACK {
-        string run_key FK "Reference to RUNS"
-        datetime ts "Feedback timestamp"
-        string thumb "User rating (up/down)"
-        string comment "User feedback comment"
+    RUN_FEEDBACK {
+      string run_key FK "Reference to RUNS"
+      datetime ts "Feedback timestamp"
+      string thumb "User rating (up/down)"
+      string comment "User feedback comment"
     }
     
     GOOD_FEEDBACK {
@@ -60,7 +60,7 @@ erDiagram
 - Tracks success/failure at the granular step level
 - Linked to parent run via `run_key`
 
-### 3. **FEEDBACK** (Feedback2 Collection)
+### 3. **RUN_FEEDBACK** (`run_feedback` collection)
 - User feedback on run results
 - Thumbs up/down rating system
 - Optional comments for improvement
@@ -78,7 +78,7 @@ erDiagram
   - Each run can have multiple execution steps
   - Steps are deleted when run is replaced
 
-- **RUNS ↔ FEEDBACK**: One-to-Many
+-- **RUNS ↔ RUN_FEEDBACK**: One-to-Many
   - Users can provide feedback on each run
   - Feedback is preserved independently
 

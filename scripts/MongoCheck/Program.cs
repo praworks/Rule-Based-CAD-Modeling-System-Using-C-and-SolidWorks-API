@@ -20,7 +20,7 @@ class Program
 			var client = new MongoClient(uri);
 			var db = client.GetDatabase("TaskPaneAddin");
 
-			var desired = new List<string> { "SW", "good_feedback", "runs", "steps", "feedback2" };
+			var desired = new List<string> { "SW", "good_feedback", "runs", "steps", "run_feedback" };
 
 			var existingNames = new HashSet<string>(await db.ListCollectionNames().ToListAsync(), StringComparer.OrdinalIgnoreCase);
 			Console.WriteLine("Existing collections: " + string.Join(", ", existingNames));

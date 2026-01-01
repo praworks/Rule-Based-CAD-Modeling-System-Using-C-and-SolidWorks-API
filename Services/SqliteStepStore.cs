@@ -15,7 +15,7 @@ namespace AICAD.Services
         private readonly string _connString;
         public string LastError { get; private set; }
 
-        public SqliteStepStore(string baseDirectory, string dbFileName = "feedback.db")
+        public SqliteStepStore(string baseDirectory, string dbFileName = "run_feedback.db")
         {
             if (string.IsNullOrWhiteSpace(baseDirectory)) throw new ArgumentException("Base directory is required", nameof(baseDirectory));
             Directory.CreateDirectory(baseDirectory);
@@ -61,7 +61,7 @@ CREATE TABLE IF NOT EXISTS steps (
 CREATE INDEX IF NOT EXISTS idx_runs_ts ON runs(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_steps_run ON steps(run_key);
 CREATE INDEX IF NOT EXISTS idx_steps_op ON steps(op);
-CREATE TABLE IF NOT EXISTS feedback2 (
+CREATE TABLE IF NOT EXISTS run_feedback (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     run_key TEXT NOT NULL,
     ts TEXT NOT NULL,
@@ -192,7 +192,7 @@ CREATE TABLE IF NOT EXISTS feedback2 (
                     await conn.OpenAsync().ConfigureAwait(false);
                     using (var cmd = conn.CreateCommand())
                     {
-                        cmd.CommandText = "INSERT INTO feedback2 (run_key, ts, thumb, comment) VALUES (@run, @ts, @thumb, @comment)";
+                        cmd.CommandText = "INSERT INTO run_feedback (run_key, ts, thumb, comment) VALUES (@run, @ts, @thumb, @comment)";
                         cmd.Parameters.AddWithValue("@run", (object)runKey ?? DBNull.Value);
                         cmd.Parameters.AddWithValue("@ts", DateTime.UtcNow.ToString("o"));
                         cmd.Parameters.AddWithValue("@thumb", up ? "up" : "down");

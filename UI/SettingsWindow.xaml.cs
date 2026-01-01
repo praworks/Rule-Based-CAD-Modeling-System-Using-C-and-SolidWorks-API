@@ -44,10 +44,149 @@ namespace AICAD.UI
         {
             try
             {
+                TryUseSecretsClientFile();
                 LoadMongoButton_Click(null, null);
                 LoadApiButton_Click(null, null);
                 try { LoadSamplesButton_Click(null, null); } catch { }
                 try { LoadNameEasySettings(); } catch { }
+                try { LoadAccountInfo(); } catch { }
+            }
+            catch { }
+        }
+
+        // Load existing Google account info from stored tokens
+        private void LoadAccountInfo()
+        {
+            try
+            {
+                var tokenJson = AICAD.Services.CredentialManager.ReadGenericSecret("SolidWorksTextToCAD_OAuthToken");
+                System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: tokenJson is {(string.IsNullOrWhiteSpace(tokenJson) ? "null/empty" : $"{tokenJson.Length} chars")}");
+                
+                if (string.IsNullOrWhiteSpace(tokenJson))
+                {
+                    ShowSignedOutState();
+                    return;
+                }
+
+                var j = JObject.Parse(tokenJson);
+                var idToken = j.Value<string>("id_token");
+                System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: idToken is {(string.IsNullOrWhiteSpace(idToken) ? "null/empty" : "present")}");
+                
+                if (string.IsNullOrWhiteSpace(idToken))
+                {
+                    ShowSignedOutState();
+                    return;
+                }
+
+                var payload = DecodeJwtPayload(idToken);
+                if (payload == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("LoadAccountInfo: payload is null");
+                    ShowSignedOutState();
+                    return;
+                }
+
+                var name = payload.Value<string>("name") ?? payload.Value<string>("preferred_username");
+                var email = payload.Value<string>("email");
+                System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: name={name}, email={email}");
+                
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    DisplayNameTextBox.Text = name;
+                    DisplayNameText.Text = name;
+                }
+                if (!string.IsNullOrWhiteSpace(email))
+                {
+                    EmailTextBox.Text = email;
+                    EmailText.Text = email;
+                }
+                
+                ShowSignedInState();
+                System.Diagnostics.Debug.WriteLine("LoadAccountInfo: ShowSignedInState() called");
+            }
+            catch (Exception ex)
+            {
+                // Debug: show what went wrong
+                System.Diagnostics.Debug.WriteLine("LoadAccountInfo failed: " + ex.Message);
+                ShowSignedOutState();
+            }
+        }
+
+        private void ShowSignedInState()
+        {
+            SignedInCard.Visibility = Visibility.Visible;
+            SignedOutCard.Visibility = Visibility.Collapsed;
+        }
+
+        private void ShowSignedOutState()
+        {
+            SignedInCard.Visibility = Visibility.Collapsed;
+            SignedOutCard.Visibility = Visibility.Visible;
+        }
+
+        // If a local Secrets/client_secret*.json exists in a parent directory, register it
+        // as the GOOGLE_OAUTH_CLIENT_FILE (User-level) so the OAuth helper can find it.
+        private void TryUseSecretsClientFile()
+        {
+            try
+            {
+                var dir = new System.IO.DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+                while (dir != null)
+                {
+                    var secretsDir = System.IO.Path.Combine(dir.FullName, "Secrets");
+                    if (System.IO.Directory.Exists(secretsDir))
+                    {
+                        try
+                        {
+                            var matches = System.IO.Directory.GetFiles(secretsDir, "client_secret*.json", System.IO.SearchOption.TopDirectoryOnly);
+                            if (matches.Length > 0)
+                            {
+                                var file = matches[0];
+                                var existing = Environment.GetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_FILE", EnvironmentVariableTarget.User)
+                                               ?? Environment.GetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_FILE");
+                                if (string.IsNullOrWhiteSpace(existing))
+                                {
+                                    Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_FILE", file, EnvironmentVariableTarget.User);
+                                    ApiStatusTextBlock.Text = "Found local Google client secret and registered for OAuth.";
+                                }
+
+                                // Also set client id/secret env vars if present in the JSON so Load() picks them up immediately.
+                                try
+                                {
+                                    var text = System.IO.File.ReadAllText(file);
+                                    var root = Newtonsoft.Json.Linq.JObject.Parse(text);
+                                    var installed = root["installed"] as Newtonsoft.Json.Linq.JObject ?? root["web"] as Newtonsoft.Json.Linq.JObject;
+                                    if (installed != null)
+                                    {
+                                        var fileClientId = installed.Value<string>("client_id");
+                                        var fileClientSecret = installed.Value<string>("client_secret");
+                                        if (!string.IsNullOrWhiteSpace(fileClientId))
+                                        {
+                                            try {
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_ID", fileClientId.Trim(), EnvironmentVariableTarget.User);
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_ID", fileClientId.Trim(), EnvironmentVariableTarget.Process);
+                                            } catch { }
+                                        }
+                                        if (!string.IsNullOrWhiteSpace(fileClientSecret))
+                                        {
+                                            try {
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_SECRET", fileClientSecret.Trim(), EnvironmentVariableTarget.User);
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_SECRET", fileClientSecret.Trim(), EnvironmentVariableTarget.Process);
+                                            } catch { }
+                                        }
+                                        // Refresh cached config so the running process picks up the new values immediately
+                                        try { AICAD.Services.GoogleOAuthConfig.RefreshCache(); } catch { }
+                                    }
+                                }
+                                catch { }
+
+                                return;
+                            }
+                        }
+                        catch { }
+                    }
+                    dir = dir.Parent;
+                }
             }
             catch { }
         }
@@ -464,7 +603,7 @@ namespace AICAD.UI
                 string tokenJson = null;
                 try
                 {
-                    tokenJson = await AICAD.Services.OAuthDesktopHelper.AuthorizeAsync(cfg.ClientId, cfg.Scopes?.ToArray()).ConfigureAwait(false);
+                    tokenJson = await AICAD.Services.OAuthDesktopHelper.AuthorizeAsync(cfg.ClientId, cfg.Scopes?.ToArray(), cfg.ClientSecret).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -490,14 +629,40 @@ namespace AICAD.UI
                                 var email = payload.Value<string>("email");
                                 Dispatcher.Invoke(() =>
                                 {
-                                    if (!string.IsNullOrWhiteSpace(name)) DisplayNameTextBox.Text = name;
-                                    if (!string.IsNullOrWhiteSpace(email)) EmailTextBox.Text = email;
-                                    GoogleSignOutButton.IsEnabled = true;
+                                    if (!string.IsNullOrWhiteSpace(name))
+                                    {
+                                        DisplayNameTextBox.Text = name;
+                                        DisplayNameText.Text = name;
+                                    }
+                                    if (!string.IsNullOrWhiteSpace(email))
+                                    {
+                                        EmailTextBox.Text = email;
+                                        EmailText.Text = email;
+                                    }
+                                    ShowSignedInState();
                                 });
+
+                                // Validate id_token via Google and create/update user in MongoDB
+                                try
+                                {
+                                    var userDoc = await AICAD.Services.UserService.GetOrCreateFromIdTokenAsync(idToken).ConfigureAwait(false);
+                                    if (userDoc != null)
+                                    {
+                                        Dispatcher.Invoke(() => ApiStatusTextBlock.Text = "Account created/updated in MongoDB.");
+                                    }
+                                    else
+                                    {
+                                        Dispatcher.Invoke(() => ApiStatusTextBlock.Text = "Account not saved: invalid token or MongoDB not configured.");
+                                    }
+                                }
+                                catch { /* ignore failures here - non-fatal for UI */ }
                             }
                         }
 
-                        Dispatcher.Invoke(() => System.Windows.MessageBox.Show("Signed in successfully.", "Signed In", MessageBoxButton.OK, MessageBoxImage.Information));
+                        Dispatcher.Invoke(() =>
+                        {
+                            System.Windows.MessageBox.Show("Signed in successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                        });
                     }
                     catch (Exception ex)
                     {
@@ -507,8 +672,11 @@ namespace AICAD.UI
             }
             finally
             {
-                GoogleSignInButton.IsEnabled = true;
-                GoogleSignInButton.Content = prevContent;
+                Dispatcher.Invoke(() =>
+                {
+                    GoogleSignInButton.IsEnabled = true;
+                    GoogleSignInButton.Content = prevContent;
+                });
             }
         }
 
@@ -535,8 +703,10 @@ namespace AICAD.UI
 
                 DisplayNameTextBox.Text = string.Empty;
                 EmailTextBox.Text = string.Empty;
-                GoogleSignOutButton.IsEnabled = false;
-                System.Windows.MessageBox.Show("Signed out (local UI only).", "Signed Out", MessageBoxButton.OK, MessageBoxImage.Information);
+                DisplayNameText.Text = string.Empty;
+                EmailText.Text = string.Empty;
+                ShowSignedOutState();
+                System.Windows.MessageBox.Show("Signed out successfully.", "Signed Out", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -580,7 +750,7 @@ namespace AICAD.UI
                 SamplesFileTextBox.Text = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? "";
 
                 var rand = Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", EnvironmentVariableTarget.User) ?? "0";
-                RandomizeSamplesCheckBox.IsChecked = rand == "1" || rand.Equals("true", StringComparison.OrdinalIgnoreCase);
+                RandomizeSamplesCheckBox.IsChecked = rand == "1" || (rand != null && rand.Equals("true", StringComparison.OrdinalIgnoreCase));
 
                 // Load few-shot and related flags (if controls present). If AICAD_USE_FEWSHOT isn't set, derive from radio selection.
                 try
@@ -593,7 +763,7 @@ namespace AICAD.UI
                     }
                     else
                     {
-                        ChkUseFewShot.IsChecked = (useFew == "1" || useFew.Equals("true", StringComparison.OrdinalIgnoreCase));
+                        ChkUseFewShot.IsChecked = (useFew == "1" || (useFew != null && useFew.Equals("true", StringComparison.OrdinalIgnoreCase)));
                     }
                 }
                 catch { if (ChkUseFewShot != null) ChkUseFewShot.IsChecked = true; }
@@ -601,14 +771,14 @@ namespace AICAD.UI
                 try
                 {
                     var fk = Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS");
-                    ChkForceKeyShots.IsChecked = fk == "1" || fk.Equals("true", StringComparison.OrdinalIgnoreCase);
+                    ChkForceKeyShots.IsChecked = fk == "1" || (fk != null && fk.Equals("true", StringComparison.OrdinalIgnoreCase));
                 }
                 catch { if (ChkForceKeyShots != null) ChkForceKeyShots.IsChecked = false; }
 
                 try
                 {
                     var fs = Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT");
-                    ChkForceStaticFewShot.IsChecked = fs == "1" || fs.Equals("true", StringComparison.OrdinalIgnoreCase);
+                    ChkForceStaticFewShot.IsChecked = fs == "1" || (fs != null && fs.Equals("true", StringComparison.OrdinalIgnoreCase));
                 }
                 catch { if (ChkForceStaticFewShot != null) ChkForceStaticFewShot.IsChecked = false; }
             }

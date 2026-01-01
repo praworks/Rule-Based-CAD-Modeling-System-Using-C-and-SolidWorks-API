@@ -4,7 +4,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         mc:Ignorable="d"
-        Title="Settings" Height="600" Width="820" Background="{DynamicResource PanelBackground}">
+        Title="AI-CAD Settings" Height="650" Width="900" Background="{DynamicResource PanelBackground}">
 
     <Window.Resources>
         <ResourceDictionary>
@@ -64,14 +64,15 @@
                 </Grid.RowDefinitions>
 
                     <StackPanel Grid.Row="0">
-                        <TextBlock Text="Settings" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeHeader}" FontWeight="Bold" Margin="4,0,0,10" />
+                        <TextBlock Text="AI-CAD" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeHeader}" FontWeight="Bold" Margin="4,0,0,4" />
+                        <TextBlock Text="Settings" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="4,0,0,12" />
 
-                        <Button x:Name="btnGeneral" Content="General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" />
-                        <Button x:Name="btnMongo" Content="Database Configuration" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" />
-                        <Button x:Name="btnApiKeys" Content="LLM Settings" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" />
-                        <Button x:Name="btnAccount" Content="Account" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="AccountPanel" />
-                        <Button x:Name="btnNameEasy" Content="NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" />
-                        <Button x:Name="btnSamples" Content="Context Examples" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" />
+                        <Button x:Name="btnGeneral" Content="⚙️ General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" ToolTip="General preferences and appearance" />
+                        <Button x:Name="btnApiKeys" Content="🤖 AI Provider" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" ToolTip="Configure AI language model settings" />
+                        <Button x:Name="btnMongo" Content="💾 Database" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" ToolTip="MongoDB connection settings" />
+                        <Button x:Name="btnSamples" Content="📚 Training Data" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" ToolTip="Configure AI examples and learning" />
+                        <Button x:Name="btnNameEasy" Content="📝 NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" ToolTip="Smart naming and metadata settings" />
+                        <Button x:Name="btnAccount" Content="👤 Account" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="AccountPanel" ToolTip="User account and cloud sync" />
                     </StackPanel>
 
                 <!-- Spacer row (Grid.Row=1) intentionally left empty to push the save button to the bottom -->
@@ -96,31 +97,34 @@
 
                     <Grid Grid.Row="1">
                         <StackPanel x:Name="GeneralPanel" Visibility="Visible">
-                            <Label Content="General Settings" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                            <TextBlock Text="Customize your AI-CAD experience" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" />
 
-                            <GroupBox Header="Startup &amp; Workflow" Margin="0,8,0,0">
+                            <GroupBox Header="🚀 Startup &amp; Workflow" Margin="0,8,0,0">
                                 <StackPanel>
-                                    <CheckBox x:Name="ChkLoadNameEasyOnStartup" Content="Load NameEasy on SolidWorks Startup" />
-                                    <CheckBox x:Name="ChkAutoExpandTaskPane" Content="Auto-expand Task Pane on New Part creation" />
-                                    <CheckBox x:Name="ChkCollapseAfterRename" Content="Collapse pane after successful rename" />
+                                    <CheckBox x:Name="ChkLoadNameEasyOnStartup" Content="Enable NameEasy when SolidWorks starts" ToolTip="Automatically loads the NameEasy feature on startup" Margin="0,4" />
+                                    <CheckBox x:Name="ChkAutoExpandTaskPane" Content="Show AI-CAD panel when creating new parts" ToolTip="Auto-expand Task Pane when creating a new part document" Margin="0,4" />
+                                    <CheckBox x:Name="ChkCollapseAfterRename" Content="Auto-collapse panel after renaming" ToolTip="Automatically collapse the panel after successful rename operations" Margin="0,4" />
                                 </StackPanel>
                             </GroupBox>
 
-                            <GroupBox Header="Safety" Margin="0,8,0,0">
+                            <GroupBox Header="🛡️ Safety &amp; Backup" Margin="0,8,0,0">
                                 <StackPanel>
-                                    <CheckBox x:Name="ChkConfirmBeforeApply" Content="Show confirmation dialog before applying names" />
-                                    <CheckBox x:Name="ChkBackupBeforeRename" Content="Create backup (.bak) of files before renaming" />
+                                    <CheckBox x:Name="ChkConfirmBeforeApply" Content="Ask for confirmation before applying changes" ToolTip="Show a confirmation dialog before applying naming changes" Margin="0,4" />
+                                    <CheckBox x:Name="ChkBackupBeforeRename" Content="Create backup files before renaming (.bak)" ToolTip="Automatically create backup copies of files before renaming operations" Margin="0,4" />
                                 </StackPanel>
                             </GroupBox>
 
-                            <GroupBox Header="Appearance" Margin="0,8,0,0">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <Label Content="Theme:" VerticalAlignment="Center" />
-                                    <ComboBox x:Name="ThemeComboBox" Width="260" Margin="8,0,0,0">
-                                        <ComboBoxItem IsSelected="True">Match SolidWorks (Default)</ComboBoxItem>
-                                        <ComboBoxItem>Light</ComboBoxItem>
-                                        <ComboBoxItem>Dark</ComboBoxItem>
-                                    </ComboBox>
+                            <GroupBox Header="🎨 Appearance" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Label Content="UI Theme:" VerticalAlignment="Center" Width="80" />
+                                        <ComboBox x:Name="ThemeComboBox" Width="280" Margin="8,0,0,0">
+                                            <ComboBoxItem IsSelected="True">Auto (Match SolidWorks)</ComboBoxItem>
+                                            <ComboBoxItem>Light Mode</ComboBoxItem>
+                                            <ComboBoxItem>Dark Mode</ComboBoxItem>
+                                        </ComboBox>
+                                    </StackPanel>
+                                    <TextBlock Text="Changes will apply after restarting SolidWorks" Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="88,4,0,0" />
                                 </StackPanel>
                             </GroupBox>
 
@@ -140,24 +144,24 @@
                         </StackPanel>
 
                         <StackPanel x:Name="MongoPanel" Visibility="Collapsed">
-                            <Label Content="Database Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                            <TextBlock Text="Configure your MongoDB database connection for storing CAD data and AI training examples" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
 
                             <TabControl Margin="0,8,0,0" Background="Transparent">
-                                <TabItem Header="Simple">
+                                <TabItem Header="Connection Setup">
                                     <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
                                         <StackPanel>
-                                            <Label Content="Connection Builder" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                                            <TextBlock Text="Database Connection" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
 
-                                            <Label Content="Host / Server" />
-                                            <TextBox x:Name="DbHostTextBox" Height="28" Text="localhost" />
+                                            <Label Content="Server Address" ToolTip="MongoDB server hostname or IP address" />
+                                            <TextBox x:Name="DbHostTextBox" Height="28" Text="localhost" ToolTip="Enter localhost for local database or remote server address" />
 
-                                            <Label Content="Port" />
-                                            <TextBox x:Name="DbPortTextBox" Height="28" Text="27017" />
+                                            <Label Content="Port Number" Margin="0,6,0,0" />
+                                            <TextBox x:Name="DbPortTextBox" Height="28" Text="27017" ToolTip="Default MongoDB port is 27017" />
 
-                                            <Label Content="Authentication" />
-                                            <ComboBox x:Name="DbAuthComboBox" SelectedValuePath="Tag" Height="28">
-                                                <ComboBoxItem Tag="None" IsSelected="True">None</ComboBoxItem>
-                                                <ComboBoxItem Tag="UserPass">Username/Password</ComboBoxItem>
+                                            <Label Content="Authentication Method" Margin="0,6,0,0" />
+                                            <ComboBox x:Name="DbAuthComboBox" SelectedValuePath="Tag" Height="28" ToolTip="Choose authentication type">
+                                                <ComboBoxItem Tag="None" IsSelected="True">None (Local Development)</ComboBoxItem>
+                                                <ComboBoxItem Tag="UserPass">Username &amp; Password</ComboBoxItem>
                                             </ComboBox>
 
                                             <StackPanel x:Name="AuthFields" Margin="0,6,0,0">
@@ -200,12 +204,13 @@
                         </StackPanel>
 
                         <StackPanel x:Name="ApiKeysPanel" Visibility="Collapsed">
-                            <Label Content="LLM Providers" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                            <TextBlock Text="Choose your AI language model provider for intelligent CAD feature generation" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
 
                             <!-- Provider Toggle -->
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <RadioButton x:Name="GeminiRadio" Content="Google Gemini (Cloud)" GroupName="Provider" IsChecked="True" />
-                                <RadioButton x:Name="LmStudioRadio" Content="LM Studio (Local)" GroupName="Provider" Margin="12,0,0,0" />
+                            <Label Content="AI Provider" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <RadioButton x:Name="GeminiRadio" Content="☁️ Google Gemini (Cloud-based)" GroupName="Provider" IsChecked="True" ToolTip="Use Google's cloud AI service (requires API key)" />
+                                <RadioButton x:Name="LmStudioRadio" Content="💻 LM Studio (Local)" GroupName="Provider" Margin="16,0,0,0" ToolTip="Use locally hosted AI models (privacy-focused)" />
                             </StackPanel>
 
                             <!-- Dynamic Content Area -->
@@ -224,9 +229,9 @@
                                     </StackPanel.Style>
                                     <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
                                         <StackPanel>
-                                            <Label Content="Google Gemini (Cloud)" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                                            <TextBlock Text="Google Gemini Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
 
-                                            <Label Content="API Key" />
+                                            <Label Content="API Key" ToolTip="Your Google AI Studio API key" />
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -271,10 +276,10 @@
                                     </StackPanel.Style>
                                     <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
                                         <StackPanel>
-                                            <Label Content="LM Studio (Local)" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                                            <TextBlock Text="LM Studio Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
 
-                                            <Label Content="Base URL" />
-                                            <TextBox x:Name="LocalLlmEndpointTextBox" Height="28" Text="http://localhost:1234/v1" />
+                                            <Label Content="Server URL" ToolTip="LM Studio local server endpoint" />
+                                            <TextBox x:Name="LocalLlmEndpointTextBox" Height="28" Text="http://localhost:1234/v1" ToolTip="Default LM Studio endpoint" />
 
                                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,0">
                                                 <Label Content="Model" VerticalAlignment="Center" />
@@ -296,76 +301,103 @@
                         </StackPanel>
 
                         <StackPanel x:Name="AccountPanel" Visibility="Collapsed">
-                            <Label Content="User Account" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
+                            <Label Content="User Account" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" Margin="0,0,0,8" />
 
-                            <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
+                            <!-- Signed Out State -->
+                            <Border x:Name="SignedOutCard" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="20" CornerRadius="{StaticResource StandardCornerRadius}" Visibility="Visible">
+                                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                                    <Border Width="80" Height="80" Background="{StaticResource BorderLightBrush}" CornerRadius="40" HorizontalAlignment="Center" Margin="0,0,0,16">
+                                        <TextBlock Text="👤" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="36" />
+                                    </Border>
+                                    <TextBlock Text="Sign in to sync your account" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                                    <TextBlock Text="Connect with Google to access cloud features and sync your settings" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="400" Margin="0,0,0,20" />
+                                    <Button x:Name="GoogleSignInButton" Content="Sign in with Google" Style="{StaticResource PrimaryButton}" Click="GoogleSignIn_Click" Padding="20,10" />
+                                </StackPanel>
+                            </Border>
+
+                            <!-- Signed In State -->
+                            <Border x:Name="SignedInCard" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="20" CornerRadius="{StaticResource StandardCornerRadius}" Visibility="Collapsed">
                                 <StackPanel>
-                                    <Label Content="Account Details" FontWeight="SemiBold" />
-
-                                    <Label Content="Display Name" />
-                                    <TextBox x:Name="DisplayNameTextBox" Height="28" />
-
-                                    <Label Content="Email" />
-                                    <TextBox x:Name="EmailTextBox" Height="28" />
-
-                                    <Label Content="Avatar" />
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Width="64" Height="64" Background="{StaticResource BorderLightBrush}" CornerRadius="6" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                    <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
+                                        <Border Width="64" Height="64" Background="{StaticResource BorderLightBrush}" CornerRadius="32" VerticalAlignment="Top">
                                             <TextBlock Text="👤" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="28" />
                                         </Border>
-                                        <StackPanel Margin="12,0,0,0">
-                                            <Button x:Name="GoogleSignInButton" Content="Sign in with Google" Style="{StaticResource PrimaryButton}" Click="GoogleSignIn_Click" />
-                                            <Button x:Name="GoogleSignOutButton" Content="Sign out" Style="{StaticResource FlatNavButton}" Click="GoogleSignOut_Click" IsEnabled="False" Margin="0,6,0,0" />
+                                        <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
+                                            <TextBlock x:Name="DisplayNameText" Text="" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4" />
+                                            <TextBlock x:Name="EmailText" Text="" Foreground="{StaticResource TextMutedBrush}" FontSize="14" />
                                         </StackPanel>
                                     </StackPanel>
 
-                                    <TextBlock Text="Note: Google sign-in UI is added here for the mockup and is not wired to backend authentication yet." Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                                    <Separator Margin="0,0,0,16" Background="{StaticResource BorderLightBrush}" />
+
+                                    <Label Content="Display Name" FontSize="12" Foreground="{StaticResource TextMutedBrush}" Padding="0,0,0,4" />
+                                    <TextBox x:Name="DisplayNameTextBox" Height="32" Margin="0,0,0,12" IsReadOnly="True" Background="{StaticResource PanelBackground}" />
+
+                                    <Label Content="Email" FontSize="12" Foreground="{StaticResource TextMutedBrush}" Padding="0,0,0,4" />
+                                    <TextBox x:Name="EmailTextBox" Height="32" Margin="0,0,0,16" IsReadOnly="True" Background="{StaticResource PanelBackground}" />
+
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="GoogleSignOutButton" Content="Sign out" Style="{StaticResource FlatNavButton}" Click="GoogleSignOut_Click" Padding="12,8" />
+                                    </StackPanel>
                                 </StackPanel>
                             </Border>
                         </StackPanel>
 
                         <StackPanel x:Name="NameEasyPanel" Visibility="Collapsed">
-                            <Label Content="NameEasy Settings" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
-                            <Label Content="Preset Folder" />
-                            <TextBox x:Name="NameEasyFolderTextBox" Height="28" />
-                            <StackPanel Orientation="Vertical" Margin="0,8,0,0">
-                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                    <CheckBox x:Name="ChkAutoUpdateMaterial" Content="Auto update Material" Margin="0,0,12,0" />
-                                    <CheckBox x:Name="ChkAutoUpdateDescription" Content="Auto-update Description" />
+                            <TextBlock Text="Configure smart naming presets and automatic metadata updates" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
+                            
+                            <GroupBox Header="📁 Naming Presets" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <Label Content="Preset Folder Location" />
+                                    <TextBox x:Name="NameEasyFolderTextBox" Height="28" ToolTip="Folder containing naming preset templates" />
+                                    <Button x:Name="BrowseNameEasyButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseNameEasyButton_Click" HorizontalAlignment="Left" Margin="0,6,0,0" />
                                 </StackPanel>
+                            </GroupBox>
+                            
+                            <GroupBox Header="🔄 Auto-Update Options" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="ChkAutoUpdateMaterial" Content="Automatically update Material properties" ToolTip="Auto-fill material information when naming parts" Margin="0,4" />
+                                    <CheckBox x:Name="ChkAutoUpdateDescription" Content="Automatically update Description field" ToolTip="Auto-fill description based on naming patterns" Margin="0,4" />
+                                </StackPanel>
+                            </GroupBox>
+                            
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
 
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                    <Button x:Name="BrowseNameEasyButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseNameEasyButton_Click" />
-                                    <Button x:Name="SaveNameEasyButton" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveNameEasyButton_Click" Margin="8,0,0,0" />
-                                </StackPanel>
+                                <Button x:Name="SaveNameEasyButton" Content="Save Changes" Style="{StaticResource PrimaryButton}" Click="SaveNameEasyButton_Click" />
                             </StackPanel>
                         </StackPanel>
 
                         <StackPanel x:Name="SamplesPanel" Visibility="Collapsed">
-                            <Label Content="Context Examples" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" />
-                            <Label Content="Samples JSONL File" />
-                            <TextBox x:Name="SamplesFileTextBox" Height="28" />
-                            <Label Content="Example Mode" />
-                            <StackPanel Orientation="Horizontal">
-                                <RadioButton x:Name="SampleModeZeroRadio" Content="Zero-shot" GroupName="SampleMode" />
-                                <RadioButton x:Name="SampleModeOneRadio" Content="One-shot" GroupName="SampleMode" Margin="8,0,0,0" />
-                                <RadioButton x:Name="SampleModeFewRadio" Content="Few-shot" GroupName="SampleMode" Margin="8,0,0,0" />
-                            </StackPanel>
+                            <TextBlock Text="Configure AI training examples to improve recognition accuracy" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
+                            
+                            <GroupBox Header="📂 Training Data Source" Margin="0,0,0,8">
+                                <StackPanel>
+                                    <Label Content="Examples Database File (JSONL)" />
+                                    <TextBox x:Name="SamplesFileTextBox" Height="28" ToolTip="Path to JSONL file containing training examples" />
+                                    <Button x:Name="BrowseSamplesButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseSamplesButton_Click" HorizontalAlignment="Left" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </GroupBox>
+                            
+                            <GroupBox Header="🎯 Learning Mode" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Choose how many examples the AI uses for learning:" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
+                                    <RadioButton x:Name="SampleModeZeroRadio" Content="Zero-shot (No examples - fastest)" GroupName="SampleMode" ToolTip="AI generates features without examples" Margin="0,4" />
+                                    <RadioButton x:Name="SampleModeOneRadio" Content="One-shot (Single example)" GroupName="SampleMode" ToolTip="AI learns from one example" Margin="0,4" />
+                                    <RadioButton x:Name="SampleModeFewRadio" Content="Few-shot (Multiple examples - most accurate)" GroupName="SampleMode" ToolTip="AI learns from multiple examples" Margin="0,4" />
+                                </StackPanel>
+                            </GroupBox>
 
-                            <StackPanel Orientation="Vertical" Margin="0,8,0,0">
-                                <CheckBox x:Name="ChkUseFewShot" Content="Enable Few-shot Examples" />
-                                <CheckBox x:Name="ChkForceKeyShots" Content="Prefer Key Shots Only (force key shots)" Margin="0,4,0,0" />
-                                <CheckBox x:Name="ChkForceStaticFewShot" Content="Force Static Built-in Examples (ignore DB)" Margin="0,4,0,0" />
-                            </StackPanel>
+                            <GroupBox Header="⚙️ Advanced Options" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="ChkUseFewShot" Content="Enable few-shot learning" ToolTip="Use multiple examples to improve AI accuracy" Margin="0,4" />
+                                    <CheckBox x:Name="ChkForceKeyShots" Content="Use only key/important examples" ToolTip="Prioritize high-quality curated examples" Margin="0,4" />
+                                    <CheckBox x:Name="ChkForceStaticFewShot" Content="Use built-in examples (ignore database)" ToolTip="Use hardcoded examples instead of database" Margin="0,4" />
+                                    <CheckBox x:Name="RandomizeSamplesCheckBox" Content="Randomize example selection" ToolTip="Randomly select examples for variety" Margin="0,4" />
+                                </StackPanel>
+                            </GroupBox>
 
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,0">
-                                <Label Content="Randomize Samples" VerticalAlignment="Center" />
-                                <CheckBox x:Name="RandomizeSamplesCheckBox" Content="Yes" Margin="8,0,0,0" VerticalAlignment="Center" />
-                            </StackPanel>
-
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button x:Name="BrowseSamplesButton" Content="Browse..." Style="{StaticResource FlatNavButton}" Click="BrowseSamplesButton_Click" />
-                                <Button x:Name="SaveSamplesButton" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveSamplesButton_Click" Margin="8,0,0,0" />
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <Button x:Name="SaveSamplesButton" Content="Save Changes" Style="{StaticResource PrimaryButton}" Click="SaveSamplesButton_Click" />
                             </StackPanel>
                         </StackPanel>
                     </Grid>

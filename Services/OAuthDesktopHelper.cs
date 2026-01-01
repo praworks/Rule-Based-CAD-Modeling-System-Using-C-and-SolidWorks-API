@@ -16,7 +16,7 @@ namespace AICAD.Services
     // Usage: call OAuthDesktopHelper.AuthorizeAsync(clientId, scopes) to get a JSON token response.
     public static class OAuthDesktopHelper
     {
-        public static async Task<string> AuthorizeAsync(string clientId, string[] scopes)
+        public static async Task<string> AuthorizeAsync(string clientId, string[] scopes, string clientSecret = null)
         {
             if (string.IsNullOrWhiteSpace(clientId)) throw new ArgumentException(nameof(clientId));
             var codeVerifier = RandomString(64);
@@ -49,12 +49,12 @@ namespace AICAD.Services
                 if (string.IsNullOrEmpty(code)) throw new InvalidOperationException("No code returned");
 
                 // Exchange code for tokens
-                var token = await ExchangeCodeAsync(code, clientId, codeVerifier, redirect).ConfigureAwait(false);
+                var token = await ExchangeCodeAsync(code, clientId, codeVerifier, redirect, clientSecret).ConfigureAwait(false);
                 return token;
             }
         }
 
-        private static async Task<string> ExchangeCodeAsync(string code, string clientId, string codeVerifier, string redirect)
+        private static async Task<string> ExchangeCodeAsync(string code, string clientId, string codeVerifier, string redirect, string clientSecret = null)
         {
             using (var http = new HttpClient())
             {
@@ -66,6 +66,10 @@ namespace AICAD.Services
                     ["grant_type"] = "authorization_code",
                     ["redirect_uri"] = redirect
                 };
+                if (!string.IsNullOrWhiteSpace(clientSecret))
+                {
+                    dict["client_secret"] = clientSecret;
+                }
                 var content = new FormUrlEncodedContent(dict);
                 var resp = await http.PostAsync("https://oauth2.googleapis.com/token", content).ConfigureAwait(false);
                 var text = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);

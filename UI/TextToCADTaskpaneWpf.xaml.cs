@@ -175,6 +175,7 @@ namespace AICAD.UI
         private FileDbLogger _fileLogger;
         private MongoLogger _mongoLogger;
         private IGoodFeedbackStore _goodStore;
+        private DataApiService _dataApiService;
         private StatusWindow _statusWindow;
         private TimeSpan _lastLlm = TimeSpan.Zero;
         private TimeSpan _lastTotal = TimeSpan.Zero;
@@ -1240,6 +1241,51 @@ namespace AICAD.UI
                 {
                     SetDbStatus("File/SQLite ready", Colors.DarkGreen);
                     AppendStatusLine("[DB] Logging using File/SQLite at: " + baseDir);
+                }
+
+                // Initialize Data API for feedback collection
+                try
+                {
+                    string dataApiEndpoint = System.Environment.GetEnvironmentVariable("DATA_API_ENDPOINT", EnvironmentVariableTarget.User);
+                    string dataApiKey = System.Environment.GetEnvironmentVariable("DATA_API_KEY", EnvironmentVariableTarget.User);
+                    
+                    if (string.IsNullOrWhiteSpace(dataApiEndpoint))
+                    {
+                        // Use default endpoint with provided keys
+                        dataApiEndpoint = "https://data.mongodb-api.com/app/pedkniqj/endpoint/data/v1";
+                    }
+                    if (string.IsNullOrWhiteSpace(dataApiKey))
+                    {
+                        // Use provided private key as default
+                        dataApiKey = "3b65c98d-3603-433d-bf2d-d4840aecc97c";
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(dataApiEndpoint) && !string.IsNullOrWhiteSpace(dataApiKey))
+                    {
+                        _dataApiService = new DataApiService(dataApiEndpoint, dataApiKey);
+                        AppendStatusLine("[DB] Data API initialized");
+
+                        var testTask = _dataApiService.TestConnectionAsync();
+                        testTask.ContinueWith(t =>
+                        {
+                            Dispatcher.BeginInvoke(new Action(() =>
+                            {
+                                if (t.Status == TaskStatus.RanToCompletion && t.Result)
+                                {
+                                    SetDbStatus("Data API ready", Colors.DarkGreen);
+                                    AppendStatusLine("[DB] Data API connection verified");
+                                }
+                                else
+                                {
+                                    AppendStatusLine("[DB] Data API test failed: " + (_dataApiService?.LastError ?? t?.Exception?.Message));
+                                }
+                            }));
+                        }, TaskScheduler.Default);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AppendDetailedStatus("DB:init", "DataApiService init exception", ex);
                 }
             }
             catch (Exception ex)
@@ -3107,6 +3153,23 @@ namespace AICAD.UI
                         SetDbStatus("GoodStore error: " + _goodStore.LastError, Colors.Firebrick);
                     }
                 }
+
+                // Post feedback via Data API (no credentials needed from users)
+                if (up && _dataApiService != null)
+                {
+                    string plan = ExtractRawJson(_lastReply ?? "{}");
+                    var apiSaved = await _dataApiService.InsertFeedbackAsync(_lastRunId, _lastPrompt, _lastModel, plan, true);
+                    if (apiSaved)
+                    {
+                        SetDbStatus("✓ Feedback sent to company database", Colors.DarkGreen);
+                        AppendStatusLine("[Feedback] Successfully posted to Data API");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_dataApiService.LastError))
+                    {
+                        AppendStatusLine("[Feedback] Data API error: " + _dataApiService.LastError);
+                    }
+                }
+
                 if (_stepStore != null)
                 {
                     var s2ok = await _stepStore.SaveFeedbackAsync(_lastRunId, up, null);

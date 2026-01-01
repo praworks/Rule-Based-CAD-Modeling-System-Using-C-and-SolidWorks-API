@@ -128,6 +128,25 @@
                                 </StackPanel>
                             </GroupBox>
 
+                            <GroupBox Header="☁️ Data API (Cloud Feedback)" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Post feedback to MongoDB without passwords" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
+                                    
+                                    <Label Content="API Endpoint" ToolTip="MongoDB Data API endpoint URL" />
+                                    <TextBox x:Name="DataApiEndpointTextBox" Height="28" Text="https://data.mongodb-api.com/app/pedkniqj/endpoint/data/v1" ToolTip="Default endpoint for AI-CAD" />
+                                    
+                                    <Label Content="API Key" Margin="0,6,0,0" ToolTip="MongoDB Data API access key" />
+                                    <PasswordBox x:Name="DataApiKeyPasswordBox" Height="28" ToolTip="Your secure API key" />
+                                    
+                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                        <Button x:Name="TestDataApiButton" Content="Test Connection" Click="TestDataApi_Click" Style="{StaticResource FlatNavButton}" />
+                                        <Button x:Name="SaveDataApiButton" Content="Save API Settings" Click="SaveDataApi_Click" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0" />
+                                    </StackPanel>
+                                    
+                                    <TextBlock x:Name="DataApiStatusTextBlock" Text="" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,6,0,0" />
+                                </StackPanel>
+                            </GroupBox>
+
                             <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />

@@ -10,6 +10,7 @@ using Newtonsoft.Json.Linq;
 using System.Text;
 using System.Diagnostics;
 using System.Linq;
+using AICAD.Services;
 
 namespace AICAD.UI
 {
@@ -47,6 +48,7 @@ namespace AICAD.UI
                 TryUseSecretsClientFile();
                 LoadMongoButton_Click(null, null);
                 LoadApiButton_Click(null, null);
+                LoadDataApiSettings();
                 try { LoadSamplesButton_Click(null, null); } catch { }
                 try { LoadNameEasySettings(); } catch { }
                 try { LoadAccountInfo(); } catch { }
@@ -582,6 +584,67 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show("Failed to save samples settings: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LoadDataApiSettings()
+        {
+            try
+            {
+                var endpoint = Environment.GetEnvironmentVariable("DATA_API_ENDPOINT", EnvironmentVariableTarget.User);
+                var apiKey = Environment.GetEnvironmentVariable("DATA_API_KEY", EnvironmentVariableTarget.User);
+                DataApiEndpointTextBox.Text = string.IsNullOrWhiteSpace(endpoint)
+                    ? "https://data.mongodb-api.com/app/pedkniqj/endpoint/data/v1"
+                    : endpoint;
+                DataApiKeyPasswordBox.Password = string.IsNullOrWhiteSpace(apiKey)
+                    ? "3b65c98d-3603-433d-bf2d-d4840aecc97c"
+                    : apiKey;
+                DataApiStatusTextBlock.Text = string.Empty;
+            }
+            catch { }
+        }
+
+        private void SaveDataApi_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("DATA_API_ENDPOINT", DataApiEndpointTextBox.Text ?? string.Empty, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("DATA_API_KEY", DataApiKeyPasswordBox.Password ?? string.Empty, EnvironmentVariableTarget.User);
+
+                DataApiStatusTextBlock.Text = "Saved! Restart SolidWorks.";
+                DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                System.Windows.MessageBox.Show("Data API settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                DataApiStatusTextBlock.Text = "Save failed: " + ex.Message;
+                DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
+            }
+        }
+
+        private async void TestDataApi_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var endpoint = DataApiEndpointTextBox.Text?.Trim();
+                var apiKey = DataApiKeyPasswordBox.Password;
+                var service = new DataApiService(endpoint, apiKey);
+                var ok = await service.TestConnectionAsync();
+                if (ok)
+                {
+                    DataApiStatusTextBlock.Text = "Connection verified!";
+                    DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                }
+                else
+                {
+                    DataApiStatusTextBlock.Text = "Test failed: " + service.LastError;
+                    DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
+                }
+            }
+            catch (Exception ex)
+            {
+                DataApiStatusTextBlock.Text = "Test exception: " + ex.Message;
+                DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
             }
         }
 

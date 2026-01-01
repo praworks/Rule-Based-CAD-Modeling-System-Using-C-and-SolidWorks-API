@@ -10,7 +10,6 @@ namespace AICAD.Services
         public static event Action<string> OnLog;
 
     private static readonly object _sync = new object();
-    private static readonly string _filePath = Path.Combine(Path.GetTempPath(), "AI_CAD_Addin.log");
 
         public static void Log(string category, string message)
         {
@@ -36,7 +35,8 @@ namespace AICAD.Services
             {
                 lock (_sync)
                 {
-                    File.AppendAllText(_filePath, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
+                    var txt = DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine;
+                    TempFileWriter.AppendAllText("AI_CAD_Addin.log", txt);
                 }
             }
             catch { }

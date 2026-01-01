@@ -233,7 +233,19 @@ namespace AICAD
                 // Default to enabled unless explicitly set to a non-"1" value
                 if (!string.IsNullOrEmpty(enable) && enable != "1") return;
 
-                var fname = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"AICAD_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}.dmp");
+                if (TempFileWriter.Disabled)
+                {
+                    try { AddinStatusLogger.Log("MiniDump", "MiniDump skipped because AICAD_DISABLE_TEMP_WRITES=1"); } catch { }
+                    return;
+                }
+
+                var fname = TempFileWriter.GetPath($"AICAD_{DateTime.UtcNow:yyyyMMdd_HHmmss_fff}.dmp");
+                if (string.IsNullOrEmpty(fname))
+                {
+                    try { AddinStatusLogger.Log("MiniDump", "MiniDump path unavailable"); } catch { }
+                    return;
+                }
+
                 using (var fs = System.IO.File.Create(fname))
                 {
                     var proc = System.Diagnostics.Process.GetCurrentProcess();

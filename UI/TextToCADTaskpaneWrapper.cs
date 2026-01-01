@@ -3,6 +3,7 @@ using System.Windows.Forms.Integration;
 using System.Windows.Forms;
 using System.IO;
 using SolidWorks.Interop.sldworks;
+using AICAD.Services;
 
 namespace AICAD.UI
 {
@@ -189,8 +190,8 @@ namespace AICAD.UI
         {
             try
             {
-                var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
-                System.IO.File.AppendAllText(path, DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine);
+                var txt = DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine;
+                TempFileWriter.AppendAllText("AICAD_Keys.log", txt);
                 // try { AICAD.Services.AddinStatusLogger.Log("Key", line); } catch { }
             }
             catch { }

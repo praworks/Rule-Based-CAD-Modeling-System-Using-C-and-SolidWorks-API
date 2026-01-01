@@ -580,9 +580,8 @@ namespace AICAD.UI
             try
             {
                 var idx = shapePreset.SelectedIndex;
-                var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_preset_selection.log");
                 var sel = shapePreset.SelectedItem as System.Windows.Controls.ComboBoxItem;
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] SelectionChanged: idx={idx}, selTag={(sel?.Tag==null?"null":"set")}, _promptPresets.Count={_promptPresets?.Count ?? -1}\n");
+                TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] SelectionChanged: idx={idx}, selTag={(sel?.Tag==null?"null":"set")}, _promptPresets.Count={_promptPresets?.Count ?? -1}\n");
 
                 if (sel == null || sel.Tag == null)
                 {
@@ -595,17 +594,17 @@ namespace AICAD.UI
                             var itemFb = _promptPresets[idx - 1];
                             var promptFb = itemFb["prompt"]?.ToString() ?? string.Empty;
                             PromptText = promptFb;
-                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback set prompt (index): '{promptFb}'\n");
+                            TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Fallback set prompt (index): '{promptFb}'\n");
                             return;
                         }
                         catch (Exception ex)
                         {
-                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback parse failed: {ex.Message}\n");
+                            TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Fallback parse failed: {ex.Message}\n");
                         }
                     }
 
                     PromptText = string.Empty;
-                    System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Clearing prompt text\n");
+                    TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Clearing prompt text\n");
                     return;
                 }
 
@@ -624,28 +623,27 @@ namespace AICAD.UI
                             var itemFb = _promptPresets[idx - 1];
                             var promptFb = itemFb["prompt"]?.ToString() ?? string.Empty;
                             PromptText = promptFb;
-                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback set prompt (index2): '{promptFb}'\n");
+                            TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Fallback set prompt (index2): '{promptFb}'\n");
                             return;
                         }
                         catch (Exception ex)
                         {
-                            System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Fallback parse failed2: {ex.Message}\n");
+                            TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Fallback parse failed2: {ex.Message}\n");
                         }
                     }
 
                     PromptText = string.Empty;
-                    System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Clearing prompt text (tag parse failed)\n");
+                    TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Clearing prompt text (tag parse failed)\n");
                     return;
                 }
 
                 var prompt = item["prompt"]?.ToString() ?? string.Empty;
                 PromptText = prompt;
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Set prompt: '{prompt}'\n");
+                TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Set prompt: '{prompt}'\n");
             }
             catch (Exception ex)
             {
-                var logPath = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_preset_selection.log");
-                System.IO.File.AppendAllText(logPath, $"[{DateTime.UtcNow:O}] Exception: {ex.Message}\n");
+                TempFileWriter.AppendAllText("AICAD_preset_selection.log", $"[{DateTime.UtcNow:O}] Exception: {ex.Message}\n");
             }
         }
 
@@ -656,7 +654,7 @@ namespace AICAD.UI
                 string[] candidateNames = new[] { "PromtPreset.json", "PromptPreset.json" };
                 string baseDir = AppDomain.CurrentDomain.BaseDirectory ?? System.Environment.CurrentDirectory;
                 string found = null;
-                var tempLog = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_preset_load.log");
+                var tempLog = "AICAD_preset_load.log";
                 var sb = new StringBuilder();
                 sb.AppendLine($"[{DateTime.UtcNow:O}] TryLoadPromptPresets start. BaseDir={baseDir}");
 
@@ -773,14 +771,14 @@ namespace AICAD.UI
                             else
                             {
                                 sb.AppendLine($"[{DateTime.UtcNow:O}] No embedded preset resource found.");
-                                try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
+                                try { TempFileWriter.AppendAllText(tempLog, sb.ToString()); } catch { }
                                 return;
                             }
                         }
                         catch (Exception ex)
                         {
                             sb.AppendLine($"Embedded resource load failed: {ex.Message}");
-                            try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
+                            try { TempFileWriter.AppendAllText(tempLog, sb.ToString()); } catch { }
                             return;
                         }
                     }
@@ -813,7 +811,7 @@ namespace AICAD.UI
                     shapePreset.SelectedIndex = 0;
                     sb.AppendLine($"[{DateTime.UtcNow:O}] Combo populated with {shapePreset.Items.Count} items");
                 }
-                try { System.IO.File.AppendAllText(tempLog, sb.ToString()); } catch { }
+                try { TempFileWriter.AppendAllText(tempLog, sb.ToString()); } catch { }
             }
             catch { }
         }
@@ -1031,8 +1029,7 @@ namespace AICAD.UI
                 }
                 if (sb.Length > 0)
                 {
-                    var path = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "AICAD_Keys.log");
-                    System.IO.File.AppendAllText(path, sb.ToString());
+                    TempFileWriter.AppendAllText("AICAD_Keys.log", sb.ToString());
                 }
             }
             catch { }

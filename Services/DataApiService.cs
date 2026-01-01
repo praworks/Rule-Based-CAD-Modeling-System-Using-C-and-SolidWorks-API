@@ -1,4 +1,5 @@
 using System;
+using System.Net;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
@@ -13,6 +14,10 @@ namespace AICAD.Services
     /// </summary>
     internal class DataApiService
     {
+        static DataApiService()
+        {
+            ServicePointManager.SecurityProtocol |= SecurityProtocolType.Tls12;
+        }
         private readonly string _apiEndpoint;
         private readonly string _apiKey;
         private readonly string _dataSource = "Cluster0";

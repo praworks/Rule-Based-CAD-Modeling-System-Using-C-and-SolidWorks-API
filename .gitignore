@@ -32,3 +32,9 @@ packages/
 # OS files
 Thumbs.db
 .DS_Store
+ 
+# Secrets and local credentials
+Secrets/
+*.secret
+*.key
+*.pem

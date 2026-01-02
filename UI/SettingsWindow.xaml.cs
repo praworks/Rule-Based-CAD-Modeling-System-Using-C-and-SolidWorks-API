@@ -88,7 +88,29 @@ namespace AICAD.UI
             if (sender is System.Windows.Controls.Button btn && btn.Tag is string tag)
             {
                 contentTitle.Text = btn.Content?.ToString() ?? "";
+                HighlightSelectedNav(btn);
                 ShowPanel(tag);
+            }
+        }
+
+        private void HighlightSelectedNav(System.Windows.Controls.Button selectedButton)
+        {
+            // Reset all nav buttons to default
+            var navButtons = new[] { btnGeneral, btnApiKeys, btnMongo, btnSamples, btnNameEasy, btnAccount };
+            foreach (var btn in navButtons)
+            {
+                if (btn != null)
+                {
+                    btn.FontWeight = FontWeights.SemiBold;
+                    btn.Background = Brushes.Transparent;
+                }
+            }
+
+            // Highlight selected
+            if (selectedButton != null)
+            {
+                selectedButton.FontWeight = FontWeights.Bold;
+                selectedButton.Background = (System.Windows.Media.Brush)FindResource("NavHoverBrush");
             }
         }
 
@@ -111,6 +133,9 @@ namespace AICAD.UI
         {
             try
             {
+                // Highlight General tab by default
+                HighlightSelectedNav(btnGeneral);
+                
                 TryUseSecretsClientFile();
                 LoadMongoButton_Click(null, null);
                 LoadApiButton_Click(null, null);
@@ -452,11 +477,17 @@ namespace AICAD.UI
 
         private async Task TestLocalAsync()
         {
-            UpdateProviderStatus("Local", "Testing...", null);
-            var endpoint = LocalLlmEndpointTextBox.Text?.Trim() ?? string.Empty;
+            // Capture UI values on UI thread before going async
+            string endpoint = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                UpdateProviderStatus("Local", "Testing...", null);
+                endpoint = LocalLlmEndpointTextBox.Text?.Trim() ?? string.Empty;
+            });
+
             if (string.IsNullOrWhiteSpace(endpoint))
             {
-                UpdateProviderStatus("Local", "No endpoint", false);
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Local", "No endpoint", false));
                 return;
             }
 
@@ -467,25 +498,34 @@ namespace AICAD.UI
                     http.Timeout = TimeSpan.FromSeconds(5);
                     var testUrl = endpoint.TrimEnd('/') + "/v1/models";
                     var resp = await http.GetAsync(testUrl).ConfigureAwait(false);
-                    if (resp.IsSuccessStatusCode)
-                        UpdateProviderStatus("Local", "Connected", true);
-                    else
-                        UpdateProviderStatus("Local", $"Error: {resp.StatusCode}", false);
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (resp.IsSuccessStatusCode)
+                            UpdateProviderStatus("Local", "Connected", true);
+                        else
+                            UpdateProviderStatus("Local", $"Error: {resp.StatusCode}", false);
+                    });
                 }
             }
             catch (Exception)
             {
-                UpdateProviderStatus("Local", "Offline", false);
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Local", "Offline", false));
             }
         }
 
         private async Task TestGeminiAsync()
         {
-            UpdateProviderStatus("Gemini", "Testing...", null);
-            var key = GeminiApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
+            // Capture UI values on UI thread before going async
+            string key = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                UpdateProviderStatus("Gemini", "Testing...", null);
+                key = GeminiApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
+            });
+
             if (string.IsNullOrWhiteSpace(key))
             {
-                UpdateProviderStatus("Gemini", "No API Key", false);
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Gemini", "No API Key", false));
                 return;
             }
 
@@ -493,26 +533,34 @@ namespace AICAD.UI
             {
                 var client = new AICAD.Services.GeminiClient(key);
                 var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
-                if (res != null && res.Success)
-                    UpdateProviderStatus("Gemini", "Connected", true);
-                else
-                    UpdateProviderStatus("Gemini", res?.Message ?? "Failed", false);
+                await Dispatcher.InvokeAsync(() =>
+                {
+                    if (res != null && res.Success)
+                        UpdateProviderStatus("Gemini", "Connected", true);
+                    else
+                        UpdateProviderStatus("Gemini", res?.Message ?? "Failed", false);
+                });
             }
             catch (Exception)
             {
-                UpdateProviderStatus("Gemini", "Error", false);
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Gemini", "Error", false));
             }
         }
 
         private async Task TestGroqAsync()
         {
-            UpdateProviderStatus("Groq", "Testing...", null);
-            UpdateGroqUsageStats(); // Update rate limit stats
-            
-            var key = GroqApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
+            // Capture UI values on UI thread before going async
+            string key = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                UpdateProviderStatus("Groq", "Testing...", null);
+                UpdateGroqUsageStats(); // Update rate limit stats
+                key = GroqApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
+            });
+
             if (string.IsNullOrWhiteSpace(key))
             {
-                UpdateProviderStatus("Groq", "No API Key", false);
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Groq", "No API Key", false));
                 return;
             }
 
@@ -523,18 +571,21 @@ namespace AICAD.UI
                     http.Timeout = TimeSpan.FromSeconds(10);
                     http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
                     var resp = await http.GetAsync("https://api.groq.com/openai/v1/models").ConfigureAwait(false);
-                    if (resp.IsSuccessStatusCode)
+                    await Dispatcher.InvokeAsync(() =>
                     {
-                        UpdateProviderStatus("Groq", "Connected", true);
-                        UpdateGroqUsageStats(); // Refresh after test
-                    }
-                    else
-                        UpdateProviderStatus("Groq", $"Error: {resp.StatusCode}", false);
+                        if (resp.IsSuccessStatusCode)
+                        {
+                            UpdateProviderStatus("Groq", "Connected", true);
+                            UpdateGroqUsageStats(); // Refresh after test
+                        }
+                        else
+                            UpdateProviderStatus("Groq", $"Error: {resp.StatusCode}", false);
+                    });
                 }
             }
             catch (Exception ex)
             {
-                UpdateProviderStatus("Groq", $"Error: {ex.Message}", false);
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Groq", $"Error: {ex.Message}", false));
             }
         }
 
@@ -620,10 +671,17 @@ namespace AICAD.UI
         {
             Task.Run(async () =>
             {
-                await TestLocalAsync();
-                await TestGeminiAsync();
-                await TestGroqAsync();
-                UpdateGroqUsageStats(); // Update stats after all tests
+                try
+                {
+                    await TestLocalAsync();
+                    await TestGeminiAsync();
+                    await TestGroqAsync();
+                    await Dispatcher.InvokeAsync(() => UpdateGroqUsageStats()); // Update stats after all tests
+                }
+                catch (Exception ex)
+                {
+                    try { AddinStatusLogger.Error("SettingsWindow", "CheckAllLlmStatuses failed", ex); } catch { }
+                }
             });
         }
 

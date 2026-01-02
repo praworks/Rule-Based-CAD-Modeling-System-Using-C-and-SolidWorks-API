@@ -81,7 +81,7 @@ namespace AICAD.UI
                                     {
                                         anyOk = true;
                                         var txt = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                        AppendStatusLine("[LLM-STATUS] LM Studio OK (" + p + ")");
+                                        AppendStatusLine("[LLM-STATUS] Local LLM OK (" + p + ")");
                                         break;
                                     }
                                 }
@@ -902,29 +902,20 @@ namespace AICAD.UI
                     int pct = (int)Math.Floor(current);
                     if (pct < 1) pct = 1;
                     if (pct > 95) pct = 95;
-                    var bar = MakeProgressBar(pct, 20);
-                    var line = $"[LLM-PROGRESS] {bar} {pct}% Done.";
-                    Console.Write('\r' + line);
+                    // Progress shown in status window only, not console
                     try { await Task.Delay(100, token); } catch (OperationCanceledException) { break; }
                 }
 
                 // Stall at 95% until cancelled
                 if (!token.IsCancellationRequested)
                 {
-                    int pct = 95;
-                    var bar = MakeProgressBar(pct, 20);
-                    var line = $"[LLM-PROGRESS] {bar} {pct}% Done.";
                     while (!token.IsCancellationRequested)
                     {
-                        Console.Write('\r' + line);
                         try { await Task.Delay(500, token); } catch (OperationCanceledException) { break; }
                     }
                 }
 
-                // When cancelled, print final 100% line and lock it in with WriteLine
-                var finalBar = MakeProgressBar(100, 20);
-                var finalLine = $"[LLM-PROGRESS] {finalBar} 100% Done.";
-                Console.WriteLine(finalLine);
+                // Progress tracking complete (shown in status window only)
             }
             catch (Exception)
             {
@@ -1845,7 +1836,7 @@ namespace AICAD.UI
                 if (!string.IsNullOrWhiteSpace(refinedText))
                 {
                     var cleaned = refinedText.Trim();
-                    AppendStatusLine($"[Refine] Original: {rawPrompt}");
+                    AppendStatusLine($"[Refine] User Prompt: {rawPrompt}");
                     AppendStatusLine($"[Refine] Refined: {cleaned}");
                     return cleaned;
                 }
@@ -2015,7 +2006,7 @@ namespace AICAD.UI
             // Prevent re-entry if a build is already running
             if (_isBuilding)
             {
-                AppendStatusLine(StatusConsole.StatusPrefix + " Build already in progress — re-entry prevented");
+                // Silently prevent re-entry (defensive code path)
                 return;
             }
             _isBuilding = true;
@@ -2043,12 +2034,51 @@ namespace AICAD.UI
                 }
 
                 AppendStatusLine("> " + text);
-                // Kick off progress bar animation (realistic phase)
-                StartProgressPhase("communicating");
-                // Start a run section so status console groups this build attempt
+                
+                // Log current settings first
+                try
+                {
+                    var llmPriority = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                                   ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                                   ?? "local,gemini,groq";
+                    var sampleMode = System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.User)
+                                   ?? System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.Process)
+                                   ?? "few";
+                    var promptRefine = System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.Process)
+                                     ?? "disabled";
+                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                     ?? "http://localhost:1234";
+                    var geminiKeyPresent = !string.IsNullOrWhiteSpace(System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User));
+                    var groqKeyPresent = !string.IsNullOrWhiteSpace(System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User));
+                    var tempDir = System.Environment.GetEnvironmentVariable("AICAD_TEMP_DIR", System.EnvironmentVariableTarget.User)
+                               ?? System.Environment.GetEnvironmentVariable("AICAD_TEMP_DIR", System.EnvironmentVariableTarget.Process)
+                               ?? "Documents\\AICAD\\Temp";
+                    var disableTempWrites = System.Environment.GetEnvironmentVariable("AICAD_DISABLE_TEMP_WRITES", System.EnvironmentVariableTarget.User) == "1";
+                    var mongoConnStr = System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.User);
+                    var mongoConnected = !string.IsNullOrWhiteSpace(mongoConnStr);
+                    
+                    AppendStatusLine($"[Settings] Provider Priority: {llmPriority}");
+                    AppendStatusLine($"[Settings] Sample Mode: {sampleMode}");
+                    AppendStatusLine($"[Settings] Prompt Refinement: {promptRefine}");
+                    AppendStatusLine($"[Settings] Local LLM Endpoint: {localEndpoint}");
+                    AppendStatusLine($"[Settings] Gemini API Key: {(geminiKeyPresent ? "Configured" : "Not Set")}");
+                    AppendStatusLine($"[Settings] Groq API Key: {(groqKeyPresent ? "Configured" : "Not Set")}");
+                    AppendStatusLine($"[Settings] MongoDB Connection: {(mongoConnected ? "Connected" : "Not Connected")}");
+                    AppendStatusLine($"[Settings] Temp Directory: {tempDir}");
+                    AppendStatusLine($"[Settings] Temp Writes: {(disableTempWrites ? "Disabled" : "Enabled")}");
+                }
+                catch { }
+                
+                // Divider and Run ID
+                AppendStatusLine("―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――");
                 var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                 _lastRunId = runId;
                 AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----");
+                
+                // Kick off progress bar animation (realistic phase)
+                StartProgressPhase("communicating");
                 // Run quick LLM provider health-check and report status before showing communicating state
                 bool providersOk1 = false;
                 try { providersOk1 = await CheckLlmProvidersAsync().ConfigureAwait(false); } catch { providersOk1 = false; }
@@ -2136,8 +2166,9 @@ namespace AICAD.UI
                     // NOTE: hard-coded static examples removed — rely on DB-provided examples when available.
                     fewshot = new StringBuilder();
 
-                    // Signal we're attempting to apply few-shot examples so the status console can group them underneath
-                    SetRealTimeStatus("Applying few-shot examples…", Colors.DarkOrange);
+                    // Signal we're attempting to apply examples so the status console can group them underneath
+                    var exampleType = maxFewShotCount == 1 ? "one-shot example" : "few-shot examples";
+                    SetRealTimeStatus($"Applying {exampleType}…", Colors.DarkOrange);
 
                     if (forceStaticFewShot)
                     {
@@ -2341,7 +2372,7 @@ namespace AICAD.UI
                 ShowKaraokeScenario("awaiting_response");
                 SetLlmStatus("OK", Colors.DarkGreen);
 
-                SetRealTimeStatus("Executing plan…", Colors.DarkOrange);
+                SetRealTimeStatus("Executing SolidWorks Operation plan…", Colors.DarkOrange);
                 StartProgressPhase("executing");
                 ShowKaraokeScenario("executing");
                 SetSwStatus("Working…", Colors.DarkOrange);

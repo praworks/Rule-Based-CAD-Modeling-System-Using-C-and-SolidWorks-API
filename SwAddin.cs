@@ -398,12 +398,12 @@ namespace AICAD
                 string mass = GetPartMass(doc);
                 string partNo = GetCustomProperty(custPropMgr, "PartNo");
 
-                // Update UI - call LoadFromProperties on the taskpane
+                // Update UI - call LoadFromProperties on the taskpane (suppress logging to avoid duplicates during sync)
                 if (_textToCadControl != null)
                 {
                     try
                     {
-                        _textToCadControl.WpfControl?.LoadFromProperties(material, description, mass, partNo);
+                        _textToCadControl.WpfControl?.LoadFromProperties(material, description, mass, partNo, logOutput: false);
                         // try { AddinStatusLogger.Log("AICadAddin", $"Synced taskpane: Mat={material}, Desc={description}, Mass={mass}, PartNo={partNo}"); } catch { }
                     }
                     catch (Exception uiEx)

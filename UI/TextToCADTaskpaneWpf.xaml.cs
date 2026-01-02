@@ -94,17 +94,17 @@ namespace AICAD.UI
                                 {
                                     var r3 = await http.GetAsync(lmStudioEndpoint).ConfigureAwait(false);
                                     if (r3.IsSuccessStatusCode) anyOk = true;
-                                    AppendStatusLine($"[LLM-STATUS] LM Studio responded {(int)r3.StatusCode}");
+                                    AppendStatusLine($"[LLM-STATUS] Local LLM responded {(int)r3.StatusCode}");
                                 }
                                 catch (Exception ex)
                                 {
-                                    AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
+                                    AppendStatusLine("[LLM-STATUS] Local LLM check failed: " + ex.Message);
                                 }
                             }
                         }
                         catch (Exception ex)
                         {
-                            AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
+                            AppendStatusLine("[LLM-STATUS] Local LLM check failed: " + ex.Message);
                         }
                     }
 
@@ -1646,19 +1646,7 @@ namespace AICAD.UI
 
         private string GetEndpointDisplayName(string endpoint)
         {
-            if (string.IsNullOrWhiteSpace(endpoint)) return "Local LLM";
-            try
-            {
-                var lmStudioEnv = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                   ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                   ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                   ?? "http://127.0.0.1:1234";
-                if (!string.IsNullOrWhiteSpace(lmStudioEnv) && endpoint.IndexOf(lmStudioEnv, StringComparison.OrdinalIgnoreCase) >= 0) return "LM Studio";
-                // common shorthand: if endpoint contains localhost:1234 or 127.0.0.1:1234 treat as LM Studio
-                if (endpoint.IndexOf("127.0.0.1:1234", StringComparison.OrdinalIgnoreCase) >= 0 || endpoint.IndexOf("localhost:1234", StringComparison.OrdinalIgnoreCase) >= 0)
-                    return "LM Studio";
-            }
-            catch { }
+            // Always return generic "Local LLM" for any local endpoint
             return "Local LLM";
         }
 
@@ -2056,8 +2044,16 @@ namespace AICAD.UI
                                ?? System.Environment.GetEnvironmentVariable("AICAD_TEMP_DIR", System.EnvironmentVariableTarget.Process)
                                ?? "Documents\\AICAD\\Temp";
                     var disableTempWrites = System.Environment.GetEnvironmentVariable("AICAD_DISABLE_TEMP_WRITES", System.EnvironmentVariableTarget.User) == "1";
-                    var mongoConnStr = System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.User);
+                    var mongoConnStr = System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.Machine);
                     var mongoConnected = !string.IsNullOrWhiteSpace(mongoConnStr);
+                    
+                    // Advanced settings
+                    var forceStaticFewShot = System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.User) ?? "0";
+                    var useFewShotEnv = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User) ?? "1";
+                    var forceOnlyGoodFeedback = System.Environment.GetEnvironmentVariable("AICAD_FORCE_ONLY_GOOD_FEEDBACK", System.EnvironmentVariableTarget.User) ?? "0";
+                    var trainingDataEnabled = System.Environment.GetEnvironmentVariable("AICAD_TRAINING_DATA_ENABLED", System.EnvironmentVariableTarget.User) ?? "1";
                     
                     AppendStatusLine($"[Settings] Provider Priority: {llmPriority}");
                     AppendStatusLine($"[Settings] Sample Mode: {sampleMode}");
@@ -2068,6 +2064,12 @@ namespace AICAD.UI
                     AppendStatusLine($"[Settings] MongoDB Connection: {(mongoConnected ? "Connected" : "Not Connected")}");
                     AppendStatusLine($"[Settings] Temp Directory: {tempDir}");
                     AppendStatusLine($"[Settings] Temp Writes: {(disableTempWrites ? "Disabled" : "Enabled")}");
+                    
+                    // Training Data & Advanced Options
+                    AppendStatusLine($"[Training] Data Storage Enabled: {(trainingDataEnabled == "1" ? "Yes" : "No")}");
+                    AppendStatusLine($"[Training] Few-shot Examples Enabled: {(useFewShotEnv == "1" ? "Yes" : "No")}");
+                    AppendStatusLine($"[Training] Force Static Few-shot: {(forceStaticFewShot == "1" ? "Yes" : "No")}");
+                    AppendStatusLine($"[Training] Use Only Good Feedback: {(forceOnlyGoodFeedback == "1" ? "Yes" : "No")}");
                 }
                 catch { }
                 
@@ -2179,7 +2181,7 @@ namespace AICAD.UI
                     {
                         if (_goodStore != null)
                         {
-                            var extras = _goodStore.GetRecentFewShots(2);
+                            var extras = _goodStore.GetRecentFewShots(maxFewShotCount);
                             try
                             {
                                 AddinStatusLogger.Log("FewShot", $"GoodStore returned {extras.Count} examples");
@@ -2187,8 +2189,18 @@ namespace AICAD.UI
                                 foreach (var s in extras)
                                 {
                                     i++;
-                                    AddinStatusLogger.Log("FewShot", $"GoodStore example {i}:");
-                                    AddinStatusLogger.Log("FewShot", s);
+                                    AddinStatusLogger.Log("FewShot", $"GoodStore example {i}: (formatted JSON)");
+                                    try
+                                    {
+                                        var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
+                                        var prettyJson = parsed.ToString(Newtonsoft.Json.Formatting.Indented);
+                                        AddinStatusLogger.Log("FewShot", prettyJson);
+                                    }
+                                    catch
+                                    {
+                                        // If JSON parsing fails, log raw
+                                        AddinStatusLogger.Log("FewShot", s);
+                                    }
                                     fewshot.Append(s);
                                 }
                             }
@@ -2205,8 +2217,18 @@ namespace AICAD.UI
                                 foreach (var s in more)
                                 {
                                     j++;
-                                    AddinStatusLogger.Log("FewShot", $"StepStore example {j}:");
-                                    AddinStatusLogger.Log("FewShot", s);
+                                    AddinStatusLogger.Log("FewShot", $"StepStore example {j}: (formatted JSON)");
+                                    try
+                                    {
+                                        var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
+                                        var prettyJson = parsed.ToString(Newtonsoft.Json.Formatting.Indented);
+                                        AddinStatusLogger.Log("FewShot", prettyJson);
+                                    }
+                                    catch
+                                    {
+                                        // If JSON parsing fails, log raw
+                                        AddinStatusLogger.Log("FewShot", s);
+                                    }
                                     fewshot.Append(s);
                                 }
                             }
@@ -2501,6 +2523,20 @@ namespace AICAD.UI
                     SetRealTimeStatus("Creating model…", Colors.DarkOrange);
                     StartProgressPhase("success");
                     SetSwStatus("OK", Colors.DarkGreen);
+                    
+                    // Mark all remaining steps as complete
+                    try
+                    {
+                        SetStepProgress("Building sketch", 100, StepState.Success);
+                        SetStepProgress("Adding features", 100, StepState.Success);
+                        SetStepProgress("Applying constraints", 100, StepState.Success);
+                        SetStepProgress("Running checks", 100, StepState.Success);
+                        SetStepProgress("Saving model", 100, StepState.Success);
+                        SetStepProgress("Updating UI", 100, StepState.Success);
+                        SetStepProgress("Complete", 100, StepState.Success);
+                    }
+                    catch { }
+                    
                     try { SetModified(false); } catch { }
                     // Reset prompt and UI so user can enter a new prompt immediately
                     try
@@ -3020,7 +3056,7 @@ namespace AICAD.UI
             }
         }
 
-        public void LoadFromProperties(string material, string description, string mass, string partNo)
+        public void LoadFromProperties(string material, string description, string mass, string partNo, bool logOutput = true)
         {
             try
             {
@@ -3055,7 +3091,11 @@ namespace AICAD.UI
                     // Don't overwrite preview with partNo - preview is for generated names
                     // If we want to show existing partNo somewhere, add a separate field
                     
-                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Loaded properties: Mat={material}, Desc={description}, Mass={mass}"); } catch { }
+                    // Only log on final calls (post-build sync), not during sync operations
+                    if (logOutput)
+                    {
+                        try { AddinStatusLogger.Log("TaskpaneWpf", $"Loaded properties: Mat={material}, Desc={description}, Mass={mass}"); } catch { }
+                    }
                 });
             }
             catch (Exception ex)

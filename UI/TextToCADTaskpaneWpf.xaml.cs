@@ -412,6 +412,9 @@ namespace AICAD.UI
             // Raise PromptTextChanged for external listeners
             prompt.TextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, new PromptChangedEventArgs(prompt.Text)); } catch { } };
 
+            // Live input validation feedback
+            prompt.TextChanged += Prompt_LiveValidation;
+
             // Build click: if building, treat as Stop request; otherwise start build
             build.Click += async (s, e) =>
             {
@@ -1622,6 +1625,153 @@ namespace AICAD.UI
             AppendStatusLine($"[LLM] {text}");
         }
 
+        /// <summary>
+        /// Update the prompt feedback text with live validation messages
+        /// </summary>
+        private void UpdatePromptFeedback(string message, Color color)
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        promptFeedbackText.Text = message;
+                        promptFeedbackText.Foreground = new SolidColorBrush(color);
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Live validation handler for prompt text changes - provides instant feedback using LLM
+        /// </summary>
+        private void Prompt_LiveValidation(object sender, TextChangedEventArgs e)
+        {
+            try
+            {
+                var text = (prompt.Text ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(text) || text == "Enter prompt...")
+                {
+                    UpdatePromptFeedback("\ud83d\udca1 Describe what you want to create (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm height 80mm')", Colors.Gray);
+                    return;
+                }
+
+                var lowerText = text.ToLower();
+                var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "." };
+
+                // Check for meaningless inputs (quick local check)
+                if (meaninglessWords.Contains(lowerText) || text.Length < 3)
+                {
+                    UpdatePromptFeedback("\u26a0 Inputs such as '" + text + "' not accepted! Try: 'box 50x50x100mm' or 'cylinder radius 20 height 50'", Colors.OrangeRed);
+                    return;
+                }
+
+                // Use LLM for smart validation (async, debounced)
+                _ = ValidatePromptWithLLMAsync(text);
+            }
+            catch { }
+        }
+
+        private System.Threading.CancellationTokenSource _validationCts;
+        private string _lastValidatedText = "";
+
+        /// <summary>
+        /// Use LLM to validate prompt and provide smart suggestions
+        /// </summary>
+        private async Task ValidatePromptWithLLMAsync(string text)
+        {
+            try
+            {
+                // Debounce: only validate if user stopped typing for 800ms
+                if (_lastValidatedText == text) return;
+                
+                try { _validationCts?.Cancel(); } catch { }
+                _validationCts = new System.Threading.CancellationTokenSource();
+                var token = _validationCts.Token;
+
+                await Task.Delay(800, token);
+                _lastValidatedText = text;
+
+                // Quick validation prompt for LLM
+                var validationPrompt = $"Analyze this CAD prompt for errors: \"{text}\". Reply with JSON: {{\"valid\":true/false,\"issue\":\"reason if invalid\",\"suggestion\":\"corrected version or tip\"}}. Only JSON, no markdown.";
+
+                string llmResponse = null;
+                try
+                {
+                    // Try local LLM first (fastest)
+                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                     ?? "http://localhost:1234";
+                    var localClient = new Services.LocalHttpLlmClient(localEndpoint);
+                    llmResponse = await localClient.SendPromptAsync(validationPrompt, token);
+                }
+                catch
+                {
+                    // Fallback to Groq if local fails (fast API)
+                    try
+                    {
+                        var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User);
+                        if (!string.IsNullOrWhiteSpace(groqKey))
+                        {
+                            var groqClient = new Services.GroqLlmClient(groqKey);
+                            llmResponse = await groqClient.SendPromptAsync(validationPrompt, token);
+                        }
+                    }
+                    catch { }
+                }
+
+                if (string.IsNullOrWhiteSpace(llmResponse)) 
+                {
+                    // LLM unavailable - show basic positive feedback
+                    UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
+                    return;
+                }
+
+                // Parse LLM response
+                try
+                {
+                    var json = Newtonsoft.Json.Linq.JObject.Parse(llmResponse.Trim());
+                    var valid = json["valid"]?.Value<bool>() ?? true;
+                    var issue = json["issue"]?.Value<string>() ?? "";
+                    var suggestion = json["suggestion"]?.Value<string>() ?? "";
+
+                    if (!valid && !string.IsNullOrWhiteSpace(suggestion))
+                    {
+                        UpdatePromptFeedback("\u2728 LLM suggests: " + suggestion, Colors.Orange);
+                    }
+                    else if (!valid && !string.IsNullOrWhiteSpace(issue))
+                    {
+                        UpdatePromptFeedback("\u26a0 " + issue, Colors.OrangeRed);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(suggestion))
+                    {
+                        UpdatePromptFeedback("\ud83d\udca1 Tip: " + suggestion, Colors.DodgerBlue);
+                    }
+                    else
+                    {
+                        UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
+                    }
+                }
+                catch
+                {
+                    // JSON parse failed - use raw response as suggestion
+                    if (llmResponse.Length < 200)
+                    {
+                        UpdatePromptFeedback("\ud83d\udca1 " + llmResponse, Colors.DodgerBlue);
+                    }
+                    else
+                    {
+                        UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
+                    }
+                }
+            }
+            catch (TaskCanceledException) { }
+            catch { }
+        }
+
         private void SetDbStatus(string text, Color color)
         {
             _lastDbStatus = text;
@@ -1978,6 +2128,7 @@ namespace AICAD.UI
             if (string.IsNullOrEmpty(text))
             {
                 AppendStatusLine("Enter a prompt describing a simple box or cylinder in mm.");
+                UpdatePromptFeedback("💡 Describe what you want to create (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm height 80mm')", Colors.Gray);
                 return;
             }
 
@@ -1988,6 +2139,7 @@ namespace AICAD.UI
             {
                 AppendStatusLine("❌ Please enter a meaningful CAD description (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm').");
                 SetRealTimeStatus("Invalid prompt", Colors.OrangeRed);
+                UpdatePromptFeedback("⚠ Inputs such as '" + text + "' not accepted! Try: 'box 50x50x100mm' or 'cylinder radius 20 height 50'", Colors.OrangeRed);
                 return;
             }
 
@@ -2011,9 +2163,15 @@ namespace AICAD.UI
                 _lastPrompt = text;
                 
                 // Refine prompt if enabled
+                var originalText = text;
                 try
                 {
                     text = await RefinePromptAsync(text).ConfigureAwait(false);
+                    if (text != originalText)
+                    {
+                        AppendStatusLine($"✨ User input refined automatically! to: {text}");
+                        UpdatePromptFeedback("✅ Input refined: " + text, Colors.Green);
+                    }
                 }
                 catch (Exception refineEx)
                 {

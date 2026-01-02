@@ -310,13 +310,10 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <PasswordBox x:Name="GeminiApiKeyTextBox" Height="28" Grid.Column="0" />
-                                                <Button Content="👁️" Width="34" Height="28" Grid.Column="1" Margin="6,0,0,0" />
+                                                <PasswordBox x:Name="GeminiApiKeyPasswordBox" Height="28" Grid.Column="0" />
+                                                <TextBox x:Name="GeminiApiKeyTextBox" Height="28" Grid.Column="0" Visibility="Collapsed" />
+                                                <Button x:Name="GeminiToggleVisibilityButton" Content="👁️" Width="34" Height="28" Grid.Column="1" Margin="6,0,0,0" Click="ToggleApiKeyVisibility_Click" Tag="Gemini" Style="{StaticResource FlatNavButton}" />
                                             </Grid>
-
-                                            <TextBlock Margin="0,6,0,0">
-                                                <Hyperlink NavigateUri="https://studio.google.com/">Get Key from Google AI Studio</Hyperlink>
-                                            </TextBlock>
 
                                             <Grid Margin="0,12,0,0">
                                                 <Grid.ColumnDefinitions>
@@ -351,7 +348,15 @@
                                             <TextBlock Text="Groq Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
 
                                             <Label Content="API Key" ToolTip="Your Groq API key" />
-                                            <PasswordBox x:Name="GroqApiKeyTextBox" Height="28" />
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <PasswordBox x:Name="GroqApiKeyPasswordBox" Height="28" Grid.Column="0" />
+                                                <TextBox x:Name="GroqApiKeyTextBox" Height="28" Grid.Column="0" Visibility="Collapsed" />
+                                                <Button x:Name="GroqToggleVisibilityButton" Content="👁️" Width="34" Height="28" Grid.Column="1" Margin="6,0,0,0" Click="ToggleApiKeyVisibility_Click" Tag="Groq" Style="{StaticResource FlatNavButton}" />
+                                            </Grid>
 
                                             <Grid Margin="0,12,0,0">
                                                 <Grid.ColumnDefinitions>
@@ -365,16 +370,60 @@
                                                 <Button x:Name="TestGroqButton" Content="Test" Grid.Column="2" Margin="8,0,0,0" Style="{StaticResource FlatNavButton}" Click="TestApiButton_Click" />
                                                 <Button x:Name="ApplyGroqButton" Content="Apply" Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" />
                                             </Grid>
+
+                                            <!-- Groq Rate Limit Usage Stats -->
+                                            <Border Background="#1A4CAF50" BorderBrush="#4CAF50" BorderThickness="1" Padding="8" CornerRadius="4" Margin="0,12,0,0">
+                                                <StackPanel>
+                                                    <Grid>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="*"/>
+                                                            <ColumnDefinition Width="Auto"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="⚡ Rate Limit Protection (Free Tier)" FontWeight="SemiBold" FontSize="12" Foreground="#2E7D32" Grid.Column="0"/>
+                                                        <Button x:Name="ResetGroqLimitsButton" Content="Reset" Grid.Column="1" Padding="4,2" FontSize="10" Click="ResetGroqLimits_Click" ToolTip="Reset rate limit tracking (use if stuck)"/>
+                                                    </Grid>
+                                                    <TextBlock x:Name="GroqUsageStatsText" Text="Loading..." FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                                                    <TextBlock FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap">
+                                                        <Run Text="Limits: 20/min • 300/hour • 12,000/day • 2s delay between requests"/>
+                                                    </TextBlock>
+                                                </StackPanel>
+                                            </Border>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
                             </StackPanel>
 
-                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
-                                <Button x:Name="SaveApiKeysButton" Content="Save All AI Settings" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" />
-                            </StackPanel>
+                            <!-- Prompt Refinement Section -->
+                            <GroupBox Header="✨ Prompt Refinement (Optional)" Margin="0,16,0,0">
+                                <StackPanel Margin="4">
+                                    <TextBlock Text="Automatically improve and clarify user prompts before sending to the main AI" 
+                                               Foreground="{StaticResource TextMutedBrush}" 
+                                               FontSize="12" 
+                                               Margin="0,0,0,8" 
+                                               TextWrapping="Wrap" />
+                                    
+                                    <Label Content="Refinement Provider" FontWeight="SemiBold" />
+                                    <ComboBox x:Name="PromptRefineProviderComboBox" Height="28" Margin="0,4,0,0">
+                                        <ComboBoxItem Tag="disabled" IsSelected="True">Disabled (Use raw user input)</ComboBoxItem>
+                                        <ComboBoxItem Tag="local">💻 Local LM Studio</ComboBoxItem>
+                                        <ComboBoxItem Tag="gemini">☁️ Google Gemini</ComboBoxItem>
+                                        <ComboBoxItem Tag="groq">⚡ Groq</ComboBoxItem>
+                                    </ComboBox>
+                                    
+                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap">
+                                        <Run Text="Note: Refinement adds an extra AI call before generation. Best used with fast providers like Groq or Local LM."/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </GroupBox>
 
-                            <TextBlock x:Name="ApiStatusTextBlock" Text="" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,8,0,0" />
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Button x:Name="SaveApiKeysButton" Content="Save All AI Settings" Grid.Column="0" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" HorizontalAlignment="Left" />
+                                <TextBlock x:Name="ApiStatusTextBlock" Text="" Grid.Column="1" Foreground="{StaticResource TextPrimaryBrush}" Margin="12,0,0,0" VerticalAlignment="Center" />
+                            </Grid>
                         </StackPanel>
 
                         <StackPanel x:Name="AccountPanel" Visibility="Collapsed">

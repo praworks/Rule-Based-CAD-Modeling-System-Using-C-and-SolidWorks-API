@@ -22,6 +22,16 @@ namespace AICAD.Services
 
         public async Task<string> GenerateAsync(string prompt)
         {
+            // Check rate limits BEFORE making the request
+            var rateLimitCheck = GroqRateLimiter.CheckRequest();
+            if (!rateLimitCheck.Allowed)
+            {
+                var waitMsg = rateLimitCheck.SuggestedWait.HasValue 
+                    ? $" (Wait {rateLimitCheck.SuggestedWait.Value.TotalSeconds:F0}s)" 
+                    : "";
+                throw new Exception($"Groq rate limit: {rateLimitCheck.Reason}{waitMsg}");
+            }
+
             var payload = new
             {
                 model = _model,
@@ -37,6 +47,12 @@ namespace AICAD.Services
 
             var response = await _client.SendAsync("https://api.groq.com/openai/v1/chat/completions", payload, CancellationToken.None);
             
+            // Record successful request for rate limiting
+            if (response.Success)
+            {
+                GroqRateLimiter.RecordRequest();
+            }
+
             if (response.Success && response.Json != null)
             {
                 var choices = response.Json["choices"] as JArray;

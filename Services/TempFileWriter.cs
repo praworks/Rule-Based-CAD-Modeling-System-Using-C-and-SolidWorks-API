@@ -11,7 +11,16 @@ namespace AICAD.Services
         {
             var env = Environment.GetEnvironmentVariable("AICAD_TEMP_DIR");
             if (!string.IsNullOrWhiteSpace(env)) return env;
-            return Path.GetTempPath();
+            
+            // Use user's Documents folder to avoid C:\Program Files or system temp
+            try
+            {
+                return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "AICAD", "Temp");
+            }
+            catch
+            {
+                return null; // Disable temp writes if Documents folder unavailable
+            }
         }
 
         public static string GetPath(string filename)

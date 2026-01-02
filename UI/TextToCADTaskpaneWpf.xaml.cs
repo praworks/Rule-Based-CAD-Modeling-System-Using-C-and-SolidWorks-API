@@ -1765,6 +1765,103 @@ namespace AICAD.UI
             return _client;
         }
 
+        private async Task<string> RefinePromptAsync(string rawPrompt)
+        {
+            try
+            {
+                // Check if prompt refinement is enabled
+                var refineProvider = System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.Process)
+                                    ?? "disabled";
+
+                if (refineProvider.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    // No refinement, return raw prompt
+                    return rawPrompt;
+                }
+
+                AppendStatusLine($"[Refine] Improving prompt using {refineProvider}...");
+
+                // System prompt for refinement LLM
+                var refineSystemPrompt =
+                    "You are a prompt refinement assistant for a CAD system. Your job is to take brief user input and expand it into a clear, detailed CAD specification.\n\n" +
+                    "Rules:\n" +
+                    "- If dimensions are missing, suggest reasonable defaults (e.g., 50mm for width/height, 100mm for depth)\n" +
+                    "- Always specify units (millimeters)\n" +
+                    "- Clarify shape type (box, cylinder, etc.)\n" +
+                    "- Fix grammar and spelling\n" +
+                    "- Expand abbreviations\n" +
+                    "- Keep it concise but complete\n\n" +
+                    "Example:\n" +
+                    "Input: 'box'\n" +
+                    "Output: 'Create a rectangular box with width 50mm, height 50mm, and depth 100mm'\n\n" +
+                    "Input: 'cyl r=20'\n" +
+                    "Output: 'Create a cylinder with radius 20mm and height 100mm'\n\n" +
+                    "Now refine this user input:";
+
+                var fullRefinePrompt = refineSystemPrompt + "\n\nUser input: " + rawPrompt + "\n\nRefined prompt:";
+
+                string refinedText = null;
+                
+                // Create appropriate client based on provider
+                if (refineProvider.Equals("local", StringComparison.OrdinalIgnoreCase))
+                {
+                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                       ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                       ?? "http://127.0.0.1:1234";
+                    var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                        ?? "local-model";
+                    
+                    using (var client = new AICAD.Services.LocalHttpLlmClient(localEndpoint, preferredModel, refineSystemPrompt))
+                    {
+                        refinedText = await client.GenerateAsync(fullRefinePrompt).ConfigureAwait(false);
+                    }
+                }
+                else if (refineProvider.Equals("gemini", StringComparison.OrdinalIgnoreCase))
+                {
+                    var apiKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process);
+                    var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                        ?? "gemini-2.0-flash-exp";
+                    
+                    using (var client = new AICAD.Services.GeminiClient(apiKey, preferredModel))
+                    {
+                        refinedText = await client.GenerateAsync(fullRefinePrompt).ConfigureAwait(false);
+                    }
+                }
+                else if (refineProvider.Equals("groq", StringComparison.OrdinalIgnoreCase))
+                {
+                    var apiKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process);
+                    var preferredModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                        ?? "llama-3.3-70b-versatile";
+                    
+                    using (var client = new AICAD.Services.GroqLlmClient(apiKey, preferredModel))
+                    {
+                        refinedText = await client.GenerateAsync(fullRefinePrompt).ConfigureAwait(false);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(refinedText))
+                {
+                    var cleaned = refinedText.Trim();
+                    AppendStatusLine($"[Refine] Original: {rawPrompt}");
+                    AppendStatusLine($"[Refine] Refined: {cleaned}");
+                    return cleaned;
+                }
+                else
+                {
+                    AppendStatusLine("[Refine] Warning: Empty response, using original");
+                    return rawPrompt;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendStatusLine($"[Refine] Error: {ex.Message}, using original prompt");
+                return rawPrompt;
+            }
+        }
+
         private async Task<string> GenerateWithFallbackAsync(string prompt)
         {
             Exception lastEx = null;
@@ -1859,7 +1956,23 @@ namespace AICAD.UI
                 catch (Exception ex)
                 {
                     lastEx = ex;
-                    AppendStatusLine("[LLM] " + provider + " failed: " + ex.Message);
+                    
+                    // Special handling for Groq rate limit errors
+                    if (provider == "groq" && ex.Message.Contains("rate limit"))
+                    {
+                        AppendStatusLine("⚠️ [GROQ RATE LIMIT] " + ex.Message);
+                        AppendStatusLine("💡 Tip: Using Groq free tier - try Local LM or Gemini, or wait before retrying.");
+                        try
+                        {
+                            var stats = AICAD.Services.GroqRateLimiter.GetUsageStats();
+                            AppendStatusLine("📊 " + stats);
+                        }
+                        catch { }
+                    }
+                    else
+                    {
+                        AppendStatusLine("[LLM] " + provider + " failed: " + ex.Message);
+                    }
                 }
             }
 
@@ -1889,6 +2002,16 @@ namespace AICAD.UI
                 return;
             }
 
+            // Reject meaningless or placeholder prompts
+            var lowerText = text.ToLower();
+            var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "enter prompt", "enter prompt...", "...", ".", "," };
+            if (meaninglessWords.Contains(lowerText) || text.Length < 2)
+            {
+                AppendStatusLine("❌ Please enter a meaningful CAD description (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm').");
+                SetRealTimeStatus("Invalid prompt", Colors.OrangeRed);
+                return;
+            }
+
             // Prevent re-entry if a build is already running
             if (_isBuilding)
             {
@@ -1907,6 +2030,18 @@ namespace AICAD.UI
                 // Keep Build button enabled so the user can request Stop
                 try { build.IsEnabled = true; } catch { }
                 _lastPrompt = text;
+                
+                // Refine prompt if enabled
+                try
+                {
+                    text = await RefinePromptAsync(text).ConfigureAwait(false);
+                }
+                catch (Exception refineEx)
+                {
+                    AppendStatusLine($"[Refine] Failed: {refineEx.Message}");
+                    // Continue with original text
+                }
+
                 AppendStatusLine("> " + text);
                 // Kick off progress bar animation (realistic phase)
                 StartProgressPhase("communicating");
@@ -1936,17 +2071,47 @@ namespace AICAD.UI
 
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
                 bool useFewShot = true;
+                int maxFewShotCount = 3; // Default: few-shot uses up to 3 examples
+                
                 try
                 {
+                    // Check the sample mode setting
+                    var sampleMode = System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.User)
+                                   ?? System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.Process)
+                                   ?? "few";
+                    
+                    if (sampleMode == "zero")
+                    {
+                        useFewShot = false;
+                        AppendStatusLine("[Mode] Zero-shot: No examples");
+                    }
+                    else if (sampleMode == "one")
+                    {
+                        useFewShot = true;
+                        maxFewShotCount = 1;
+                        AppendStatusLine("[Mode] One-shot: Using 1 example");
+                    }
+                    else // "few" or default
+                    {
+                        useFewShot = true;
+                        maxFewShotCount = 3;
+                        AppendStatusLine("[Mode] Few-shot: Using up to 3 examples");
+                    }
+                    
+                    // Legacy fallback: check AICAD_USE_FEWSHOT if AICAD_SAMPLE_MODE not set
                     var v = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User)
                             ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Process)
                             ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Machine);
                     if (!string.IsNullOrEmpty(v))
                     {
-                        if (v == "0" || v.Equals("false", StringComparison.OrdinalIgnoreCase)) useFewShot = false;
+                        if (v == "0" || v.Equals("false", StringComparison.OrdinalIgnoreCase)) 
+                        {
+                            useFewShot = false;
+                            AppendStatusLine("[Override] AICAD_USE_FEWSHOT=0: Disabled examples");
+                        }
                     }
                 }
-                catch { useFewShot = true; }
+                catch { useFewShot = true; maxFewShotCount = 3; }
 
                 // If forcing local-only mode, do not feed few-shot examples to the local LLM.
                 if (FORCE_LOCAL_ONLY)
@@ -2001,10 +2166,10 @@ namespace AICAD.UI
                         // If configured to use only the good_feedback store, skip step-store few-shots
                         if (!_forceUseOnlyGoodFeedback && _stepStore != null)
                         {
-                            var more = _stepStore.GetRelevantFewShots(text, 3);
+                            var more = _stepStore.GetRelevantFewShots(text, maxFewShotCount);
                             try
                             {
-                                AddinStatusLogger.Log("FewShot", $"StepStore returned {more.Count} examples");
+                                AddinStatusLogger.Log("FewShot", $"StepStore returned {more.Count} examples (max={maxFewShotCount})");
                                 int j = 0;
                                 foreach (var s in more)
                                 {
@@ -2079,21 +2244,11 @@ namespace AICAD.UI
                 try
                 {
                     InitializeStepProgress(new[] {
-                        "Got your request",
-                        "Preparing inputs",
-                        "Connecting to AI",
-                        "Sending request to AI",
-                        "Waiting for AI response",
-                        "AI responded",
-                        "Reading AI response",
-                        "Checking parameters",
-                        "Building sketch",
-                        "Adding features",
-                        "Applying constraints",
-                        "Running checks",
-                        "Saving model",
-                        "Updating UI",
-                        "Complete"
+                        "Got your request", "Preparing inputs", "Connecting to AI",
+                        "Sending request to AI", "Waiting for AI response", "AI responded",
+                        "Reading AI response", "Checking parameters", "Building sketch",
+                        "Adding features", "Applying constraints", "Running checks",
+                        "Saving model", "Updating UI", "Complete"
                     });
                     // Initialize step entries without hardcoded percent values.
                     // Percents will be updated from runtime events (LLM timer, op callbacks, executor updates).

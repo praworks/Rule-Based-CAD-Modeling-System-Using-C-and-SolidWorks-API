@@ -366,9 +366,20 @@ namespace AICAD.UI
             {
                 LocalLlmEndpointTextBox.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "http://127.0.0.1:1234";
                 // Gemini key is stored in a PasswordBox in the UI
-                try { GeminiApiKeyTextBox.Password = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
-                try { GroqApiKeyTextBox.Password = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
+                try { GeminiApiKeyPasswordBox.Password = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
+                try { GroqApiKeyPasswordBox.Password = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
                 
+                // Load Prompt Refinement Provider
+                var refineProvider = Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", EnvironmentVariableTarget.User) ?? "disabled";
+                foreach (ComboBoxItem item in PromptRefineProviderComboBox.Items)
+                {
+                    if (item.Tag.ToString() == refineProvider)
+                    {
+                        PromptRefineProviderComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
+
                 ApiStatusTextBlock.Text = "Loaded from environment variables";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
 
@@ -386,12 +397,19 @@ namespace AICAD.UI
             try
             {
                 Environment.SetEnvironmentVariable("LOCAL_LLM_ENDPOINT", LocalLlmEndpointTextBox.Text ?? "", EnvironmentVariableTarget.User);
-                try { Environment.SetEnvironmentVariable("GEMINI_API_KEY", GeminiApiKeyTextBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
-                try { Environment.SetEnvironmentVariable("GROQ_API_KEY", GroqApiKeyTextBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("GEMINI_API_KEY", GeminiApiKeyPasswordBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("GROQ_API_KEY", GroqApiKeyPasswordBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
                 
                 // Save Priority
                 var priority = string.Join(",", _providers.Select(p => p.Id));
                 Environment.SetEnvironmentVariable("AICAD_LLM_PRIORITY", priority, EnvironmentVariableTarget.User);
+
+                // Save Prompt Refinement Provider
+                var selectedRefineItem = PromptRefineProviderComboBox.SelectedItem as ComboBoxItem;
+                if (selectedRefineItem != null)
+                {
+                    Environment.SetEnvironmentVariable("PROMPT_REFINE_PROVIDER", selectedRefineItem.Tag.ToString(), EnvironmentVariableTarget.User);
+                }
 
                 ApiStatusTextBlock.Text = "Saved! Restart SolidWorks.";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
@@ -464,7 +482,7 @@ namespace AICAD.UI
         private async Task TestGeminiAsync()
         {
             UpdateProviderStatus("Gemini", "Testing...", null);
-            var key = GeminiApiKeyTextBox.Password?.Trim() ?? string.Empty;
+            var key = GeminiApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(key))
             {
                 UpdateProviderStatus("Gemini", "No API Key", false);
@@ -489,7 +507,9 @@ namespace AICAD.UI
         private async Task TestGroqAsync()
         {
             UpdateProviderStatus("Groq", "Testing...", null);
-            var key = GroqApiKeyTextBox.Password?.Trim() ?? string.Empty;
+            UpdateGroqUsageStats(); // Update rate limit stats
+            
+            var key = GroqApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
             if (string.IsNullOrWhiteSpace(key))
             {
                 UpdateProviderStatus("Groq", "No API Key", false);
@@ -502,16 +522,19 @@ namespace AICAD.UI
                 {
                     http.Timeout = TimeSpan.FromSeconds(10);
                     http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
-                    var resp = await http.GetAsync("https://api.groq.com/v1/models").ConfigureAwait(false);
+                    var resp = await http.GetAsync("https://api.groq.com/openai/v1/models").ConfigureAwait(false);
                     if (resp.IsSuccessStatusCode)
+                    {
                         UpdateProviderStatus("Groq", "Connected", true);
+                        UpdateGroqUsageStats(); // Refresh after test
+                    }
                     else
                         UpdateProviderStatus("Groq", $"Error: {resp.StatusCode}", false);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                UpdateProviderStatus("Groq", "Error", false);
+                UpdateProviderStatus("Groq", $"Error: {ex.Message}", false);
             }
         }
 
@@ -548,6 +571,51 @@ namespace AICAD.UI
             });
         }
 
+        private void UpdateGroqUsageStats()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    var stats = AICAD.Services.GroqRateLimiter.GetUsageStats();
+                    if (GroqUsageStatsText != null)
+                    {
+                        GroqUsageStatsText.Text = stats;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (GroqUsageStatsText != null)
+                    {
+                        GroqUsageStatsText.Text = "Stats unavailable: " + ex.Message;
+                    }
+                }
+            });
+        }
+
+        private void ResetGroqLimits_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var result = System.Windows.MessageBox.Show(
+                    "Reset Groq rate limit tracking? This will clear all usage history.\n\nOnly use this if you're experiencing false rate limit errors.",
+                    "Reset Rate Limits",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    AICAD.Services.GroqRateLimiter.Reset();
+                    UpdateGroqUsageStats();
+                    System.Windows.MessageBox.Show("Rate limit tracking has been reset.", "Reset Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show("Failed to reset: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
         private void CheckAllLlmStatuses()
         {
             Task.Run(async () =>
@@ -555,7 +623,52 @@ namespace AICAD.UI
                 await TestLocalAsync();
                 await TestGeminiAsync();
                 await TestGroqAsync();
+                UpdateGroqUsageStats(); // Update stats after all tests
             });
+        }
+
+        private void ToggleApiKeyVisibility_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn?.Tag is string provider)
+            {
+                if (provider == "Gemini")
+                {
+                    var isPasswordVisible = GeminiApiKeyTextBox.Visibility == Visibility.Visible;
+                    if (isPasswordVisible)
+                    {
+                        // Hide: copy from TextBox to PasswordBox and show PasswordBox
+                        GeminiApiKeyPasswordBox.Password = GeminiApiKeyTextBox.Text;
+                        GeminiApiKeyTextBox.Visibility = Visibility.Collapsed;
+                        GeminiApiKeyPasswordBox.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        // Show: copy from PasswordBox to TextBox and show TextBox
+                        GeminiApiKeyTextBox.Text = GeminiApiKeyPasswordBox.Password;
+                        GeminiApiKeyPasswordBox.Visibility = Visibility.Collapsed;
+                        GeminiApiKeyTextBox.Visibility = Visibility.Visible;
+                    }
+                }
+                else if (provider == "Groq")
+                {
+                    var isPasswordVisible = GroqApiKeyTextBox.Visibility == Visibility.Visible;
+                    if (isPasswordVisible)
+                    {
+                        // Hide: copy from TextBox to PasswordBox and show PasswordBox
+                        GroqApiKeyPasswordBox.Password = GroqApiKeyTextBox.Text;
+                        GroqApiKeyTextBox.Visibility = Visibility.Collapsed;
+                        GroqApiKeyPasswordBox.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        // Show: copy from PasswordBox to TextBox and show TextBox
+                        GroqApiKeyTextBox.Text = GroqApiKeyPasswordBox.Password;
+                        GroqApiKeyPasswordBox.Visibility = Visibility.Collapsed;
+                        GroqApiKeyTextBox.Visibility = Visibility.Visible;
+                    }
+                }
+            }
         }
 
         private void UpdateApiStatus(string text, Color color)
@@ -665,6 +778,9 @@ namespace AICAD.UI
                 // Drive few-shot boolean from the Sample Mode radio buttons: zero-shot -> no few-shot; one/few -> few-shot
                 var useFewFromRadio = (mode == "zero") ? "0" : "1";
                 try { Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", useFewFromRadio, EnvironmentVariableTarget.User); } catch { }
+                
+                // Log for debugging
+                try { System.Diagnostics.Debug.WriteLine($"Sample mode saved: {mode}, AICAD_USE_FEWSHOT={useFewFromRadio}"); } catch { }
                 Environment.SetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", SamplesFileTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
                 // Randomize setting

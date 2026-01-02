@@ -58,6 +58,7 @@
         <Setter Property="VerticalScrollBarVisibility" Value="Auto"/>
         <Setter Property="HorizontalScrollBarVisibility" Value="Auto"/>
         <Setter Property="Padding" Value="6"/>
+        <Setter Property="Block.LineHeight" Value="1"/>
     </Style>
     
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#333333"/>

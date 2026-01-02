@@ -1243,49 +1243,36 @@ namespace AICAD.UI
                     AppendStatusLine("[DB] Logging using File/SQLite at: " + baseDir);
                 }
 
-                // Initialize Data API for feedback collection
+                // Initialize feedback storage: force use of direct MongoDB connection string
                 try
                 {
-                    string dataApiEndpoint = System.Environment.GetEnvironmentVariable("DATA_API_ENDPOINT", EnvironmentVariableTarget.User);
-                    string dataApiKey = System.Environment.GetEnvironmentVariable("DATA_API_KEY", EnvironmentVariableTarget.User);
-                    
-                    if (string.IsNullOrWhiteSpace(dataApiEndpoint))
-                    {
-                        // Use default endpoint with provided keys
-                        dataApiEndpoint = "https://data.mongodb-api.com/app/pedkniqj/endpoint/data/v1";
-                    }
-                    if (string.IsNullOrWhiteSpace(dataApiKey))
-                    {
-                        // Use provided private key as default
-                        dataApiKey = "3b65c98d-3603-433d-bf2d-d4840aecc97c";
-                    }
+                    var mongoConn = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
+                    try { System.Environment.SetEnvironmentVariable("MONGODB_URI", mongoConn, EnvironmentVariableTarget.User); } catch { }
 
-                    if (!string.IsNullOrWhiteSpace(dataApiEndpoint) && !string.IsNullOrWhiteSpace(dataApiKey))
-                    {
-                        _dataApiService = new DataApiService(dataApiEndpoint, dataApiKey);
-                        AppendStatusLine("[DB] Data API initialized");
+                    // DataApiService treats a mongodb:// or mongodb+srv:// endpoint as a direct MongoDB connection.
+                    _dataApiService = new DataApiService(mongoConn, null);
+                    AppendStatusLine("[DB] Direct MongoDB initialized for feedback (Data API disabled)");
 
-                        var testTask = _dataApiService.TestConnectionAsync();
-                        testTask.ContinueWith(t =>
+                    var testTask = _dataApiService.TestConnectionAsync();
+                    testTask.ContinueWith(t =>
+                    {
+                        Dispatcher.BeginInvoke(new Action(() =>
                         {
-                            Dispatcher.BeginInvoke(new Action(() =>
+                            if (t.Status == TaskStatus.RanToCompletion && t.Result)
                             {
-                                if (t.Status == TaskStatus.RanToCompletion && t.Result)
-                                {
-                                    SetDbStatus("Data API ready", Colors.DarkGreen);
-                                    AppendStatusLine("[DB] Data API connection verified");
-                                }
-                                else
-                                {
-                                    AppendStatusLine("[DB] Data API test failed: " + (_dataApiService?.LastError ?? t?.Exception?.Message));
-                                }
-                            }));
-                        }, TaskScheduler.Default);
-                    }
+                                SetDbStatus("MongoDB ready", Colors.DarkGreen);
+                                AppendStatusLine("[DB] Direct MongoDB connection verified");
+                            }
+                            else
+                            {
+                                AppendStatusLine("[DB] Direct MongoDB test failed: " + (_dataApiService?.LastError ?? t?.Exception?.Message));
+                            }
+                        }));
+                    }, TaskScheduler.Default);
                 }
                 catch (Exception ex)
                 {
-                    AppendDetailedStatus("DB:init", "DataApiService init exception", ex);
+                    AppendDetailedStatus("DB:init", "Direct Mongo init exception", ex);
                 }
             }
             catch (Exception ex)
@@ -1782,136 +1769,115 @@ namespace AICAD.UI
         {
             Exception lastEx = null;
 
-            // Preferred model same logic as GetClient
-            var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
-                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
-                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Machine)
-                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
-                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
-                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
-                                 ?? "google/functiongemma-270m";
+            // Load priority order from environment
+            var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                              ?? "local,gemini,groq";
+            var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
-            // 1) Try Local LLM if explicitly configured via LOCAL_LLM_ENDPOINT
+            foreach (var provider in priority)
+            {
+                try
+                {
+                    if (provider == "local")
+                    {
+                        var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                            ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                            ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(localEndpoint))
+                        {
+                            var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                                 ?? "local-model";
+                            var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                               ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                            
+                            var dispTry = GetEndpointDisplayName(localEndpoint);
+                            AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
+                            StartProgressPhase("awaiting_response");
+                            
+                            using (var localClient = new AICAD.Services.LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt))
+                            {
+                                var r = await localClient.GenerateAsync(prompt);
+                                _client = localClient;
+                                _lastModel = localClient.Model;
+                                FinishLlmProgress();
+                                AppendStatusLine("[LLM] " + dispTry + " succeeded: " + localClient.Model);
+                                return r;
+                            }
+                        }
+                    }
+                    else if (provider == "gemini")
+                    {
+                        var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                     ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(gemKey))
+                        {
+                            var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                           ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                           ?? "gemini-1.5-flash";
+                            
+                            AppendStatusLine("[LLM] Trying Gemini (" + gemModel + ")");
+                            StartProgressPhase("awaiting_response");
+                            
+                            var gemClient = new AICAD.Services.GeminiClient(gemKey, gemModel);
+                            var r = await gemClient.GenerateAsync(prompt);
+                            _client = gemClient;
+                            _lastModel = gemClient.Model;
+                            FinishLlmProgress();
+                            AppendStatusLine("[LLM] Gemini succeeded: " + gemClient.Model);
+                            return r;
+                        }
+                    }
+                    else if (provider == "groq")
+                    {
+                        var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                      ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                      ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(groqKey))
+                        {
+                            var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                            ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
+                                            ?? "llama-3.3-70b-versatile";
+                            
+                            AppendStatusLine("[LLM] Trying Groq (" + groqModel + ")");
+                            StartProgressPhase("awaiting_response");
+                            
+                            using (var groqClient = new AICAD.Services.GroqLlmClient(groqKey, groqModel))
+                            {
+                                var r = await groqClient.GenerateAsync(prompt);
+                                _client = groqClient;
+                                _lastModel = groqClient.Model;
+                                FinishLlmProgress();
+                                AppendStatusLine("[LLM] Groq succeeded: " + groqClient.Model);
+                                return r;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                    AppendStatusLine("[LLM] " + provider + " failed: " + ex.Message);
+                }
+            }
+
+            if (lastEx != null) throw lastEx;
+            throw new InvalidOperationException("No LLM providers configured or all failed.");
+        }
+
+        private void FinishLlmProgress()
+        {
+            try { _llmProgressTimer?.Stop(); } catch { }
+            try { StartProgressPhase("success"); } catch { }
             try
             {
-                var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                    ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(localEndpoint))
-                {
-                    var dispTry = GetEndpointDisplayName(localEndpoint);
-                    AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
-                    try { StartProgressPhase("awaiting_response"); } catch { }
-                    var systemPrompt2 = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
-                                        ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
-                    var localClient = new AICAD.Services.LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt2);
-                    try
-                    {
-                        var r = await localClient.GenerateAsync(prompt);
-                        _client = localClient;
-                        _lastModel = localClient.Model;
-                        try { _llmProgressTimer?.Stop(); } catch { }
-                        try { StartProgressPhase("success"); } catch { }
-                        try
-                        {
-                            var bar100 = MakeProgressBar(100, 20);
-                            var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
-                            AppendStatusLine(progressMsg100);
-                            try { AddinStatusLogger.Log(null, StatusConsole.FormatLlmProgressDone(bar100, 100)); } catch { }
-                        }
-                        catch { }
-                        AppendStatusLine("[LLM] " + dispTry + " succeeded: " + localClient.Model);
-                        return r;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastEx = ex;
-                        AppendStatusLine("[LLM] " + dispTry + " failed: " + ex.Message);
-                        try { localClient.Dispose(); } catch { }
-                    }
-                }
+                var bar100 = MakeProgressBar(100, 20);
+                var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
+                AppendStatusLine(progressMsg100);
             }
-            catch (Exception ex)
-            {
-                lastEx = ex;
-                AppendStatusLine("[LLM] Local attempt error: " + ex.Message);
-            }
-
-            // If we've been instructed to force local-only, do not attempt cloud providers.
-            if (FORCE_LOCAL_ONLY)
-            {
-                if (lastEx != null)
-                {
-                    AppendStatusLine("[LLM] Force-local mode enabled; not attempting cloud providers.");
-                    throw new InvalidOperationException("Local LLM failed and cloud fallback is disabled.", lastEx);
-                }
-                else
-                {
-                    AppendStatusLine("[LLM] Force-local mode enabled but no LOCAL_LLM_ENDPOINT configured.");
-                    throw new InvalidOperationException("No local LLM endpoint configured and cloud fallback is disabled.");
-                }
-            }
-
-            // 2) Try Gemini (Google) if key available
-            if (!FORCE_LOCAL_ONLY)
-            {
-            try
-            {
-                var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
-                             ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
-                             ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
-                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
-                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
-                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
-                             ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(gemKey))
-                {
-                    AppendStatusLine("[LLM] Trying Gemini (API key from env)");
-                    var gemClient = new AICAD.Services.GeminiClient(gemKey, preferredModel);
-                    try
-                    {
-                        var r = await gemClient.GenerateAsync(prompt);
-                        _client = gemClient;
-                        _lastModel = gemClient.Model;
-                        try { _llmProgressTimer?.Stop(); } catch { }
-                        try { StartProgressPhase("success"); } catch { }
-                        try
-                        {
-                            var bar100 = MakeProgressBar(100, 20);
-                            var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
-                            AppendStatusLine(progressMsg100);
-                            try { AddinStatusLogger.Log(null, StatusConsole.FormatLlmProgressDone(bar100, 100)); } catch { }
-                        }
-                        catch { }
-                        AppendStatusLine("[LLM] Gemini succeeded: " + gemClient.Model);
-                        return r;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastEx = ex;
-                        AppendStatusLine("[LLM] Gemini failed: " + ex.Message);
-                        try { gemClient.Dispose(); } catch { }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                lastEx = ex;
-                AppendStatusLine("[LLM] Gemini attempt error: " + ex.Message);
-            }
-            }
-
-            // All attempts failed
-            if (lastEx != null)
-            {
-                AppendStatusLine("[LLM] All providers failed: " + lastEx.Message);
-                throw new InvalidOperationException("All LLM providers failed. See status log for details.", lastEx);
-            }
-
-            throw new InvalidOperationException("No LLM provider configured (LOCAL_LLM_ENDPOINT or GEMINI_API_KEY).");
+            catch { }
         }
 
         private async Task BuildFromPromptAsync()

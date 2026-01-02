@@ -226,15 +226,68 @@
                         <StackPanel x:Name="ApiKeysPanel" Visibility="Collapsed">
                             <TextBlock Text="Choose your AI language model provider for intelligent CAD feature generation" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
 
-                            <!-- Provider Toggle -->
-                            <Label Content="AI Provider" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <!-- Provider Priority & Fallback -->
+                            <GroupBox Header="🔄 Provider Priority &amp; Fallback Order" Margin="0,0,0,12">
+                                <Grid Margin="4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ListBox x:Name="ProviderPriorityListBox" Height="100" Margin="0,0,8,0" DisplayMemberPath="DisplayName">
+                                        <!-- Items: Local LM, Google Gemini, Groq -->
+                                    </ListBox>
+                                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                                        <Button x:Name="MoveProviderUpButton" Content="▲" Width="34" Height="34" Margin="0,0,0,8" Click="MoveProviderUp_Click" ToolTip="Move Up" Style="{StaticResource FlatNavButton}" />
+                                        <Button x:Name="MoveProviderDownButton" Content="▼" Width="34" Height="34" Click="MoveProviderDown_Click" ToolTip="Move Down" Style="{StaticResource FlatNavButton}" />
+                                    </StackPanel>
+                                </Grid>
+                            </GroupBox>
+
+                            <!-- Provider Toggle (for configuration only) -->
+                            <Label Content="Configure Provider Settings" FontWeight="SemiBold" Margin="0,0,0,4" />
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                <RadioButton x:Name="GeminiRadio" Content="☁️ Google Gemini (Cloud-based)" GroupName="Provider" IsChecked="True" ToolTip="Use Google's cloud AI service (requires API key)" />
-                                <RadioButton x:Name="LmStudioRadio" Content="💻 LM Studio (Local)" GroupName="Provider" Margin="16,0,0,0" ToolTip="Use locally hosted AI models (privacy-focused)" />
+                                <RadioButton x:Name="LmStudioRadio" Content="💻 LM Studio (Local)" GroupName="Provider" IsChecked="True" ToolTip="Configure locally hosted AI models" />
+                                <RadioButton x:Name="GeminiRadio" Content="☁️ Google Gemini" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Google's cloud AI service" />
+                                <RadioButton x:Name="GroqRadio" Content="⚡ Groq" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Groq's high-speed AI service" />
                             </StackPanel>
 
                             <!-- Dynamic Content Area -->
                             <StackPanel Margin="0,8,0,0">
+                                <!-- LM Studio (Local) Panel -->
+                                <StackPanel x:Name="LmProviderPanel">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsChecked, ElementName=LmStudioRadio}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
+                                        <StackPanel>
+                                            <TextBlock Text="LM Studio Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
+
+                                            <Label Content="Server URL" ToolTip="LM Studio local server endpoint" />
+                                            <TextBox x:Name="LocalLlmEndpointTextBox" Height="28" Text="http://localhost:1234/v1" ToolTip="Default LM Studio endpoint" />
+
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse x:Name="LmStatusCircle" Fill="Gray" Width="12" Height="12" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="LmStatusText" Text="Unknown" Grid.Column="1" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
+                                                <Button x:Name="TestLocalButton" Content="Test" Grid.Column="2" Margin="8,0,0,0" Style="{StaticResource FlatNavButton}" Click="TestApiButton_Click" />
+                                                <Button x:Name="ApplyLocalButton" Content="Apply" Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" />
+                                            </Grid>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+
                                 <!-- Gemini Cloud Panel -->
                                 <StackPanel x:Name="GeminiProviderPanel">
                                     <StackPanel.Style>
@@ -261,34 +314,33 @@
                                                 <Button Content="👁️" Width="34" Height="28" Grid.Column="1" Margin="6,0,0,0" />
                                             </Grid>
 
-                                            <!-- Hidden field preserved for legacy Groq key usage in code-behind -->
-                                            <TextBox x:Name="GroqApiKeyTextBox" Visibility="Collapsed" />
-
                                             <TextBlock Margin="0,6,0,0">
                                                 <Hyperlink NavigateUri="https://studio.google.com/">Get Key from Google AI Studio</Hyperlink>
                                             </TextBlock>
 
-                                            <Label Content="Model" />
-                                            <ComboBox x:Name="GeminiModelComboBox" Height="28">
-                                                <ComboBoxItem IsSelected="True">gemini-1.5-flash</ComboBoxItem>
-                                                <ComboBoxItem>gemini-1.5-pro</ComboBoxItem>
-                                            </ComboBox>
-
-                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                                <Button x:Name="TestApiButton" Content="Test Cloud Connection" Style="{StaticResource FlatNavButton}" Click="TestApiButton_Click" />
-                                                <Button x:Name="SaveApiKeysButton" Content="Save" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" Margin="8,0,0,0" />
-                                            </StackPanel>
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse x:Name="GeminiStatusCircle" Fill="Gray" Width="12" Height="12" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="GeminiStatusText" Text="Unknown" Grid.Column="1" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
+                                                <Button x:Name="TestGeminiButton" Content="Test" Grid.Column="2" Margin="8,0,0,0" Style="{StaticResource FlatNavButton}" Click="TestApiButton_Click" />
+                                                <Button x:Name="ApplyGeminiButton" Content="Apply" Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" />
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
 
-                                <!-- LM Studio (Local) Panel -->
-                                <StackPanel x:Name="LmProviderPanel">
+                                <!-- Groq Panel -->
+                                <StackPanel x:Name="GroqProviderPanel">
                                     <StackPanel.Style>
                                         <Style TargetType="StackPanel">
                                             <Setter Property="Visibility" Value="Collapsed" />
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsChecked, ElementName=LmStudioRadio}" Value="True">
+                                                <DataTrigger Binding="{Binding IsChecked, ElementName=GroqRadio}" Value="True">
                                                     <Setter Property="Visibility" Value="Visible" />
                                                 </DataTrigger>
                                             </Style.Triggers>
@@ -296,25 +348,30 @@
                                     </StackPanel.Style>
                                     <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
                                         <StackPanel>
-                                            <TextBlock Text="LM Studio Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
+                                            <TextBlock Text="Groq Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
 
-                                            <Label Content="Server URL" ToolTip="LM Studio local server endpoint" />
-                                            <TextBox x:Name="LocalLlmEndpointTextBox" Height="28" Text="http://localhost:1234/v1" ToolTip="Default LM Studio endpoint" />
+                                            <Label Content="API Key" ToolTip="Your Groq API key" />
+                                            <PasswordBox x:Name="GroqApiKeyTextBox" Height="28" />
 
-                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,6,0,0">
-                                                <Label Content="Model" VerticalAlignment="Center" />
-                                                <TextBox x:Name="LocalLlmModelTextBox" Height="28" Width="240" Margin="8,0,0,0" />
-                                                <Button x:Name="DetectLmModelButton" Content="Auto-Detect" Margin="8,0,0,0" />
-                                            </StackPanel>
-
-                                            <TextBlock x:Name="LmStatusTextBlock" Text="🔴 Server Stopped" Margin="0,8,0,0" />
-
-                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                                <Button x:Name="TestLocalButton" Content="Test Local Connection" Style="{StaticResource FlatNavButton}" />
-                                            </StackPanel>
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse x:Name="GroqStatusCircle" Fill="Gray" Width="12" Height="12" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="GroqStatusText" Text="Unknown" Grid.Column="1" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
+                                                <Button x:Name="TestGroqButton" Content="Test" Grid.Column="2" Margin="8,0,0,0" Style="{StaticResource FlatNavButton}" Click="TestApiButton_Click" />
+                                                <Button x:Name="ApplyGroqButton" Content="Apply" Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" />
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
+                            </StackPanel>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                                <Button x:Name="SaveApiKeysButton" Content="Save All AI Settings" Style="{StaticResource PrimaryButton}" Click="SaveApiKeysButton_Click" />
                             </StackPanel>
 
                             <TextBlock x:Name="ApiStatusTextBlock" Text="" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,8,0,0" />

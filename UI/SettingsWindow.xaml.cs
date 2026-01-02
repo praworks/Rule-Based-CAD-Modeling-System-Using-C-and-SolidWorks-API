@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using Microsoft.Win32;
 using Newtonsoft.Json.Linq;
 using System.Text;
@@ -16,10 +17,70 @@ namespace AICAD.UI
 {
     public partial class SettingsWindow : Window
     {
+        public class ProviderItem
+        {
+            public string Id { get; set; }
+            public string DisplayName { get; set; }
+        }
+
+        private System.Collections.ObjectModel.ObservableCollection<ProviderItem> _providers;
+
         public SettingsWindow()
         {
             InitializeComponent();
+            InitializeProviderList();
             LoadAllSettings();
+        }
+
+        private void InitializeProviderList()
+        {
+            _providers = new System.Collections.ObjectModel.ObservableCollection<ProviderItem>();
+            
+            // Load order from env or use default
+            var order = Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", EnvironmentVariableTarget.User);
+            if (string.IsNullOrWhiteSpace(order)) order = "local,gemini,groq";
+
+            var parts = order.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var p in parts)
+            {
+                AddProviderById(p.Trim().ToLower());
+            }
+
+            // Ensure all are present
+            if (!_providers.Any(x => x.Id == "local")) AddProviderById("local");
+            if (!_providers.Any(x => x.Id == "gemini")) AddProviderById("gemini");
+            if (!_providers.Any(x => x.Id == "groq")) AddProviderById("groq");
+
+            ProviderPriorityListBox.ItemsSource = _providers;
+        }
+
+        private void AddProviderById(string id)
+        {
+            if (id == "local") _providers.Add(new ProviderItem { Id = "local", DisplayName = "💻 LM Studio (Local)" });
+            else if (id == "gemini") _providers.Add(new ProviderItem { Id = "gemini", DisplayName = "☁️ Google Gemini" });
+            else if (id == "groq") _providers.Add(new ProviderItem { Id = "groq", DisplayName = "⚡ Groq" });
+        }
+
+        private void MoveProviderUp_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = ProviderPriorityListBox.SelectedItem as ProviderItem;
+            if (selected == null) return;
+            int index = _providers.IndexOf(selected);
+            if (index > 0)
+            {
+                _providers.Move(index, index - 1);
+            }
+        }
+
+        private void MoveProviderDown_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = ProviderPriorityListBox.SelectedItem as ProviderItem;
+            if (selected == null) return;
+            int index = _providers.IndexOf(selected);
+            if (index < _providers.Count - 1)
+            {
+                _providers.Move(index, index + 1);
+            }
         }
 
         private void NavButton_Click(object sender, RoutedEventArgs e)
@@ -39,6 +100,11 @@ namespace AICAD.UI
             AccountPanel.Visibility = panelName == "AccountPanel" ? Visibility.Visible : Visibility.Collapsed;
             NameEasyPanel.Visibility = panelName == "NameEasyPanel" ? Visibility.Visible : Visibility.Collapsed;
             SamplesPanel.Visibility = panelName == "SamplesPanel" ? Visibility.Visible : Visibility.Collapsed;
+
+            if (panelName == "ApiKeysPanel")
+            {
+                CheckAllLlmStatuses();
+            }
         }
 
         private void LoadAllSettings()
@@ -301,14 +367,12 @@ namespace AICAD.UI
                 LocalLlmEndpointTextBox.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "http://127.0.0.1:1234";
                 // Gemini key is stored in a PasswordBox in the UI
                 try { GeminiApiKeyTextBox.Password = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
-                GroqApiKeyTextBox.Text = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "";
-                LocalLlmModelTextBox.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", EnvironmentVariableTarget.User) ?? "";
-                // local system prompt
-                // Note: control names differ from original; ignore if absent
-
-                var mode = Environment.GetEnvironmentVariable("AICAD_LLM_MODE", EnvironmentVariableTarget.User) ?? "";
+                try { GroqApiKeyTextBox.Password = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
+                
                 ApiStatusTextBlock.Text = "Loaded from environment variables";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+
+                CheckAllLlmStatuses();
             }
             catch (Exception ex)
             {
@@ -323,8 +387,11 @@ namespace AICAD.UI
             {
                 Environment.SetEnvironmentVariable("LOCAL_LLM_ENDPOINT", LocalLlmEndpointTextBox.Text ?? "", EnvironmentVariableTarget.User);
                 try { Environment.SetEnvironmentVariable("GEMINI_API_KEY", GeminiApiKeyTextBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
-                Environment.SetEnvironmentVariable("GROQ_API_KEY", GroqApiKeyTextBox.Text ?? "", EnvironmentVariableTarget.User);
-                Environment.SetEnvironmentVariable("LOCAL_LLM_MODEL", LocalLlmModelTextBox.Text ?? "", EnvironmentVariableTarget.User);
+                try { Environment.SetEnvironmentVariable("GROQ_API_KEY", GroqApiKeyTextBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
+                
+                // Save Priority
+                var priority = string.Join(",", _providers.Select(p => p.Id));
+                Environment.SetEnvironmentVariable("AICAD_LLM_PRIORITY", priority, EnvironmentVariableTarget.User);
 
                 ApiStatusTextBlock.Text = "Saved! Restart SolidWorks.";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
@@ -340,125 +407,155 @@ namespace AICAD.UI
 
         private async void TestApiButton_Click(object sender, RoutedEventArgs e)
         {
-            // Disable button immediately on UI thread
-            TestApiButton.IsEnabled = false;
-            UpdateApiStatus("Testing API...", Colors.Blue);
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn == null) return;
 
+            btn.IsEnabled = false;
             try
             {
-                // Determine if user selected local mode by presence of local endpoint
-                var endpoint = LocalLlmEndpointTextBox.Text?.Trim() ?? string.Empty;
-                bool isLocal = !string.IsNullOrWhiteSpace(endpoint);
-
-                if (!isLocal)
+                if (btn.Name == "TestLocalButton")
                 {
-                    bool anyTested = false;
-
-                    if (!string.IsNullOrWhiteSpace(GeminiApiKeyTextBox.Password))
-                    {
-                        anyTested = true;
-                        try
-                        {
-                            var client = new AICAD.Services.GeminiClient(GeminiApiKeyTextBox.Password.Trim());
-                            var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
-                            // Marshal update to UI thread
-                            Dispatcher.Invoke(() =>
-                            {
-                                if (res != null && res.Success)
-                                {
-                                    UpdateApiStatus($"Gemini OK: Found {res.ModelsFound} models.", Colors.DarkGreen);
-                                }
-                                else
-                                {
-                                    UpdateApiStatus($"Gemini Fail: {res?.Message ?? "Unknown error"}", Colors.Red);
-                                }
-                            });
-                        }
-                        catch (Exception ex)
-                        {
-                            Dispatcher.Invoke(() => UpdateApiStatus("Gemini Error: " + ex.Message, Colors.Red));
-                        }
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(GroqApiKeyTextBox.Text))
-                    {
-                        anyTested = true;
-                        try
-                        {
-                            using (var http = new HttpClient())
-                            {
-                                http.Timeout = TimeSpan.FromSeconds(10);
-                                http.DefaultRequestHeaders.Add("Authorization", "Bearer " + GroqApiKeyTextBox.Text.Trim());
-                                var resp = await http.GetAsync("https://api.groq.com/v1/models").ConfigureAwait(false);
-                                Dispatcher.Invoke(() =>
-                                {
-                                    if (resp.IsSuccessStatusCode)
-                                    {
-                                        // Append if previous success
-                                        if (ApiStatusTextBlock.Foreground is SolidColorBrush sc && sc.Color == Colors.DarkGreen && !string.IsNullOrWhiteSpace(ApiStatusTextBlock.Text))
-                                        {
-                                            ApiStatusTextBlock.Text += " | Groq OK.";
-                                        }
-                                        else
-                                        {
-                                            UpdateApiStatus("Groq OK.", Colors.DarkGreen);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        UpdateApiStatus($"Groq Fail: {resp.StatusCode}", Colors.Red);
-                                    }
-                                });
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Dispatcher.Invoke(() => UpdateApiStatus("Groq Error: " + ex.Message, Colors.Red));
-                        }
-                    }
-
-                    if (!anyTested)
-                    {
-                        UpdateApiStatus("No Cloud API Keys entered.", Colors.Orange);
-                    }
+                    await TestLocalAsync();
                 }
-                else
+                else if (btn.Name == "TestGeminiButton")
                 {
-                    // Test local endpoint: ping /v1/models
-                    try
-                    {
-                        using (var http = new HttpClient())
-                        {
-                            http.Timeout = TimeSpan.FromSeconds(5);
-                            var testUrl = endpoint.TrimEnd('/') + "/v1/models";
-                            var resp = await http.GetAsync(testUrl).ConfigureAwait(false);
-                            Dispatcher.Invoke(() =>
-                            {
-                                if (resp.IsSuccessStatusCode)
-                                {
-                                    UpdateApiStatus("Local OK (Server reachable)", Colors.DarkGreen);
-                                }
-                                else
-                                {
-                                    UpdateApiStatus($"Local Fail: {resp.StatusCode}", Colors.Red);
-                                }
-                            });
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        Dispatcher.Invoke(() => UpdateApiStatus("Local Error: " + ex.Message, Colors.Red));
-                    }
+                    await TestGeminiAsync();
                 }
-            }
-            catch (Exception ex)
-            {
-                Dispatcher.Invoke(() => UpdateApiStatus("Test Error: " + ex.Message, Colors.Red));
+                else if (btn.Name == "TestGroqButton")
+                {
+                    await TestGroqAsync();
+                }
             }
             finally
             {
-                Dispatcher.Invoke(() => TestApiButton.IsEnabled = true);
+                btn.IsEnabled = true;
             }
+        }
+
+        private async Task TestLocalAsync()
+        {
+            UpdateProviderStatus("Local", "Testing...", null);
+            var endpoint = LocalLlmEndpointTextBox.Text?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(endpoint))
+            {
+                UpdateProviderStatus("Local", "No endpoint", false);
+                return;
+            }
+
+            try
+            {
+                using (var http = new HttpClient())
+                {
+                    http.Timeout = TimeSpan.FromSeconds(5);
+                    var testUrl = endpoint.TrimEnd('/') + "/v1/models";
+                    var resp = await http.GetAsync(testUrl).ConfigureAwait(false);
+                    if (resp.IsSuccessStatusCode)
+                        UpdateProviderStatus("Local", "Connected", true);
+                    else
+                        UpdateProviderStatus("Local", $"Error: {resp.StatusCode}", false);
+                }
+            }
+            catch (Exception)
+            {
+                UpdateProviderStatus("Local", "Offline", false);
+            }
+        }
+
+        private async Task TestGeminiAsync()
+        {
+            UpdateProviderStatus("Gemini", "Testing...", null);
+            var key = GeminiApiKeyTextBox.Password?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                UpdateProviderStatus("Gemini", "No API Key", false);
+                return;
+            }
+
+            try
+            {
+                var client = new AICAD.Services.GeminiClient(key);
+                var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
+                if (res != null && res.Success)
+                    UpdateProviderStatus("Gemini", "Connected", true);
+                else
+                    UpdateProviderStatus("Gemini", res?.Message ?? "Failed", false);
+            }
+            catch (Exception)
+            {
+                UpdateProviderStatus("Gemini", "Error", false);
+            }
+        }
+
+        private async Task TestGroqAsync()
+        {
+            UpdateProviderStatus("Groq", "Testing...", null);
+            var key = GroqApiKeyTextBox.Password?.Trim() ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                UpdateProviderStatus("Groq", "No API Key", false);
+                return;
+            }
+
+            try
+            {
+                using (var http = new HttpClient())
+                {
+                    http.Timeout = TimeSpan.FromSeconds(10);
+                    http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
+                    var resp = await http.GetAsync("https://api.groq.com/v1/models").ConfigureAwait(false);
+                    if (resp.IsSuccessStatusCode)
+                        UpdateProviderStatus("Groq", "Connected", true);
+                    else
+                        UpdateProviderStatus("Groq", $"Error: {resp.StatusCode}", false);
+                }
+            }
+            catch (Exception)
+            {
+                UpdateProviderStatus("Groq", "Error", false);
+            }
+        }
+
+        private void UpdateProviderStatus(string provider, string text, bool? success)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                Ellipse circle = null;
+                TextBlock txt = null;
+
+                if (provider == "Local") { circle = LmStatusCircle; txt = LmStatusText; }
+                else if (provider == "Gemini") { circle = GeminiStatusCircle; txt = GeminiStatusText; }
+                else if (provider == "Groq") { circle = GroqStatusCircle; txt = GroqStatusText; }
+
+                if (circle != null && txt != null)
+                {
+                    txt.Text = text;
+                    if (success == true)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#28A745"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else if (success == false)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DC3545"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else
+                    {
+                        circle.Fill = new SolidColorBrush(Colors.Gray);
+                        txt.Foreground = new SolidColorBrush(Colors.Gray);
+                    }
+                }
+            });
+        }
+
+        private void CheckAllLlmStatuses()
+        {
+            Task.Run(async () =>
+            {
+                await TestLocalAsync();
+                await TestGeminiAsync();
+                await TestGroqAsync();
+            });
         }
 
         private void UpdateApiStatus(string text, Color color)

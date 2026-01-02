@@ -133,7 +133,7 @@
                                     <TextBlock Text="Post feedback to MongoDB without passwords" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
                                     
                                     <Label Content="API Endpoint" ToolTip="MongoDB Data API endpoint URL" />
-                                    <TextBox x:Name="DataApiEndpointTextBox" Height="28" Text="https://data.mongodb-api.com/app/pedkniqj/endpoint/data/v1" ToolTip="Default endpoint for AI-CAD" />
+                                    <TextBox x:Name="DataApiEndpointTextBox" Height="28" Text="https://data.mongodb-api.com/app/aicad-data-api/endpoint/data/v1" ToolTip="Default endpoint for AI-CAD" />
                                     
                                     <Label Content="API Key" Margin="0,6,0,0" ToolTip="MongoDB Data API access key" />
                                     <PasswordBox x:Name="DataApiKeyPasswordBox" Height="28" ToolTip="Your secure API key" />
@@ -144,6 +144,7 @@
                                     </StackPanel>
                                     
                                     <TextBlock x:Name="DataApiStatusTextBlock" Text="" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,6,0,0" />
+                                    <TextBox x:Name="DataApiErrorDetailsTextBox" Text="" Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0" Height="80" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" Visibility="Collapsed" />
                                 </StackPanel>
                             </GroupBox>
 
@@ -400,18 +401,25 @@
                             <GroupBox Header="🎯 Learning Mode" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="Choose how many examples the AI uses for learning:" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
-                                    <RadioButton x:Name="SampleModeZeroRadio" Content="Zero-shot (No examples - fastest)" GroupName="SampleMode" ToolTip="AI generates features without examples" Margin="0,4" />
-                                    <RadioButton x:Name="SampleModeOneRadio" Content="One-shot (Single example)" GroupName="SampleMode" ToolTip="AI learns from one example" Margin="0,4" />
-                                    <RadioButton x:Name="SampleModeFewRadio" Content="Few-shot (Multiple examples - most accurate)" GroupName="SampleMode" ToolTip="AI learns from multiple examples" Margin="0,4" />
+                                    <RadioButton x:Name="SampleModeZeroRadio" Content="Zero-shot (No examples - fastest)" GroupName="SampleMode" ToolTip="AI generates features without examples" Margin="0,4" Checked="SampleModeRadio_Checked" />
+                                    <RadioButton x:Name="SampleModeOneRadio" Content="One-shot (Single example)" GroupName="SampleMode" ToolTip="AI learns from one example" Margin="0,4" Checked="SampleModeRadio_Checked" />
+                                    <RadioButton x:Name="SampleModeFewRadio" Content="Few-shot (Multiple examples - most accurate)" GroupName="SampleMode" ToolTip="AI learns from multiple examples" Margin="0,4" Checked="SampleModeRadio_Checked" />
                                 </StackPanel>
                             </GroupBox>
 
                             <GroupBox Header="⚙️ Advanced Options" Margin="0,8,0,0">
                                 <StackPanel>
                                     <CheckBox x:Name="ChkUseFewShot" Content="Enable few-shot learning" ToolTip="Use multiple examples to improve AI accuracy" Margin="0,4" />
+                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Include example input→output pairs in prompts so the AI can learn from examples. Improves accuracy but may increase response time and prompt size.</TextBlock>
+
                                     <CheckBox x:Name="ChkForceKeyShots" Content="Use only key/important examples" ToolTip="Prioritize high-quality curated examples" Margin="0,4" />
+                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Prefer a small curated set of high-quality examples to improve reliability and reduce noisy examples.</TextBlock>
+
                                     <CheckBox x:Name="ChkForceStaticFewShot" Content="Use built-in examples (ignore database)" ToolTip="Use hardcoded examples instead of database" Margin="0,4" />
+                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Use only the built-in examples and skip database lookups. Useful for offline or deterministic behavior.</TextBlock>
+
                                     <CheckBox x:Name="RandomizeSamplesCheckBox" Content="Randomize example selection" ToolTip="Randomly select examples for variety" Margin="0,4" />
+                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Randomize the order or subset of examples to increase variety and exploration of AI outputs.</TextBlock>
                                 </StackPanel>
                             </GroupBox>
 

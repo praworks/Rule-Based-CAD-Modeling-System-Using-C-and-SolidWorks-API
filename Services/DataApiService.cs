@@ -1,6 +1,8 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using MongoDB.Bson;
+using MongoDB.Driver;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json;
@@ -23,6 +25,8 @@ namespace AICAD.Services
         private readonly string _dataSource = "Cluster0";
         private readonly string _database = "TaskPaneAddin";
         private readonly HttpClient _httpClient;
+        private readonly bool _useDirectMongo;
+        private readonly MongoClient _mongoClient;
         public string LastError { get; private set; }
 
         /// <summary>
@@ -34,8 +38,27 @@ namespace AICAD.Services
             _apiKey = apiKey?.Trim();
             _httpClient = new HttpClient();
             _httpClient.Timeout = TimeSpan.FromSeconds(10);
-
-            if (string.IsNullOrWhiteSpace(_apiEndpoint) || string.IsNullOrWhiteSpace(_apiKey))
+            // If the user provided a MongoDB connection string (mongodb:// or mongodb+srv://)
+            // treat this as a direct MongoDB connection fallback instead of the Data API.
+            if (!string.IsNullOrWhiteSpace(_apiEndpoint) && (_apiEndpoint.StartsWith("mongodb://", StringComparison.OrdinalIgnoreCase) || _apiEndpoint.StartsWith("mongodb+srv://", StringComparison.OrdinalIgnoreCase)))
+            {
+                try
+                {
+                    _mongoClient = new MongoClient(_apiEndpoint);
+                    // quick ping
+                    var db = _mongoClient.GetDatabase(_database);
+                    db.RunCommandAsync((Command<BsonDocument>)"{ ping: 1 }").GetAwaiter().GetResult();
+                    _useDirectMongo = true;
+                    LastError = null;
+                    AddinStatusLogger.Log("DataApiService", "Initialized with direct MongoDB connection");
+                }
+                catch (Exception ex)
+                {
+                    LastError = "Direct MongoDB init failed: " + ex.Message;
+                    AddinStatusLogger.Error("DataApiService", LastError);
+                }
+            }
+            else if (string.IsNullOrWhiteSpace(_apiEndpoint) || string.IsNullOrWhiteSpace(_apiKey))
             {
                 LastError = "Missing API endpoint or key";
                 AddinStatusLogger.Error("DataApiService", LastError);
@@ -51,6 +74,36 @@ namespace AICAD.Services
         /// </summary>
         public async Task<bool> InsertFeedbackAsync(string runId, string prompt, string model, string plan, bool thumbUp)
         {
+            // If initialized with a direct MongoDB connection string, insert directly
+            if (_useDirectMongo)
+            {
+                try
+                {
+                    var db = _mongoClient.GetDatabase(_database);
+                    var col = db.GetCollection<BsonDocument>("good_feedback");
+                    var doc = new BsonDocument
+                    {
+                        { "ts", DateTime.UtcNow },
+                        { "runId", runId ?? string.Empty },
+                        { "prompt", prompt ?? string.Empty },
+                        { "model", model ?? string.Empty },
+                        { "plan", plan ?? string.Empty },
+                        { "thumb", thumbUp ? "up" : "down" }
+                    };
+                    await col.InsertOneAsync(doc).ConfigureAwait(false);
+                    LastError = null;
+                    AddinStatusLogger.Log("DataApiService", "Feedback inserted via direct MongoDB");
+                    return true;
+                }
+                catch (Exception ex)
+                {
+                    LastError = ex.Message;
+                    AddinStatusLogger.Error("DataApiService", "InsertFeedbackAsync direct Mongo exception", ex);
+                    return false;
+                }
+            }
+
+            // Otherwise fall back to Data API
             if (string.IsNullOrWhiteSpace(_apiEndpoint) || string.IsNullOrWhiteSpace(_apiKey))
             {
                 LastError = "Data API not configured";
@@ -118,6 +171,31 @@ namespace AICAD.Services
         /// </summary>
         public async Task<JArray> GetRecentFeedbackAsync(int limit = 10)
         {
+            // Direct MongoDB retrieval when initialized with connection string
+            if (_useDirectMongo)
+            {
+                try
+                {
+                    var db = _mongoClient.GetDatabase(_database);
+                    var col = db.GetCollection<BsonDocument>("good_feedback");
+                    var docs = await col.Find(FilterDefinition<BsonDocument>.Empty).Sort(Builders<BsonDocument>.Sort.Descending("ts")).Limit(limit).ToListAsync().ConfigureAwait(false);
+                    var arr = new JArray();
+                    foreach (var d in docs)
+                    {
+                        var jo = JObject.Parse(d.ToJson());
+                        arr.Add(jo);
+                    }
+                    LastError = null;
+                    return arr;
+                }
+                catch (Exception ex)
+                {
+                    LastError = ex.Message;
+                    AddinStatusLogger.Error("DataApiService", "GetRecentFeedbackAsync direct Mongo exception", ex);
+                    return new JArray();
+                }
+            }
+
             if (string.IsNullOrWhiteSpace(_apiEndpoint) || string.IsNullOrWhiteSpace(_apiKey))
             {
                 return new JArray();
@@ -174,6 +252,25 @@ namespace AICAD.Services
         {
             try
             {
+                if (_useDirectMongo)
+                {
+                    try
+                    {
+                        var db = _mongoClient.GetDatabase(_database);
+                        var col = db.GetCollection<BsonDocument>("good_feedback");
+                        var doc = await col.Find(FilterDefinition<BsonDocument>.Empty).Limit(1).FirstOrDefaultAsync().ConfigureAwait(false);
+                        LastError = null;
+                        AddinStatusLogger.Log("DataApiService", "Direct MongoDB connection test successful");
+                        return true;
+                    }
+                    catch (Exception ex)
+                    {
+                        LastError = "Direct MongoDB connection test failed: " + ex.Message;
+                        AddinStatusLogger.Error("DataApiService", LastError);
+                        return false;
+                    }
+                }
+
                 var payload = new
                 {
                     dataSource = _dataSource,
@@ -201,7 +298,7 @@ namespace AICAD.Services
                     else
                     {
                         var content = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-                        LastError = $"Connection test failed: {response.StatusCode}";
+                        LastError = $"Connection test failed: {(int)response.StatusCode} {response.ReasonPhrase}\n{content}";
                         AddinStatusLogger.Error("DataApiService", LastError);
                         return false;
                     }

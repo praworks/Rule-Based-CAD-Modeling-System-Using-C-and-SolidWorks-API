@@ -2002,19 +2002,16 @@ namespace AICAD.UI
                 StringBuilder fewshot = null;
                 if (useFewShot)
                 {
-                    fewshot = new StringBuilder()
-                        .Append("Examples:")
-                        .Append("\nInput: Box 100x50x25 mm")
-                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
-                        .Append("\nInput: Cylinder 40 dia x 80 mm")
-                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
+                    // NOTE: hard-coded static examples removed — rely on DB-provided examples when available.
+                    fewshot = new StringBuilder();
 
-                    // Signal we're applying few-shot examples so the status console can group them underneath
+                    // Signal we're attempting to apply few-shot examples so the status console can group them underneath
                     SetRealTimeStatus("Applying few-shot examples…", Colors.DarkOrange);
 
                     if (forceStaticFewShot)
                     {
-                        AddinStatusLogger.Log("FewShot", "Forced static few-shot mode enabled; skipping DB examples");
+                        AddinStatusLogger.Log("FewShot", "Forced static few-shot mode enabled; no built-in examples are available — skipping DB examples per user request");
+                        // When forceStaticFewShot is enabled but there are no built-ins, behave as if few-shot is disabled for DB fetches.
                     }
                     else
                     {

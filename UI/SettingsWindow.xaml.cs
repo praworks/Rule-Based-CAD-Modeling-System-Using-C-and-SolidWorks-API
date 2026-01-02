@@ -634,17 +634,23 @@ namespace AICAD.UI
                 {
                     DataApiStatusTextBlock.Text = "Connection verified!";
                     DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                    DataApiErrorDetailsTextBox.Visibility = Visibility.Collapsed;
+                    DataApiErrorDetailsTextBox.Text = string.Empty;
                 }
                 else
                 {
-                    DataApiStatusTextBlock.Text = "Test failed: " + service.LastError;
+                    DataApiStatusTextBlock.Text = "Test failed: see details below";
                     DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
+                    DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
+                    DataApiErrorDetailsTextBox.Text = service.LastError ?? "Unknown error";
                 }
             }
             catch (Exception ex)
             {
-                DataApiStatusTextBlock.Text = "Test exception: " + ex.Message;
+                DataApiStatusTextBlock.Text = "Test exception: see details below";
                 DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
+                DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
+                DataApiErrorDetailsTextBox.Text = ex.ToString();
             }
         }
 
@@ -844,6 +850,22 @@ namespace AICAD.UI
                     ChkForceStaticFewShot.IsChecked = fs == "1" || (fs != null && fs.Equals("true", StringComparison.OrdinalIgnoreCase));
                 }
                 catch { if (ChkForceStaticFewShot != null) ChkForceStaticFewShot.IsChecked = false; }
+            }
+            catch { }
+        }
+
+        // Update few-shot state immediately when sample mode radio buttons change
+        private void SampleModeRadio_Checked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // zero-shot -> disable few-shot; one/few -> enable few-shot
+                bool useFew = !(SampleModeZeroRadio.IsChecked == true);
+                if (ChkUseFewShot != null)
+                {
+                    ChkUseFewShot.IsChecked = useFew;
+                }
+                try { Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", useFew ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
             }
             catch { }
         }

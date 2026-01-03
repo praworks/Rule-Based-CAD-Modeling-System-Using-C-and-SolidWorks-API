@@ -440,7 +440,7 @@ namespace AICAD.UI
                         catch { }
                         try { _isBuilding = false; } catch { }
                         // Clear any pending created-model state since run was stopped
-                        try { _lastRunCreatedModel = false; _lastCreatedModelTitle = null; Dispatcher.Invoke(()=>{ try{ applyPropertiesButton.IsEnabled = false; } catch{} }); } catch { }
+                        try { _lastRunCreatedModel = false; _lastCreatedModelTitle = null; } catch { }
                         try { SetRealTimeStatus("Stopped", Colors.DodgerBlue); } catch { }
                         return;
                     }
@@ -480,7 +480,6 @@ namespace AICAD.UI
             }
             seriesComboBox.SelectionChanged += SeriesComboBox_SelectionChanged;
             saveWithNameButton.Click += SaveWithNameButton_Click;
-            applyPropertiesButton.Click += ApplyPropertiesButton_Click;
 
             try
             {
@@ -2743,9 +2742,8 @@ namespace AICAD.UI
                         }
                     }
                     
-                    // Record that a model was created by this run so properties may be applied
+                    // Record that a model was created by this run
                     try { _lastRunCreatedModel = exec.CreatedNewPart; _lastCreatedModelTitle = exec.ModelTitle; } catch { }
-                    try { Dispatcher.Invoke(()=>{ applyPropertiesButton.IsEnabled = (exec.CreatedNewPart); }); } catch { }
 
                     // Auto-apply properties (Material/Description/Weight) to ensure Weight shows without manual Apply click
                     try
@@ -2753,12 +2751,25 @@ namespace AICAD.UI
                         var doc = _swApp?.ActiveDoc as IModelDoc2;
                         if (doc != null)
                         {
-                            var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
-                            var desc = typeDescriptionTextBox.Text ?? string.Empty;
-                            var weight = weightTextBox.Text ?? string.Empty;
-                            var partName = previewTextBox.Text?.Trim();
-                            SetPartPropertiesOnDocument(doc, material, desc, weight, partName);
-                            doc.ForceRebuild3(false);
+                            string material = null;
+                            string desc = null;
+                            string weight = null;
+                            string partName = null;
+                            try
+                            {
+                                // Read UI values on UI thread to avoid cross-thread access
+                                Dispatcher.Invoke(() =>
+                                {
+                                    material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
+                                    desc = typeDescriptionTextBox.Text ?? string.Empty;
+                                    weight = weightTextBox.Text ?? string.Empty;
+                                    partName = previewTextBox.Text?.Trim();
+                                });
+                            }
+                            catch { }
+
+                            SetPartPropertiesOnDocument(doc, material ?? string.Empty, desc ?? string.Empty, weight ?? string.Empty, partName);
+                            try { doc.ForceRebuild3(false); } catch { }
                         }
                     }
                     catch (Exception propEx)
@@ -3075,7 +3086,6 @@ namespace AICAD.UI
                     if (nextSeqLbl != null) nextSeqLbl.Content = "Next Sequence: --";
                     previewTextBox.Text = string.Empty;
                     saveWithNameButton.IsEnabled = false;
-                    applyPropertiesButton.IsEnabled = false;
                     return;
                 }
 
@@ -3086,12 +3096,10 @@ namespace AICAD.UI
                 if (nextSeqLbl2 != null) nextSeqLbl2.Content = $"Next Sequence: {_nextSequence:0000}";
                 previewTextBox.Text = partName;
                 saveWithNameButton.IsEnabled = true;
-                applyPropertiesButton.IsEnabled = true;
             }
             catch (Exception ex)
             {
                 saveWithNameButton.IsEnabled = false;
-                applyPropertiesButton.IsEnabled = false;
                 var nextSeqLbl2 = FindName("nextSequenceLabel") as Label;
                 if (nextSeqLbl2 != null) nextSeqLbl2.Content = "Next Sequence: --";
                 previewTextBox.Text = string.Empty;
@@ -3235,10 +3243,38 @@ namespace AICAD.UI
                 var custPropMgr = doc.Extension.CustomPropertyManager[""];
                 if (custPropMgr != null)
                 {
+                    string filename = string.Empty;
+                    // Determine filename for SW links
+                    // Ensure 'filename' is available (don't redeclare if already present)
+                    if (string.IsNullOrWhiteSpace(filename))
+                    {
+                        try { filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName()); } catch { }
+                        if (string.IsNullOrWhiteSpace(filename))
+                        {
+                            var title = doc.GetTitle();
+                            if (!string.IsNullOrWhiteSpace(title))
+                                filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                        }
+                    }
+
                     if (!string.IsNullOrEmpty(material))
                     {
-                        custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                        try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material: {material}"); } catch { }
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(filename))
+                            {
+                                var matLink = $"\"SW-Material@{filename}.SLDPRT\"";
+                                custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, matLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material link: {matLink}"); } catch { }
+                            }
+                            else
+                            {
+                                // Fallback: set plain text
+                                custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material text: {material}"); } catch { }
+                            }
+                        }
+                        catch { }
 
                         // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
                         try
@@ -3271,7 +3307,7 @@ namespace AICAD.UI
                         custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                     }
 
-                    string filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
+                    filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
                     if (string.IsNullOrWhiteSpace(filename))
                     {
                         var title = doc.GetTitle();
@@ -3296,35 +3332,6 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 try { AddinStatusLogger.Error("TaskpaneWpf", "Error setting custom properties", ex); } catch { }
-            }
-        }
-
-        private void ApplyPropertiesButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // Let host/UI listeners know properties apply was requested
-                try { ApplyPropertiesRequested?.Invoke(this, EventArgs.Empty); } catch { }
-
-                var partName = previewTextBox.Text?.Trim();
-                var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
-                var typeDesc = typeDescriptionTextBox.Text ?? string.Empty;
-
-                var doc = _swApp?.ActiveDoc as IModelDoc2;
-                if (doc == null)
-                {
-                    SetRealTimeStatus("No active document", Colors.Firebrick);
-                    return;
-                }
-
-                SetPartPropertiesOnDocument(doc, material, typeDesc, weightTextBox.Text, partName);
-                doc.ForceRebuild3(false);
-                SetRealTimeStatus("Properties applied", Colors.DarkGreen);
-            }
-            catch (Exception ex)
-            {
-                AppendDetailedStatus("ApplyProps", "Failed", ex);
-                SetRealTimeStatus("Error applying properties", Colors.Firebrick);
             }
         }
 
@@ -3380,11 +3387,11 @@ namespace AICAD.UI
         {
             try
             {
-                if (doc == null) return "0.000";
+                if (doc == null) return string.Empty;
                 var ext = doc.Extension;
-                if (ext == null) return "0.000";
+                if (ext == null) return string.Empty;
                 var custPropMgr = ext.CustomPropertyManager[""];
-                if (custPropMgr == null) return "0.000";
+                if (custPropMgr == null) return string.Empty;
 
                 string val = string.Empty;
                 string resolved = string.Empty;
@@ -3399,7 +3406,7 @@ namespace AICAD.UI
                 }
             }
             catch { }
-            return "0.000";
+            return string.Empty;
         }
 
         private string GetCustomProperty(ICustomPropertyManager mgr, string name)

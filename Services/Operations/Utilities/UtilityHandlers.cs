@@ -141,7 +141,25 @@ namespace AICAD.Services.Operations.Utilities
                 {
                     // Use global custom properties (empty string for config)
                     var cust = model.Extension.CustomPropertyManager[""];
-                    cust?.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+
+                    // Try to determine a filename to store SW-Material link (preferred) instead of plain text
+                    string filename = string.Empty;
+                    try { filename = System.IO.Path.GetFileNameWithoutExtension(model.GetPathName()); } catch { }
+                    if (string.IsNullOrWhiteSpace(filename))
+                    {
+                        try { filename = System.IO.Path.GetFileNameWithoutExtension(model.GetTitle()); } catch { }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(filename))
+                    {
+                        var matLink = $"\"SW-Material@{filename}.SLDPRT\"";
+                        cust?.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, matLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    }
+                    else
+                    {
+                        // Fallback: write the plain material text if we cannot build a link
+                        cust?.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    }
                 }
                 catch { }
 

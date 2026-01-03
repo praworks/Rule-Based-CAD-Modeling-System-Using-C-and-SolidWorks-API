@@ -119,11 +119,6 @@
                     Content="Save With This Name" 
                     Height="26" Margin="0,0,0,4" 
                     Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"/>
-
-                <Button x:Name="applyPropertiesButton" 
-                    Content="Apply Properties" 
-                    Height="26" Margin="0,0,0,2" 
-                    Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"/>
             </StackPanel>
         </StackPanel>
 

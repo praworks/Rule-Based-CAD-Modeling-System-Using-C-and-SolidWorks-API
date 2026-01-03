@@ -503,9 +503,18 @@ namespace AICAD
                     }
 
                     string filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
-                    if (!string.IsNullOrEmpty(filename))
+                    if (string.IsNullOrWhiteSpace(filename))
                     {
-                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, $"\"SW-Mass@{filename}.SLDPRT\"", (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        var title = doc.GetTitle();
+                        if (!string.IsNullOrWhiteSpace(title))
+                            filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(filename))
+                    {
+                        var massLink = $"\"SW-Mass@{filename}.SLDPRT\"";
+                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        custPropMgr.Add3("Weight", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                     }
 
                     if (!string.IsNullOrEmpty(partName))

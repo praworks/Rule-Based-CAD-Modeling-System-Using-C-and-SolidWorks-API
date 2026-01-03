@@ -2294,8 +2294,6 @@ namespace AICAD.UI
                     return;
                 }
                 SetRealTimeStatus("Communicating with LLM…", Colors.DarkOrange);
-                    // Do NOT auto-apply material/description/mass here — user should apply manually
-                    AppendStatusLine(StatusConsole.StatusPrefix + " Model created. Please set Material and Description manually and click 'Apply Properties' to finalize Mass (will remain 0.000 until linked).");
                         ShowKaraokeScenario("communicating");
                     SetLlmStatus("Sending…", Colors.DarkOrange);
                 SetLastError(null);
@@ -2748,6 +2746,25 @@ namespace AICAD.UI
                     // Record that a model was created by this run so properties may be applied
                     try { _lastRunCreatedModel = exec.CreatedNewPart; _lastCreatedModelTitle = exec.ModelTitle; } catch { }
                     try { Dispatcher.Invoke(()=>{ applyPropertiesButton.IsEnabled = (exec.CreatedNewPart); }); } catch { }
+
+                    // Auto-apply properties (Material/Description/Weight) to ensure Weight shows without manual Apply click
+                    try
+                    {
+                        var doc = _swApp?.ActiveDoc as IModelDoc2;
+                        if (doc != null)
+                        {
+                            var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
+                            var desc = typeDescriptionTextBox.Text ?? string.Empty;
+                            var weight = weightTextBox.Text ?? string.Empty;
+                            var partName = previewTextBox.Text?.Trim();
+                            SetPartPropertiesOnDocument(doc, material, desc, weight, partName);
+                            doc.ForceRebuild3(false);
+                        }
+                    }
+                    catch (Exception propEx)
+                    {
+                        try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Auto-apply properties after build failed", propEx); } catch { }
+                    }
                     StopKaraoke();
                     ShowKaraokeScenario("success");
                     SetRealTimeStatus("Creating model…", Colors.DarkOrange);
@@ -3194,7 +3211,7 @@ namespace AICAD.UI
                 }
 
                 // Set properties after successful save
-                SetPartPropertiesOnDocument(doc, material, typeDesc, partName);
+                SetPartPropertiesOnDocument(doc, material, typeDesc, weightTextBox.Text, partName);
 
                 // Commit sequence
                 _seriesManager.CommitSequence(seriesId, _nextSequence, partName, fullPath);
@@ -3211,7 +3228,7 @@ namespace AICAD.UI
             }
         }
 
-        private void SetPartPropertiesOnDocument(IModelDoc2 doc, string material, string description, string partName)
+        private void SetPartPropertiesOnDocument(IModelDoc2 doc, string material, string description, string weight, string partName)
         {
             try
             {
@@ -3233,8 +3250,9 @@ namespace AICAD.UI
                                 if (partDoc != null)
                                 {
                                     string database = "solidworks materials.sldmat";
-                                    partDoc.SetMaterialPropertyName2("", database, material);
-                                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {material}"); } catch { }
+                                    var resolved = ResolveMaterialName(material);
+                                    partDoc.SetMaterialPropertyName2("", database, resolved);
+                                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {resolved}"); } catch { }
                                 }
                             }
                             else
@@ -3254,9 +3272,19 @@ namespace AICAD.UI
                     }
 
                     string filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
-                    if (!string.IsNullOrEmpty(filename))
+                    if (string.IsNullOrWhiteSpace(filename))
                     {
-                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, $"\"SW-Mass@{filename}.SLDPRT\"", (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        var title = doc.GetTitle();
+                        if (!string.IsNullOrWhiteSpace(title))
+                            filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(filename))
+                    {
+                        var massLink = $"\"SW-Mass@{filename}.SLDPRT\"";
+                        // Let SolidWorks compute mass; store link in both Mass and Weight custom properties
+                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        custPropMgr.Add3("Weight", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                     }
 
                     if (!string.IsNullOrEmpty(partName))
@@ -3289,7 +3317,7 @@ namespace AICAD.UI
                     return;
                 }
 
-                SetPartPropertiesOnDocument(doc, material, typeDesc, partName);
+                SetPartPropertiesOnDocument(doc, material, typeDesc, weightTextBox.Text, partName);
                 doc.ForceRebuild3(false);
                 SetRealTimeStatus("Properties applied", Colors.DarkGreen);
             }
@@ -3329,8 +3357,8 @@ namespace AICAD.UI
                     // Load description
                     typeDescriptionTextBox.Text = description ?? string.Empty;
 
-                    // Load weight (mass) - ensure it updates even if empty
-                    weightTextBox.Text = mass ?? "0.000";
+                    // Load weight (mass). Leave blank if not resolved to avoid writing 0.000.
+                    weightTextBox.Text = mass ?? string.Empty;
 
                     // Don't overwrite preview with partNo - preview is for generated names
                     // If we want to show existing partNo somewhere, add a separate field
@@ -3417,7 +3445,22 @@ namespace AICAD.UI
                 if (!string.IsNullOrWhiteSpace(partName)) SetProp("Part Number", partName);
                 SetProp("Material", material ?? string.Empty);
                 SetProp("Description", description ?? string.Empty);
-                if (!string.IsNullOrWhiteSpace(weight)) SetProp("Weight", weight);
+
+                // Let SolidWorks compute mass: link Weight to SW-Mass for the current file name when available
+                var path = model.GetPathName();
+                var fname = string.IsNullOrWhiteSpace(path) ? null : System.IO.Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrWhiteSpace(fname))
+                {
+                    var title = model.GetTitle();
+                    if (!string.IsNullOrWhiteSpace(title))
+                        fname = System.IO.Path.GetFileNameWithoutExtension(title);
+                }
+
+                if (!string.IsNullOrWhiteSpace(fname))
+                {
+                    var massLink = $"\"SW-Mass@{fname}.SLDPRT\"";
+                    SetProp("Weight", massLink);
+                }
 
                 model.ForceRebuild3(false);
                 return true;
@@ -3426,6 +3469,33 @@ namespace AICAD.UI
             {
                 status = ex.Message;
                 return false;
+            }
+        }
+
+        private string ResolveMaterialName(string material)
+        {
+            if (string.IsNullOrWhiteSpace(material)) return material ?? string.Empty;
+            var m = material.Trim();
+            switch (m.ToLowerInvariant())
+            {
+                case "aluminum":
+                case "aluminium":
+                    return "Aluminum, 1060 Alloy";
+                case "steel":
+                    return "Plain Carbon Steel";
+                case "stainless":
+                case "stainless steel":
+                    return "Stainless Steel, 304";
+                case "brass":
+                    return "Brass";
+                case "copper":
+                    return "Copper";
+                case "titanium":
+                    return "Titanium, Grade 2";
+                case "plastic":
+                    return "ABS Plastic";
+                default:
+                    return m;
             }
         }
 

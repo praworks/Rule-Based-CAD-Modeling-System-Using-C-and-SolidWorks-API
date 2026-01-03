@@ -143,19 +143,57 @@ namespace AICAD.Services.Operations.Utilities
                     var cust = model.Extension.CustomPropertyManager[""];
                     cust?.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                 }
-                catch
+                catch { }
+
+                // Try to apply material to the model so mass uses correct density
+                try
                 {
-                    // swallow property manager errors; material application already attempted
+                    var partDoc = model as PartDoc;
+                    if (partDoc != null)
+                    {
+                        string db = "solidworks materials.sldmat";
+                        string resolved = ResolveMaterialName(material);
+                        partDoc.SetMaterialPropertyName2("", db, resolved);
+                        applied = true;
+                    }
                 }
+                catch { applied = false; }
 
                 if (!applied)
-                    return OperationResult.CreateSuccess(data: new { material, applied = false, note = "Material property set as custom property; library apply may have failed." });
+                    return OperationResult.CreateSuccess(data: new { material, applied = false, note = "Material property set; library apply may have failed." });
 
                 return OperationResult.CreateSuccess(data: new { material, applied = true });
             }
             catch (Exception ex)
             {
                 return OperationResult.CreateFailure($"set_material failed: {ex.Message}");
+            }
+        }
+
+        private static string ResolveMaterialName(string material)
+        {
+            if (string.IsNullOrWhiteSpace(material)) return material ?? string.Empty;
+            var m = material.Trim();
+            switch (m.ToLowerInvariant())
+            {
+                case "aluminum":
+                case "aluminium":
+                    return "Aluminum, 1060 Alloy";
+                case "steel":
+                    return "Plain Carbon Steel";
+                case "stainless":
+                case "stainless steel":
+                    return "Stainless Steel, 304";
+                case "brass":
+                    return "Brass";
+                case "copper":
+                    return "Copper";
+                case "titanium":
+                    return "Titanium, Grade 2";
+                case "plastic":
+                    return "ABS Plastic";
+                default:
+                    return m;
             }
         }
     }
@@ -189,6 +227,38 @@ namespace AICAD.Services.Operations.Utilities
             catch (Exception ex)
             {
                 return OperationResult.CreateFailure($"description failed: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
+    /// Handler for "set_weight" operation - sets the part weight custom property
+    /// </summary>
+    public class SetWeightHandler : IOperationHandler
+    {
+        public OperationResult Execute(JObject step, IModelDoc2 model, ISketchManager sketchMgr, IFeatureManager featMgr, bool inSketch)
+        {
+            try
+            {
+                if (model == null)
+                    return OperationResult.CreateFailure("Model not initialized");
+
+                string weight = step.Value<string>("weight") ??
+                                step.Value<string>("value") ??
+                                string.Empty;
+
+                if (string.IsNullOrWhiteSpace(weight))
+                    return OperationResult.CreateFailure("Missing weight value");
+
+                // Use global custom properties (empty string for config)
+                var cust = model.Extension.CustomPropertyManager[""];
+                cust?.Add3("Weight", (int)swCustomInfoType_e.swCustomInfoText, weight, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+
+                return OperationResult.CreateSuccess(data: new { weight });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult.CreateFailure($"set_weight failed: {ex.Message}");
             }
         }
     }

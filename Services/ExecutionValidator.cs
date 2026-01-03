@@ -31,7 +31,8 @@ namespace AICAD.Services
             JObject beforeSnapshot,
             JObject afterSnapshot)
         {
-            var opName = step["operation"]?.ToString() ?? "Unknown";
+            // Prefer "op" (used by planner) but fall back to "operation" for legacy payloads
+            var opName = step["op"]?.ToString() ?? step["operation"]?.ToString() ?? "Unknown";
             var result = new ValidationResult
             {
                 OperationName = opName,

@@ -64,12 +64,15 @@ namespace AICAD.Services
                         string material = "", matResolved = "";
                         string description = "", descResolved = "";
                         string mass = "", massResolved = "";
+                        string weight = "", weightResolved = "";
                         custMgr.Get2("Material", out material, out matResolved);
                         custMgr.Get2("Description", out description, out descResolved);
                         custMgr.Get2("Mass", out mass, out massResolved);
+                        custMgr.Get2("Weight", out weight, out weightResolved);
                         result["material"] = material ?? "";
                         result["description"] = description ?? "";
                         result["mass"] = mass ?? "";
+                        result["weight"] = weight ?? "";
                     }
                 }
                 catch { }
@@ -103,6 +106,8 @@ namespace AICAD.Services
                 lines.Add($"Material: {facts["material"]}");
             if (!string.IsNullOrEmpty((string)facts["description"]))
                 lines.Add($"Description: {facts["description"]}");
+            if (!string.IsNullOrEmpty((string)facts["weight"]))
+                lines.Add($"Weight: {facts["weight"]}");
             return string.Join("\n", lines);
         }
     }

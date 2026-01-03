@@ -78,9 +78,8 @@ namespace AICAD.Services
                     var log = new JObject { ["step"] = i, ["op"] = op };
                     
                     // VALIDATION: Capture model state BEFORE execution
-                    // Note: Validation temporarily disabled due to compiler issue
-                    // JObject beforeSnapshot = null;
-                    // try { if (model != null) beforeSnapshot = ModelInspector.InspectModel(model); } catch { }
+                    JObject beforeSnapshot = null;
+                    try { if (model != null) beforeSnapshot = ModelInspector.InspectModel(model); } catch { }
 
                     try
                     {
@@ -152,9 +151,26 @@ namespace AICAD.Services
                         inSketch = opResult.InSketch;
                         log["success"] = true;
 
-                        // VALIDATION: Capture model state AFTER execution
-                        // Note: Validation temporarily disabled due to compiler issue
-                        // TODO: Re-enable after fixing ModelInspector compilation
+                        // VALIDATION: Capture model state AFTER execution and validate
+                        JObject afterSnapshot = null;
+                        try { if (model != null) afterSnapshot = ModelInspector.InspectModel(model); } catch { }
+                        
+                        if (beforeSnapshot != null && afterSnapshot != null)
+                        {
+                            try
+                            {
+                                var validation = ExecutionValidator.ValidateStep(s, model, beforeSnapshot, afterSnapshot);
+                                result.Validations.Add(validation);
+                                if (!validation.IsValid)
+                                {
+                                    log["validation_warning"] = validation.Message;
+                                }
+                            }
+                            catch (Exception valEx)
+                            {
+                                log["validation_error"] = valEx.Message;
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {

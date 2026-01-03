@@ -2439,7 +2439,8 @@ namespace AICAD.UI
 
                 var sysPrompt =
                     "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
-                    "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
+                    "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; " +
+                    "extrude{depth,type?}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
                     "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
                 try { AddinStatusLogger.Log("FewShot", $"Final few-shot prompt length={(fewshot==null?0:fewshot.Length)}"); } catch { }
                 // Notify user when few-shot examples are not being included
@@ -2620,6 +2621,8 @@ namespace AICAD.UI
 
                     try
                     {
+                        planDoc = AugmentPlanWithProperties(planDoc, text);
+
                         exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
                         {
                             try
@@ -2708,6 +2711,40 @@ namespace AICAD.UI
                 if (exec != null && exec.Success)
                 {
                     AppendStatusLine("Model created.");
+                    
+                    // VALIDATION: Display validation results from closed-loop verification
+                    if (exec.ValidationReport != null)
+                    {
+                        try
+                        {
+                            var passed = exec.ValidationReport["passed"]?.Value<int>() ?? 0;
+                            var total = exec.ValidationReport["total"]?.Value<int>() ?? 0;
+                            var rate = exec.ValidationReport["success_rate"]?.Value<double>() ?? 0;
+                            AppendStatusLine($"[VALIDATION] {passed}/{total} operations verified ({rate:F1}% success)");
+                            
+                            // Show details of any failed validations
+                            var details = exec.ValidationReport["details"] as JArray;
+                            if (details != null)
+                            {
+                                foreach (var detail in details)
+                                {
+                                    bool valid = detail["valid"]?.Value<bool>() ?? false;
+                                    string op = detail["operation"]?.Value<string>() ?? "unknown";
+                                    string msg = detail["message"]?.Value<string>() ?? "";
+                                    
+                                    if (!valid)
+                                    {
+                                        AppendStatusLine($"  ⚠ {op}: {msg}");
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception vex)
+                        {
+                            try { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Error displaying validation report: {vex.Message}"); } catch { }
+                        }
+                    }
+                    
                     // Record that a model was created by this run so properties may be applied
                     try { _lastRunCreatedModel = exec.CreatedNewPart; _lastCreatedModelTitle = exec.ModelTitle; } catch { }
                     try { Dispatcher.Invoke(()=>{ applyPropertiesButton.IsEnabled = (exec.CreatedNewPart); }); } catch { }
@@ -3628,6 +3665,68 @@ namespace AICAD.UI
             }
 
             return t;
+        }
+
+        /// <summary>
+        /// Best-effort insertion of material/description steps when missing.
+        /// </summary>
+        private JObject AugmentPlanWithProperties(JObject plan, string userPrompt)
+        {
+            if (plan == null) return plan;
+
+            var steps = plan["steps"] as JArray;
+            if (steps == null)
+            {
+                steps = new JArray();
+                plan["steps"] = steps;
+            }
+
+            bool hasSetMaterial = steps.Any(s => string.Equals((string)s?["op"], "set_material", StringComparison.OrdinalIgnoreCase));
+            bool hasDescription = steps.Any(s => string.Equals((string)s?["op"], "description", StringComparison.OrdinalIgnoreCase));
+
+            string prompt = userPrompt ?? string.Empty;
+            var materialMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "steel", "Steel" },
+                { "stainless", "Stainless Steel" },
+                { "aluminum", "Aluminum" },
+                { "aluminium", "Aluminum" },
+                { "brass", "Brass" },
+                { "copper", "Copper" },
+                { "titanium", "Titanium" },
+                { "plastic", "Plastic" },
+                { "abs", "ABS" },
+                { "pla", "PLA" },
+                { "nylon", "Nylon" },
+                { "wood", "Wood" }
+            };
+
+            string detectedMaterial = materialMap.FirstOrDefault(kv => prompt.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0).Value;
+
+            if (!hasSetMaterial && !string.IsNullOrWhiteSpace(detectedMaterial))
+            {
+                steps.Add(new JObject
+                {
+                    ["op"] = "set_material",
+                    ["material"] = detectedMaterial
+                });
+            }
+
+            if (!hasDescription)
+            {
+                var desc = (prompt ?? string.Empty).Trim();
+                if (desc.Length > 120) desc = desc.Substring(0, 120);
+                if (!string.IsNullOrWhiteSpace(desc))
+                {
+                    steps.Add(new JObject
+                    {
+                        ["op"] = "description",
+                        ["description"] = desc
+                    });
+                }
+            }
+
+            return plan;
         }
 
         private void StatusWindow_CopyErrorClicked(object sender, EventArgs e)

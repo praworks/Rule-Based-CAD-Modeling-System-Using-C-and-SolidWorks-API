@@ -4,18 +4,30 @@
 		{
 			"label": "Build AI-CAD-December Project",
 			"type": "process",
-			"command": "msbuild",
+			"command": "dotnet",
 			"args": [
+				"build",
 				"AI-CAD-December.sln",
 				"/t:Rebuild",
 				"/p:Configuration=Debug",
 				"/p:Platform=\"Any CPU\""
 			],
+			"dependsOn": "Restore NuGet packages",
 			"group": {
 				"kind": "build",
 				"isDefault": true
 			},
 			"problemMatcher": ["$msCompile"]
+		},
+		{
+			"label": "Restore NuGet packages",
+			"type": "process",
+			"command": "dotnet",
+			"args": [
+				"restore",
+				"AI-CAD-December.sln"
+			],
+			"problemMatcher": []
 		},
 		{
 			"label": "Build + Register AI-CAD (Admin)",

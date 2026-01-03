@@ -2208,7 +2208,7 @@ namespace AICAD.UI
                     var mongoConnected = !string.IsNullOrWhiteSpace(mongoConnStr);
                     
                     // Advanced settings
-                    var forceStaticFewShot = System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.User) ?? "0";
+                    var forceStaticFewShotEnv = System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.User) ?? "0";
                     var useFewShotEnv = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User) ?? "1";
                     var forceOnlyGoodFeedback = System.Environment.GetEnvironmentVariable("AICAD_FORCE_ONLY_GOOD_FEEDBACK", System.EnvironmentVariableTarget.User) ?? "0";
                     var trainingDataEnabled = System.Environment.GetEnvironmentVariable("AICAD_TRAINING_DATA_ENABLED", System.EnvironmentVariableTarget.User) ?? "1";
@@ -2226,7 +2226,7 @@ namespace AICAD.UI
                     // Training Data & Advanced Options
                     AppendStatusLine($"[Training] Data Storage Enabled: {(trainingDataEnabled == "1" ? "Yes" : "No")}");
                     AppendStatusLine($"[Training] Few-shot Examples Enabled: {(useFewShotEnv == "1" ? "Yes" : "No")}");
-                    AppendStatusLine($"[Training] Force Static Few-shot: {(forceStaticFewShot == "1" ? "Yes" : "No")}");
+                    AppendStatusLine($"[Training] Force Static Few-shot: {(forceStaticFewShotEnv == "1" ? "Yes" : "No")}");
                     AppendStatusLine($"[Training] Use Only Good Feedback: {(forceOnlyGoodFeedback == "1" ? "Yes" : "No")}");
                 }
                 catch { }
@@ -2351,7 +2351,7 @@ namespace AICAD.UI
                                     try
                                     {
                                         var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
-                                        var prettyJson = parsed.ToString(Newtonsoft.Json.Formatting.Indented);
+                                        var prettyJson = Newtonsoft.Json.JsonConvert.SerializeObject(parsed, Newtonsoft.Json.Formatting.Indented);
                                         AddinStatusLogger.Log("FewShot", prettyJson);
                                     }
                                     catch
@@ -2379,7 +2379,7 @@ namespace AICAD.UI
                                     try
                                     {
                                         var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
-                                        var prettyJson = parsed.ToString(Newtonsoft.Json.Formatting.Indented);
+                                        var prettyJson = Newtonsoft.Json.JsonConvert.SerializeObject(parsed, Newtonsoft.Json.Formatting.Indented);
                                         AddinStatusLogger.Log("FewShot", prettyJson);
                                     }
                                     catch
@@ -2572,91 +2572,84 @@ namespace AICAD.UI
                         break;
                     }
 
-                    // Honor Stop requests before executing plan
                     if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
 
-                    // Keep the fixed pipeline steps only. Do NOT replace the taskpane step list
-                    // with the detailed plan steps returned by the LLM. The application relies
-                    // on the high-level pipeline initialized earlier (e.g. "Got your request",
-                    // "Preparing inputs", ..., "Complete"). Per-user request we leave that list
-                    // intact so the taskpane never shows low-level ops such as "new_part" or
-                    // "select_plane". Individual plan ops will still update the high-level
-                    // progress via UpdateHigherLevelFromOp(op, pct) below.
-
-                    // mark read/checked progress
                     try { SetStepProgress("Reading AI response", 100, StepState.Success); SetStepProgress("Checking parameters", 50, StepState.Running); } catch { }
 
-                        // Preset sequence removed; UI will update from real execution progress
-
-                        // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
-                        exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
+                    try
                     {
-                        try
+                        exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
                         {
-                            // update overall progress bar
-                            try { generationProgressBar.Value = Math.Max(0, Math.Min(100, pct)); } catch { }
-                            try { generationProgressText.Text = pct.ToString() + "%"; } catch { }
-
-                            // Update step entry if available
-                            if (idx.HasValue && idx.Value >= 0 && idx.Value < _steps.Count)
-                            {
-                                var vm = _steps[idx.Value];
-                                vm.Percent = pct;
-                                vm.State = pct >= 100 ? StepState.Success : StepState.Running;
-                                vm.Timestamp = DateTime.Now;
-                            }
-                            else
-                            {
-                                // If no index, mark nearest running step by matching op
-                                for (int i = 0; i < _steps.Count; i++)
-                                {
-                                    if (string.Equals(_steps[i].Label, op, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        _steps[i].Percent = pct;
-                                        _steps[i].State = pct >= 100 ? StepState.Success : StepState.Running;
-                                        _steps[i].Timestamp = DateTime.Now;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // Also update higher-level fixed steps based on op name
-                            try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
-
-                            // Update header counter based on dynamic steps
                             try
                             {
-                                Dispatcher.BeginInvoke(new Action(() =>
+                                try { generationProgressBar.Value = Math.Max(0, Math.Min(100, pct)); } catch { }
+                                try { generationProgressText.Text = pct.ToString() + "%"; } catch { }
+
+                                if (idx.HasValue && idx.Value >= 0 && idx.Value < _steps.Count)
                                 {
-                                    try
+                                    var vm = _steps[idx.Value];
+                                    vm.Percent = pct;
+                                    vm.State = pct >= 100 ? StepState.Success : StepState.Running;
+                                    vm.Timestamp = DateTime.Now;
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < _steps.Count; i++)
                                     {
-                                        var completed = _steps.Count(s => s.State == StepState.Success);
-                                        if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
+                                        if (string.Equals(_steps[i].Label, op, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            _steps[i].Percent = pct;
+                                            _steps[i].State = pct >= 100 ? StepState.Success : StepState.Running;
+                                            _steps[i].Timestamp = DateTime.Now;
+                                            break;
+                                        }
                                     }
-                                    catch { }
-                                }));
+                                }
+
+                                try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
+
+                                try
+                                {
+                                    Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        try
+                                        {
+                                            var completed = _steps.Count(s => s.State == StepState.Success);
+                                            if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
+                                        }
+                                        catch { }
+                                    }));
+                                }
+                                catch { }
                             }
                             catch { }
-                        }
-                        catch { }
-                    }));
-                    if (exec.Success) break;
+                        }));
+                    }
+                    catch (Exception ex)
+                    {
+                        try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Unhandled exception during plan execution", ex); } catch { }
+                        try { AICAD.Services.TempFileWriter.AppendAllText("AICAD_UnhandledException.log", $"[{DateTime.UtcNow:O}] Exec exception: {ex}\n"); } catch { }
+                        exec = new AICAD.Services.StepExecutionResult { Success = false };
+                    }
+
+                    if (exec != null && exec.Success) break;
 
                     var errDoc = new JObject
                     {
                         ["last_plan"] = SafeJson(planJson),
-                        ["errors"] = new JArray(exec.Log)
+                        ["errors"] = (exec != null) ? new JArray(exec.Log) : new JArray()
                     };
+
                     var corrective =
                         "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
                         errDoc.ToString() +
                         "\nRemember: output only JSON with steps; use Front Plane and mm units.";
+
                     try
                     {
-                        if (exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
+                        if (exec != null && exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
                         {
-                            // Close document on UI thread
-                            Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle));
+                            try { Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle)); } catch { }
                         }
                     }
                     catch { }
@@ -2918,7 +2911,12 @@ namespace AICAD.UI
                         try { build.IsEnabled = true; } catch { }
                     });
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Unhandled exception during plan execution", ex); } catch { }
+                    try { AICAD.Services.TempFileWriter.AppendAllText("AICAD_UnhandledException.log", $"[{DateTime.UtcNow:O}] Exec exception: {ex}\n"); } catch { }
+                    exec = new AICAD.Services.StepExecutionResult { Success = false };
+                }
                 try { _buildCts?.Dispose(); _buildCts = null; } catch { }
             }
         }

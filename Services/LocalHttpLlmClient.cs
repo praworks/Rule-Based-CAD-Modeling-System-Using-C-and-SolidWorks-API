@@ -133,6 +133,12 @@ namespace AICAD.Services
             return respText;
         }
 
+        // Backward-compatible wrapper used by older call sites that passed a CancellationToken.
+        public async Task<string> SendPromptAsync(string prompt, System.Threading.CancellationToken cancellationToken)
+        {
+            return await GenerateAsync(prompt).ConfigureAwait(false);
+        }
+
         public void Dispose()
         {
             _http?.Dispose();

@@ -29,21 +29,7 @@
     <Reference Include="Newtonsoft.Json">
       <HintPath>bin\Debug\Newtonsoft.Json.dll</HintPath>
     </Reference>
-    <Reference Include="MongoDB.Driver">
-      <HintPath>bin\Debug\MongoDB.Driver.dll</HintPath>
-    </Reference>
-    <Reference Include="MongoDB.Bson">
-      <HintPath>bin\Debug\MongoDB.Bson.dll</HintPath>
-    </Reference>
-    <Reference Include="MongoDB.Driver.Core">
-      <HintPath>bin\Debug\MongoDB.Driver.Core.dll</HintPath>
-    </Reference>
-    <Reference Include="MongoDB.Libmongocrypt">
-      <HintPath>bin\Debug\MongoDB.Libmongocrypt.dll</HintPath>
-    </Reference>
-    <Reference Include="System.Data.SQLite">
-      <HintPath>bin\Debug\System.Data.SQLite.dll</HintPath>
-    </Reference>
+    <!-- Use NuGet PackageReferences for Newtonsoft, MongoDB and SQLite to avoid runtime binding conflicts -->
     <Reference Include="SolidWorks.Interop.sldworks">
       <HintPath>References\SolidWorks.Interop.sldworks.dll</HintPath>
       <EmbedInteropTypes>True</EmbedInteropTypes>

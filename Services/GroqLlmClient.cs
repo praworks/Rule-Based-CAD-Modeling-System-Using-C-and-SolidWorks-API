@@ -70,5 +70,11 @@ namespace AICAD.Services
         {
             _client?.Dispose();
         }
+
+        // Backward-compatible wrapper used by older call sites that passed a CancellationToken.
+        public async Task<string> SendPromptAsync(string prompt, System.Threading.CancellationToken cancellationToken)
+        {
+            return await GenerateAsync(prompt).ConfigureAwait(false);
+        }
     }
 }

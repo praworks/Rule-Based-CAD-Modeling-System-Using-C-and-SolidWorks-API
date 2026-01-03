@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
@@ -76,6 +77,7 @@ namespace AICAD.Services
                     var s = NormalizeStep(raw);
                     string op = s.Value<string>("op") ?? string.Empty;
                     var log = new JObject { ["step"] = i, ["op"] = op };
+                    var sw = Stopwatch.StartNew();
                     
                     // VALIDATION: Capture model state BEFORE execution
                     JObject beforeSnapshot = null;
@@ -101,7 +103,6 @@ namespace AICAD.Services
                     }
                     try
                     {
-                        try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: starting op='{op}'"); } catch { }
 
                         // Handle new_part inline to ensure model exists before other handlers
                         if (string.Equals(op, "new_part", StringComparison.OrdinalIgnoreCase))
@@ -118,6 +119,8 @@ namespace AICAD.Services
                             }
                             log["success"] = true;
                             result.Log.Add(log);
+                            sw.Stop();
+                            try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
                             continue;
                         }
 
@@ -174,12 +177,14 @@ namespace AICAD.Services
                     }
                     catch (Exception ex)
                     {
+                        sw.Stop();
                         log["success"] = false;
                         log["error"] = ex.Message;
                         result.Log.Add(log);
                         result.Success = false;
                         try { AddinStatusLogger.Error("StepExecutor", $"Step {i} failed op='{op}'", ex); } catch { }
-                        
+                        try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
+
                         // If continueOnError is enabled, log this failure but process next step
                         if (!continueOnError)
                         {
@@ -200,7 +205,8 @@ namespace AICAD.Services
                         try { progressCallback?.Invoke(afterPct, op, i); } catch { }
                     }
                     catch { }
-                    try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: completed op='{op}' success={log.Value<bool?>("success")}" ); } catch { }
+                    sw.Stop();
+                    try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
                 }
 
                 // Check if continueOnError mode: success if ANY step succeeded

@@ -1108,3 +1108,62 @@
 2026-01-03T18:00:41.1228274+05:30 WPF: build.Click invoked
 2026-01-03T18:00:41.1478256+05:30 Wrapper: BuildRequested forwarded
 2026-01-03T18:00:41.1648022+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:18:52.7443870+05:30 WPF: build.Click invoked
+2026-01-03T18:18:52.7663765+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:18:52.7783694+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:24:16.2277987+05:30 WPF: build.Click invoked
+2026-01-03T18:24:16.2547825+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:24:16.2697732+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:26:24.7773022+05:30 WPF: build.Click invoked
+2026-01-03T18:26:24.7974363+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:26:24.8084285+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:29:14.3551716+05:30 WPF: build.Click invoked
+2026-01-03T18:29:14.3723134+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:29:14.3833076+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:32:44.1608518+05:30 WPF: build.Click invoked
+2026-01-03T18:32:44.1818407+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:32:44.1988287+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:57:25.0462334+05:30 WPF: build.Click invoked
+2026-01-03T18:57:25.0670782+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:57:25.0810706+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:00:06.3032776+05:30 WPF: build.Click invoked
+2026-01-03T19:00:06.3236482+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:00:06.3356411+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:04:45.8121561+05:30 WPF: build.Click invoked
+2026-01-03T19:04:45.8301436+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:04:45.8441361+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:04:54.8056162+05:30 [FilletHandler] hasExplicitTargets=False
+2026-01-03T19:04:54.8216427+05:30 [FilletHandler] Attempting implicit edge selection...
+2026-01-03T19:04:54.9510023+05:30 [FilletHandler] After implicit selection: edgeCount=12
+2026-01-03T19:04:54.9632480+05:30 [FilletHandler] Final edgeCount before FeatureFillet2: 12
+2026-01-03T19:04:54.9716929+05:30 [FilletHandler] FeatureFillet2 returned status=1
+2026-01-03T19:08:41.3591687+05:30 WPF: build.Click invoked
+2026-01-03T19:08:41.3791391+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:08:41.3921321+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:12:04.9664907+05:30 WPF: build.Click invoked
+2026-01-03T19:12:04.9894752+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:12:05.0004689+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:16:11.5620186+05:30 WPF: build.Click invoked
+2026-01-03T19:16:11.5831632+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:16:11.5991537+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:17:36.1153099+05:30 WPF: build.Click invoked
+2026-01-03T19:17:36.1402941+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:17:36.1532867+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:18:03.8767633+05:30 WPF: build.Click invoked
+2026-01-03T19:18:03.8980320+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:18:03.9120760+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:18:17.9633029+05:30 WPF: build.Click invoked
+2026-01-03T19:18:17.9836117+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:18:17.9996022+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:18:37.5918515+05:30 WPF: build.Click invoked
+2026-01-03T19:18:37.6130967+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:18:37.6281122+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:23:21.0034193+05:30 WPF: build.Click invoked
+2026-01-03T19:23:21.0223919+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:23:21.0333856+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:24:48.4393435+05:30 WPF: build.Click invoked
+2026-01-03T19:24:48.4633273+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:24:48.4763195+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:26:11.1360247+05:30 WPF: build.Click invoked
+2026-01-03T19:26:11.1602518+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:26:11.1742430+05:30 SwAddin: wrapper BuildRequested received

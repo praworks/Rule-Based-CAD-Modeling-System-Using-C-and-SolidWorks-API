@@ -498,7 +498,7 @@ namespace AICAD
                         }
                         catch { }
 
-                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
+                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=1)
                         try
                         {
                             var applyMat = System.Environment.GetEnvironmentVariable("AICAD_APPLY_MATERIAL") ?? "1";

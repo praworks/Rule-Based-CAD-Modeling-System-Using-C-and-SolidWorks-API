@@ -63,13 +63,38 @@ namespace AICAD.Services
                         ValidateSketchOperation(step, result, beforeSnapshot, afterSnapshot);
                         break;
                     default:
-                        // Generic validation: check for feature count increase
-                        int featureBefore = beforeSnapshot?["feature_count"]?.Value<int>() ?? 0;
-                        int featureAfter = afterSnapshot?["feature_count"]?.Value<int>() ?? 0;
-                        result.IsValid = featureAfter > featureBefore;
-                        result.Message = result.IsValid 
-                            ? $"Feature count increased ({featureBefore} → {featureAfter})"
-                            : $"No new feature detected";
+                        // For unknown or non-geometry operations, avoid treating lack of feature creation as failure.
+                        // Only operations that create geometry should be validated by feature count.
+                        var geomOps = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                        {
+                            "extrude",
+                            "fillet",
+                            "revolve",
+                            "cut",
+                            "cut-extrude",
+                            "boss",
+                            "boss-extrude",
+                            "hole",
+                            "sweep",
+                            "loft"
+                        };
+
+                        if (geomOps.Contains(opName))
+                        {
+                            // Generic validation for geometry-creating ops: check for feature count increase
+                            int featureBefore = beforeSnapshot?["feature_count"]?.Value<int>() ?? 0;
+                            int featureAfter = afterSnapshot?["feature_count"]?.Value<int>() ?? 0;
+                            result.IsValid = featureAfter > featureBefore;
+                            result.Message = result.IsValid
+                                ? $"Feature count increased ({featureBefore} → {featureAfter})"
+                                : $"No new feature detected";
+                        }
+                        else
+                        {
+                            // Non-geometry ops are considered successful if execution completed without exception
+                            result.IsValid = true;
+                            result.Message = "Action completed (no geometry change expected)";
+                        }
                         break;
                 }
             }

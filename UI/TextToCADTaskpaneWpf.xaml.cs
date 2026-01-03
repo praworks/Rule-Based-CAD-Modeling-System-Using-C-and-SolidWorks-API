@@ -3276,24 +3276,16 @@ namespace AICAD.UI
                         }
                         catch { }
 
-                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
+                        // Apply material to part model (always apply)
                         try
                         {
-                            var applyMat = System.Environment.GetEnvironmentVariable("AICAD_APPLY_MATERIAL") ?? "1";
-                            if (applyMat != "0")
+                            var partDoc = doc as PartDoc;
+                            if (partDoc != null)
                             {
-                                var partDoc = doc as PartDoc;
-                                if (partDoc != null)
-                                {
-                                    string database = "solidworks materials.sldmat";
-                                    var resolved = ResolveMaterialName(material);
-                                    partDoc.SetMaterialPropertyName2("", database, resolved);
-                                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {resolved}"); } catch { }
-                                }
-                            }
-                            else
-                            {
-                                try { AddinStatusLogger.Log("TaskpaneWpf", "Skipping material application due to AICAD_APPLY_MATERIAL=0"); } catch { }
+                                string database = "solidworks materials.sldmat";
+                                var resolved = ResolveMaterialName(material);
+                                partDoc.SetMaterialPropertyName2("", database, resolved);
+                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {resolved}"); } catch { }
                             }
                         }
                         catch (Exception matEx)

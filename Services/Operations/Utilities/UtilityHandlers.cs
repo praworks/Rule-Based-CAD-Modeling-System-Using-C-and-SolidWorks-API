@@ -169,9 +169,9 @@ namespace AICAD.Services.Operations.Utilities
                     var partDoc = model as PartDoc;
                     if (partDoc != null)
                     {
-                        string db = "solidworks materials.sldmat";
+                        // Use empty database so SolidWorks resolves the material name in the active materials
                         string resolved = ResolveMaterialName(material);
-                        partDoc.SetMaterialPropertyName2("", db, resolved);
+                        partDoc.SetMaterialPropertyName2("", "", resolved);
                         applied = true;
                     }
                 }

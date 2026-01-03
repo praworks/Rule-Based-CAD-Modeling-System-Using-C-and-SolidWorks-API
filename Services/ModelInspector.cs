@@ -112,7 +112,9 @@ namespace AICAD.Services
                         custMgr.Get2("Description", out description, out descResolved);
                         custMgr.Get2("Mass", out mass, out massResolved);
                         custMgr.Get2("Weight", out weight, out weightResolved);
-                        result["material"] = material ?? "";
+                        // Prefer resolved material name (user-facing) when available
+                        result["material"] = string.IsNullOrWhiteSpace(matResolved) ? (material ?? "") : matResolved;
+                        result["material_resolved"] = matResolved ?? "";
                         result["description"] = description ?? "";
                         result["mass"] = mass ?? "";
                         result["weight"] = weight ?? "";

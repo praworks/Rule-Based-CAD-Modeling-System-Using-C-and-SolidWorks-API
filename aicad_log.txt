@@ -841,3 +841,401 @@
 2025-12-31T10:21:40.4402366+05:30 WPF: build.Click invoked
 2025-12-31T10:21:40.4468729+05:30 Wrapper: BuildRequested forwarded
 2025-12-31T10:21:40.4487087+05:30 SwAddin: wrapper BuildRequested received
+2026-01-02T11:22:32.5359511+05:30 WPF: build.Click invoked
+2026-01-02T11:22:32.5569541+05:30 Wrapper: BuildRequested forwarded
+2026-01-02T11:22:32.5679525+05:30 SwAddin: wrapper BuildRequested received
+2026-01-02T11:31:32.5635145+05:30 WPF: build.Click invoked
+2026-01-02T11:31:32.5888754+05:30 Wrapper: BuildRequested forwarded
+2026-01-02T11:31:32.6044953+05:30 SwAddin: wrapper BuildRequested received
+2026-01-02T11:32:50.1864384+05:30 WPF: build.Click invoked
+2026-01-02T11:32:50.2020649+05:30 Wrapper: BuildRequested forwarded
+2026-01-02T11:32:50.2182076+05:30 SwAddin: wrapper BuildRequested received
+2026-01-02T11:33:30.9558313+05:30 WPF: build.Click invoked
+2026-01-02T11:33:30.9714570+05:30 Wrapper: BuildRequested forwarded
+2026-01-02T11:33:30.9870789+05:30 SwAddin: wrapper BuildRequested received
+2026-01-02T11:54:46.1002084+05:30 WPF: build.Click invoked
+2026-01-02T11:54:46.1314172+05:30 Wrapper: BuildRequested forwarded
+2026-01-02T11:54:46.1475928+05:30 SwAddin: wrapper BuildRequested received
+2026-01-02T11:56:06.0461863+05:30 WPF: build.Click invoked
+2026-01-02T11:56:06.0774165+05:30 Wrapper: BuildRequested forwarded
+2026-01-02T11:56:06.0774165+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T00:30:58.6486661+05:30 WPF: build.Click invoked
+2026-01-03T00:30:58.6825948+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T00:30:58.6981066+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:23:11.7780208+05:30 WPF: build.Click invoked
+2026-01-03T01:23:11.7936455+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:23:11.8092707+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:25:40.1203082+05:30 WPF: build.Click invoked
+2026-01-03T01:25:40.1515302+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:25:40.1671346+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:26:58.1866577+05:30 WPF: build.Click invoked
+2026-01-03T01:26:58.2178574+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:26:58.2334989+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:28:34.3528442+05:30 WPF: build.Click invoked
+2026-01-03T01:28:34.3684682+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:28:34.3845788+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:30:05.9181631+05:30 WPF: build.Click invoked
+2026-01-03T01:30:05.9337751+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:30:05.9494130+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:40:59.4520132+05:30 WPF: build.Click invoked
+2026-01-03T01:40:59.4676177+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:40:59.4832410+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:43:02.6559009+05:30 WPF: build.Click invoked
+2026-01-03T01:43:02.6871023+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:43:02.7027264+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:44:18.0013699+05:30 WPF: build.Click invoked
+2026-01-03T01:44:18.0185159+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:44:18.0341500+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:44:44.3436765+05:30 WPF: build.Click invoked
+2026-01-03T01:44:44.3593119+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:44:44.3749317+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T01:45:11.7083429+05:30 WPF: build.Click invoked
+2026-01-03T01:45:11.7395937+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T01:45:11.7395937+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:03:20.5734880+05:30 WPF: build.Click invoked
+2026-01-03T02:03:20.6088330+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:03:20.6208339+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:04:59.6972639+05:30 WPF: build.Click invoked
+2026-01-03T02:04:59.7152359+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:04:59.7282464+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:10:55.5774890+05:30 WPF: build.Click invoked
+2026-01-03T02:10:55.6014749+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:10:55.6164668+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:11:18.8404908+05:30 WPF: build.Click invoked
+2026-01-03T02:11:18.8569831+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:11:18.8689778+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:11:22.4927244+05:30 WPF: build.Click invoked
+2026-01-03T02:11:22.5103948+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:11:22.5223891+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:11:38.4533355+05:30 WPF: build.Click invoked
+2026-01-03T02:11:38.4703083+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:11:38.4823197+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:18:06.1605253+05:30 WPF: build.Click invoked
+2026-01-03T02:18:06.1815341+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:18:06.1945261+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:18:17.0197147+05:30 WPF: build.Click invoked
+2026-01-03T02:18:17.0357060+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:18:17.0476990+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:25:28.6206378+05:30 WPF: build.Click invoked
+2026-01-03T02:25:28.6406261+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:25:28.6536320+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:45:57.2219097+05:30 WPF: build.Click invoked
+2026-01-03T02:45:57.2428986+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:45:57.2578912+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T02:57:52.5595912+05:30 WPF: build.Click invoked
+2026-01-03T02:57:52.5795587+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T02:57:52.5905776+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T03:04:19.0283302+05:30 WPF: build.Click invoked
+2026-01-03T03:04:19.0463196+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T03:04:19.0593133+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T03:42:09.4167222+05:30 WPF: build.Click invoked
+2026-01-03T03:42:38.6984539+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T03:42:38.7770801+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T03:43:54.9333789+05:30 WPF: build.Click invoked
+2026-01-03T03:43:54.9490154+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T03:43:54.9646372+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T03:45:49.6941053+05:30 WPF: build.Click invoked
+2026-01-03T03:45:49.7102470+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T03:45:49.7258756+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:03:25.4644867+05:30 WPF: build.Click invoked
+2026-01-03T11:03:25.4801120+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:03:25.4957388+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:08:55.7284746+05:30 WPF: build.Click invoked
+2026-01-03T11:08:55.7596855+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:08:55.7753095+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:33:46.8563509+05:30 WPF: build.Click invoked
+2026-01-03T11:33:46.8875618+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:33:46.9031852+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:35:50.1956067+05:30 WPF: build.Click invoked
+2026-01-03T11:35:50.2175231+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:35:50.2325030+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:37:10.5312456+05:30 WPF: build.Click invoked
+2026-01-03T11:37:10.5512337+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:37:10.5612368+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:41:13.1607448+05:30 WPF: build.Click invoked
+2026-01-03T11:41:13.1797363+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:41:13.1897307+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:41:44.9738244+05:30 WPF: build.Click invoked
+2026-01-03T11:41:44.9988091+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:41:45.0138007+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T11:45:14.4380268+05:30 WPF: build.Click invoked
+2026-01-03T11:45:14.4588356+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T11:45:14.4746513+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:06:12.8340883+05:30 WPF: build.Click invoked
+2026-01-03T12:06:12.8560728+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:06:12.8670660+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:09:33.8720137+05:30 WPF: build.Click invoked
+2026-01-03T12:09:33.8938821+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:09:33.9091823+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:10:59.9337908+05:30 WPF: build.Click invoked
+2026-01-03T12:10:59.9507802+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:10:59.9627742+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:21:37.2349704+05:30 WPF: build.Click invoked
+2026-01-03T12:21:37.2562287+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:21:37.2688970+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:41:34.7719586+05:30 WPF: build.Click invoked
+2026-01-03T12:41:34.7875834+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:41:34.8032054+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:43:25.6457963+05:30 WPF: build.Click invoked
+2026-01-03T12:43:25.6770419+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:43:25.6770419+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:44:49.3115197+05:30 WPF: build.Click invoked
+2026-01-03T12:44:49.3271434+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:44:49.3427682+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:45:29.0337857+05:30 WPF: build.Click invoked
+2026-01-03T12:45:29.0493796+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:45:29.0650078+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:47:02.3920896+05:30 WPF: build.Click invoked
+2026-01-03T12:47:02.4233034+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:47:02.4389120+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:47:47.9325574+05:30 WPF: build.Click invoked
+2026-01-03T12:47:47.9638029+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:47:47.9794275+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:52:45.7466822+05:30 WPF: build.Click invoked
+2026-01-03T12:52:45.7623054+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:52:45.7779332+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:56:37.1537729+05:30 WPF: build.Click invoked
+2026-01-03T12:56:37.1807394+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:56:37.1977298+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T12:58:46.5169714+05:30 WPF: build.Click invoked
+2026-01-03T12:58:46.5325961+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T12:58:46.5482034+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:00:01.9979119+05:30 WPF: build.Click invoked
+2026-01-03T13:00:02.0220239+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:00:02.0376525+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:14:06.5132865+05:30 WPF: build.Click invoked
+2026-01-03T13:14:06.5332767+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:14:06.5452698+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:14:31.2539232+05:30 WPF: build.Click invoked
+2026-01-03T13:14:31.2809019+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:14:31.2968936+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:15:07.2564530+05:30 WPF: build.Click invoked
+2026-01-03T13:15:07.2794210+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:15:07.3004091+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:15:47.5246372+05:30 WPF: build.Click invoked
+2026-01-03T13:15:47.5476305+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:15:47.5612519+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:26:49.3582125+05:30 WPF: build.Click invoked
+2026-01-03T13:26:49.3811983+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:26:49.3961893+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:27:39.6377532+05:30 WPF: build.Click invoked
+2026-01-03T13:27:39.6617388+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:27:39.6777314+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T13:28:35.7943358+05:30 WPF: build.Click invoked
+2026-01-03T13:28:35.8213242+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T13:28:35.8373071+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:15:55.2312360+05:30 WPF: build.Click invoked
+2026-01-03T14:15:55.2582172+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:15:55.2742072+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:16:27.1332190+05:30 WPF: build.Click invoked
+2026-01-03T14:16:27.1611836+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:16:27.1761774+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:18:56.0860726+05:30 WPF: build.Click invoked
+2026-01-03T14:18:56.1123827+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:18:56.1273736+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:20:52.8963752+05:30 WPF: build.Click invoked
+2026-01-03T14:20:52.9174638+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:20:52.9324368+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:21:39.5014771+05:30 WPF: build.Click invoked
+2026-01-03T14:21:39.5254633+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:21:39.5494472+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:22:15.4809743+05:30 WPF: build.Click invoked
+2026-01-03T14:22:15.5069592+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:22:15.5289461+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:36:57.6738677+05:30 WPF: build.Click invoked
+2026-01-03T14:36:57.6940448+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:36:57.7059028+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T14:45:06.4438331+05:30 WPF: build.Click invoked
+2026-01-03T14:45:06.4748125+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T14:45:06.4947998+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T15:21:20.8798425+05:30 WPF: build.Click invoked
+2026-01-03T15:21:20.9028295+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T15:21:20.9198197+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T15:22:29.5560890+05:30 WPF: build.Click invoked
+2026-01-03T15:22:29.5765239+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T15:22:29.5876627+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T15:33:15.1852744+05:30 WPF: build.Click invoked
+2026-01-03T15:33:15.2124379+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T15:33:15.2284242+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T15:36:00.7846672+05:30 WPF: build.Click invoked
+2026-01-03T15:36:00.8003081+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T15:36:00.8183629+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:00:23.0301942+05:30 WPF: build.Click invoked
+2026-01-03T16:01:06.0585897+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:01:06.0715819+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:05:40.3599511+05:30 WPF: build.Click invoked
+2026-01-03T16:05:40.3852648+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:05:40.4022565+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:07:36.7770963+05:30 WPF: build.Click invoked
+2026-01-03T16:07:36.8040811+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:07:36.8180728+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:14:59.6445654+05:30 WPF: build.Click invoked
+2026-01-03T16:14:59.6689120+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:14:59.6819202+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:20:35.6015335+05:30 WPF: build.Click invoked
+2026-01-03T16:20:35.6206128+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:20:35.6306088+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:23:00.7146295+05:30 WPF: build.Click invoked
+2026-01-03T16:23:00.7366153+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:23:00.7496085+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:28:03.3143332+05:30 WPF: build.Click invoked
+2026-01-03T16:28:03.3364723+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:28:03.3484666+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:32:53.8692370+05:30 WPF: build.Click invoked
+2026-01-03T16:32:53.8945283+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:32:53.9105186+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:41:00.9692514+05:30 WPF: build.Click invoked
+2026-01-03T16:41:00.9932360+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:41:01.0172223+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:51:21.0077646+05:30 WPF: build.Click invoked
+2026-01-03T16:51:21.0290992+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:51:21.0450894+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T16:58:04.3484266+05:30 WPF: build.Click invoked
+2026-01-03T16:58:04.3737748+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T16:58:04.3857864+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T17:02:30.2445511+05:30 WPF: build.Click invoked
+2026-01-03T17:02:30.2625244+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T17:02:30.2755155+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T17:05:40.0279342+05:30 WPF: build.Click invoked
+2026-01-03T17:05:40.0480831+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T17:05:40.0640738+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T17:16:39.6174468+05:30 WPF: build.Click invoked
+2026-01-03T17:16:39.6334556+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T17:16:39.6474446+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T17:19:43.5200208+05:30 WPF: build.Click invoked
+2026-01-03T17:19:43.5460058+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T17:19:43.5590023+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:00:41.1228274+05:30 WPF: build.Click invoked
+2026-01-03T18:00:41.1478256+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:00:41.1648022+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:18:52.7443870+05:30 WPF: build.Click invoked
+2026-01-03T18:18:52.7663765+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:18:52.7783694+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:24:16.2277987+05:30 WPF: build.Click invoked
+2026-01-03T18:24:16.2547825+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:24:16.2697732+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:26:24.7773022+05:30 WPF: build.Click invoked
+2026-01-03T18:26:24.7974363+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:26:24.8084285+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:29:14.3551716+05:30 WPF: build.Click invoked
+2026-01-03T18:29:14.3723134+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:29:14.3833076+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:32:44.1608518+05:30 WPF: build.Click invoked
+2026-01-03T18:32:44.1818407+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:32:44.1988287+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T18:57:25.0462334+05:30 WPF: build.Click invoked
+2026-01-03T18:57:25.0670782+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T18:57:25.0810706+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:00:06.3032776+05:30 WPF: build.Click invoked
+2026-01-03T19:00:06.3236482+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:00:06.3356411+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:04:45.8121561+05:30 WPF: build.Click invoked
+2026-01-03T19:04:45.8301436+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:04:45.8441361+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:04:54.8056162+05:30 [FilletHandler] hasExplicitTargets=False
+2026-01-03T19:04:54.8216427+05:30 [FilletHandler] Attempting implicit edge selection...
+2026-01-03T19:04:54.9510023+05:30 [FilletHandler] After implicit selection: edgeCount=12
+2026-01-03T19:04:54.9632480+05:30 [FilletHandler] Final edgeCount before FeatureFillet2: 12
+2026-01-03T19:04:54.9716929+05:30 [FilletHandler] FeatureFillet2 returned status=1
+2026-01-03T19:08:41.3591687+05:30 WPF: build.Click invoked
+2026-01-03T19:08:41.3791391+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:08:41.3921321+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:12:04.9664907+05:30 WPF: build.Click invoked
+2026-01-03T19:12:04.9894752+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:12:05.0004689+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:16:11.5620186+05:30 WPF: build.Click invoked
+2026-01-03T19:16:11.5831632+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:16:11.5991537+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:17:36.1153099+05:30 WPF: build.Click invoked
+2026-01-03T19:17:36.1402941+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:17:36.1532867+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:18:03.8767633+05:30 WPF: build.Click invoked
+2026-01-03T19:18:03.8980320+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:18:03.9120760+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:18:17.9633029+05:30 WPF: build.Click invoked
+2026-01-03T19:18:17.9836117+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:18:17.9996022+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:18:37.5918515+05:30 WPF: build.Click invoked
+2026-01-03T19:18:37.6130967+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:18:37.6281122+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:23:21.0034193+05:30 WPF: build.Click invoked
+2026-01-03T19:23:21.0223919+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:23:21.0333856+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:24:48.4393435+05:30 WPF: build.Click invoked
+2026-01-03T19:24:48.4633273+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:24:48.4763195+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:26:11.1360247+05:30 WPF: build.Click invoked
+2026-01-03T19:26:11.1602518+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:26:11.1742430+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:52:36.3321974+05:30 WPF: build.Click invoked
+2026-01-03T19:52:36.3561896+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:52:36.3721856+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T19:59:20.9568711+05:30 WPF: build.Click invoked
+2026-01-03T19:59:20.9768465+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T19:59:20.9938322+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:15:52.2053181+05:30 WPF: build.Click invoked
+2026-01-03T20:15:52.2276285+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:15:52.2426358+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:20:37.5350342+05:30 WPF: build.Click invoked
+2026-01-03T20:20:37.5560217+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:20:37.5720122+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:27:52.8251390+05:30 WPF: build.Click invoked
+2026-01-03T20:27:52.8461268+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:27:52.8591220+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:31:21.9775716+05:30 WPF: build.Click invoked
+2026-01-03T20:31:21.9975598+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:31:22.0075544+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:39:34.3323622+05:30 WPF: build.Click invoked
+2026-01-03T20:39:34.3556828+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:39:34.3661053+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:40:53.2702724+05:30 WPF: build.Click invoked
+2026-01-03T20:40:53.2912009+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:40:53.3046273+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:42:18.3500841+05:30 WPF: build.Click invoked
+2026-01-03T20:42:18.3712436+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:42:18.3842162+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:46:11.2987100+05:30 WPF: build.Click invoked
+2026-01-03T20:46:11.3176833+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:46:11.3316924+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:50:45.5984011+05:30 WPF: build.Click invoked
+2026-01-03T20:50:45.6162460+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:50:45.6322517+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T20:57:06.4303891+05:30 WPF: build.Click invoked
+2026-01-03T20:57:06.4487047+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T20:57:06.4606969+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T21:04:19.8211574+05:30 WPF: build.Click invoked
+2026-01-03T21:04:19.8462907+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T21:04:19.8602854+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T21:05:44.2124746+05:30 WPF: build.Click invoked
+2026-01-03T21:05:44.2328618+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T21:05:44.2488811+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T21:12:42.3235770+05:30 WPF: build.Click invoked
+2026-01-03T21:12:42.3485623+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T21:12:42.3605563+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T21:44:06.5037815+05:30 WPF: build.Click invoked
+2026-01-03T21:44:06.5268369+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T21:44:06.5418210+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T21:58:09.4829607+05:30 WPF: build.Click invoked
+2026-01-03T21:58:09.5022891+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T21:58:09.5142862+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T22:04:39.2235163+05:30 WPF: build.Click invoked
+2026-01-03T22:04:39.2414866+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T22:04:39.2524985+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T22:14:57.9079237+05:30 WPF: build.Click invoked
+2026-01-03T22:14:57.9289085+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T22:14:57.9438990+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T22:22:43.6335426+05:30 WPF: build.Click invoked
+2026-01-03T22:22:43.6506887+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T22:22:43.6626973+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T22:26:38.2605923+05:30 WPF: build.Click invoked
+2026-01-03T22:26:38.2796466+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T22:26:38.2916431+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T22:31:49.5157053+05:30 WPF: build.Click invoked
+2026-01-03T22:31:49.5336952+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T22:31:49.5446881+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T22:43:25.5201700+05:30 WPF: build.Click invoked
+2026-01-03T22:43:25.5431572+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T22:43:25.5601495+05:30 SwAddin: wrapper BuildRequested received
+2026-01-03T22:54:24.0474567+05:30 WPF: build.Click invoked
+2026-01-03T22:54:24.0664508+05:30 Wrapper: BuildRequested forwarded
+2026-01-03T22:54:24.0834368+05:30 SwAddin: wrapper BuildRequested received

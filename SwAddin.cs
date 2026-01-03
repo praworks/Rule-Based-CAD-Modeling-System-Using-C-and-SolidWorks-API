@@ -398,12 +398,12 @@ namespace AICAD
                 string mass = GetPartMass(doc);
                 string partNo = GetCustomProperty(custPropMgr, "PartNo");
 
-                // Update UI - call LoadFromProperties on the taskpane
+                // Update UI - call LoadFromProperties on the taskpane (suppress logging to avoid duplicates during sync)
                 if (_textToCadControl != null)
                 {
                     try
                     {
-                        _textToCadControl.WpfControl?.LoadFromProperties(material, description, mass, partNo);
+                        _textToCadControl.WpfControl?.LoadFromProperties(material, description, mass, partNo, logOutput: false);
                         // try { AddinStatusLogger.Log("AICadAddin", $"Synced taskpane: Mat={material}, Desc={description}, Mass={mass}, PartNo={partNo}"); } catch { }
                     }
                     catch (Exception uiEx)
@@ -467,12 +467,38 @@ namespace AICAD
                 var custPropMgr = doc.Extension.CustomPropertyManager[""];
                 if (custPropMgr != null)
                 {
+                    string filename = string.Empty;
+                    // Determine a filename to construct SW links
+                    // Reuse previously computed 'filename' where possible; ensure it's populated
+                    if (string.IsNullOrWhiteSpace(filename))
+                    {
+                        try { filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName()); } catch { }
+                        if (string.IsNullOrWhiteSpace(filename))
+                        {
+                            var title = doc.GetTitle();
+                            if (!string.IsNullOrWhiteSpace(title))
+                                filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                        }
+                    }
+
                     if (!string.IsNullOrEmpty(material))
                     {
-                        custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                        // try { AddinStatusLogger.Log("AICadAddin", $"Set Material: {material}"); } catch { }
+                        try
+                        {
+                            if (!string.IsNullOrWhiteSpace(filename))
+                            {
+                                var matLink = $"\"SW-Material@{filename}.SLDPRT\"";
+                                custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, matLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                            }
+                            else
+                            {
+                                // Fallback to text if filename unavailable
+                                custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                            }
+                        }
+                        catch { }
 
-                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
+                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=1)
                         try
                         {
                             var applyMat = System.Environment.GetEnvironmentVariable("AICAD_APPLY_MATERIAL") ?? "1";
@@ -483,12 +509,7 @@ namespace AICAD
                                 {
                                     string database = "solidworks materials.sldmat";
                                     partDoc.SetMaterialPropertyName2("", database, material);
-                                    // try { AddinStatusLogger.Log("AICadAddin", $"Applied material to model: {material}"); } catch { }
                                 }
-                            }
-                            else
-                            {
-                                // try { AddinStatusLogger.Log("AICadAddin", "Skipping material application due to AICAD_APPLY_MATERIAL=0"); } catch { }
                             }
                         }
                         catch (Exception matEx)
@@ -502,10 +523,19 @@ namespace AICAD
                         custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, typeDescription, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                     }
 
-                    string filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
-                    if (!string.IsNullOrEmpty(filename))
+                    filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
+                    if (string.IsNullOrWhiteSpace(filename))
                     {
-                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, $"\"SW-Mass@{filename}.SLDPRT\"", (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        var title = doc.GetTitle();
+                        if (!string.IsNullOrWhiteSpace(title))
+                            filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(filename))
+                    {
+                        var massLink = $"\"SW-Mass@{filename}.SLDPRT\"";
+                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        custPropMgr.Add3("Weight", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                     }
 
                     if (!string.IsNullOrEmpty(partName))

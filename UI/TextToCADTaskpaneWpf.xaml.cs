@@ -81,7 +81,7 @@ namespace AICAD.UI
                                     {
                                         anyOk = true;
                                         var txt = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                        AppendStatusLine("[LLM-STATUS] LM Studio OK (" + p + ")");
+                                        AppendStatusLine("[LLM-STATUS] Local LLM OK (" + p + ")");
                                         break;
                                     }
                                 }
@@ -94,17 +94,17 @@ namespace AICAD.UI
                                 {
                                     var r3 = await http.GetAsync(lmStudioEndpoint).ConfigureAwait(false);
                                     if (r3.IsSuccessStatusCode) anyOk = true;
-                                    AppendStatusLine($"[LLM-STATUS] LM Studio responded {(int)r3.StatusCode}");
+                                    AppendStatusLine($"[LLM-STATUS] Local LLM responded {(int)r3.StatusCode}");
                                 }
                                 catch (Exception ex)
                                 {
-                                    AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
+                                    AppendStatusLine("[LLM-STATUS] Local LLM check failed: " + ex.Message);
                                 }
                             }
                         }
                         catch (Exception ex)
                         {
-                            AppendStatusLine("[LLM-STATUS] LM Studio check failed: " + ex.Message);
+                            AppendStatusLine("[LLM-STATUS] Local LLM check failed: " + ex.Message);
                         }
                     }
 
@@ -175,6 +175,7 @@ namespace AICAD.UI
         private FileDbLogger _fileLogger;
         private MongoLogger _mongoLogger;
         private IGoodFeedbackStore _goodStore;
+        private DataApiService _dataApiService;
         private StatusWindow _statusWindow;
         private TimeSpan _lastLlm = TimeSpan.Zero;
         private TimeSpan _lastTotal = TimeSpan.Zero;
@@ -411,6 +412,9 @@ namespace AICAD.UI
             // Raise PromptTextChanged for external listeners
             prompt.TextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, new PromptChangedEventArgs(prompt.Text)); } catch { } };
 
+            // Live input validation feedback
+            prompt.TextChanged += Prompt_LiveValidation;
+
             // Build click: if building, treat as Stop request; otherwise start build
             build.Click += async (s, e) =>
             {
@@ -436,7 +440,7 @@ namespace AICAD.UI
                         catch { }
                         try { _isBuilding = false; } catch { }
                         // Clear any pending created-model state since run was stopped
-                        try { _lastRunCreatedModel = false; _lastCreatedModelTitle = null; Dispatcher.Invoke(()=>{ try{ applyPropertiesButton.IsEnabled = false; } catch{} }); } catch { }
+                        try { _lastRunCreatedModel = false; _lastCreatedModelTitle = null; } catch { }
                         try { SetRealTimeStatus("Stopped", Colors.DodgerBlue); } catch { }
                         return;
                     }
@@ -476,7 +480,6 @@ namespace AICAD.UI
             }
             seriesComboBox.SelectionChanged += SeriesComboBox_SelectionChanged;
             saveWithNameButton.Click += SaveWithNameButton_Click;
-            applyPropertiesButton.Click += ApplyPropertiesButton_Click;
 
             try
             {
@@ -901,29 +904,20 @@ namespace AICAD.UI
                     int pct = (int)Math.Floor(current);
                     if (pct < 1) pct = 1;
                     if (pct > 95) pct = 95;
-                    var bar = MakeProgressBar(pct, 20);
-                    var line = $"[LLM-PROGRESS] {bar} {pct}% Done.";
-                    Console.Write('\r' + line);
+                    // Progress shown in status window only, not console
                     try { await Task.Delay(100, token); } catch (OperationCanceledException) { break; }
                 }
 
                 // Stall at 95% until cancelled
                 if (!token.IsCancellationRequested)
                 {
-                    int pct = 95;
-                    var bar = MakeProgressBar(pct, 20);
-                    var line = $"[LLM-PROGRESS] {bar} {pct}% Done.";
                     while (!token.IsCancellationRequested)
                     {
-                        Console.Write('\r' + line);
                         try { await Task.Delay(500, token); } catch (OperationCanceledException) { break; }
                     }
                 }
 
-                // When cancelled, print final 100% line and lock it in with WriteLine
-                var finalBar = MakeProgressBar(100, 20);
-                var finalLine = $"[LLM-PROGRESS] {finalBar} 100% Done.";
-                Console.WriteLine(finalLine);
+                // Progress tracking complete (shown in status window only)
             }
             catch (Exception)
             {
@@ -1240,6 +1234,38 @@ namespace AICAD.UI
                 {
                     SetDbStatus("File/SQLite ready", Colors.DarkGreen);
                     AppendStatusLine("[DB] Logging using File/SQLite at: " + baseDir);
+                }
+
+                // Initialize feedback storage: force use of direct MongoDB connection string
+                try
+                {
+                    var mongoConn = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
+                    try { System.Environment.SetEnvironmentVariable("MONGODB_URI", mongoConn, EnvironmentVariableTarget.User); } catch { }
+
+                    // DataApiService treats a mongodb:// or mongodb+srv:// endpoint as a direct MongoDB connection.
+                    _dataApiService = new DataApiService(mongoConn, null);
+                    AppendStatusLine("[DB] Direct MongoDB initialized for feedback (Data API disabled)");
+
+                    var testTask = _dataApiService.TestConnectionAsync();
+                    testTask.ContinueWith(t =>
+                    {
+                        Dispatcher.BeginInvoke(new Action(() =>
+                        {
+                            if (t.Status == TaskStatus.RanToCompletion && t.Result)
+                            {
+                                SetDbStatus("MongoDB ready", Colors.DarkGreen);
+                                AppendStatusLine("[DB] Direct MongoDB connection verified");
+                            }
+                            else
+                            {
+                                AppendStatusLine("[DB] Direct MongoDB test failed: " + (_dataApiService?.LastError ?? t?.Exception?.Message));
+                            }
+                        }));
+                    }, TaskScheduler.Default);
+                }
+                catch (Exception ex)
+                {
+                    AppendDetailedStatus("DB:init", "Direct Mongo init exception", ex);
                 }
             }
             catch (Exception ex)
@@ -1598,6 +1624,159 @@ namespace AICAD.UI
             AppendStatusLine($"[LLM] {text}");
         }
 
+        /// <summary>
+        /// Update the prompt feedback text with live validation messages
+        /// </summary>
+        private void UpdatePromptFeedback(string message, Color color)
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        promptFeedbackText.Text = message;
+                        promptFeedbackText.Foreground = new SolidColorBrush(color);
+                    }
+                    catch { }
+                }));
+            }
+            catch { }
+        }
+
+        /// <summary>
+        /// Live validation handler for prompt text changes - provides instant feedback using LLM
+        /// </summary>
+        private void Prompt_LiveValidation(object sender, TextChangedEventArgs e)
+        {
+            try
+            {
+                var text = (prompt.Text ?? string.Empty).Trim();
+                if (string.IsNullOrEmpty(text) || text == "Enter prompt...")
+                {
+                    UpdatePromptFeedback("\ud83d\udca1 Describe what you want to create (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm height 80mm')", Colors.Gray);
+                    return;
+                }
+
+                var lowerText = text.ToLower();
+                var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "." };
+
+                // Check for meaningless inputs (quick local check)
+                if (meaninglessWords.Contains(lowerText) || text.Length < 3)
+                {
+                    UpdatePromptFeedback("\u26a0 Inputs such as '" + text + "' not accepted! Try: 'box 50x50x100mm' or 'cylinder radius 20 height 50'", Colors.OrangeRed);
+                    return;
+                }
+
+                // Use LLM for smart validation (async, debounced)
+                _ = ValidatePromptWithLLMAsync(text);
+            }
+            catch { }
+        }
+
+        private System.Threading.CancellationTokenSource _validationCts;
+        private string _lastValidatedText = "";
+
+        /// <summary>
+        /// Use LLM to validate prompt and provide smart suggestions
+        /// </summary>
+        private async Task ValidatePromptWithLLMAsync(string text)
+        {
+            try
+            {
+                // Debounce: only validate if user stopped typing for 800ms
+                if (_lastValidatedText == text) return;
+                
+                try { _validationCts?.Cancel(); } catch { }
+                _validationCts = new System.Threading.CancellationTokenSource();
+                var token = _validationCts.Token;
+
+                await Task.Delay(800, token);
+                _lastValidatedText = text;
+
+                // Quick validation prompt for LLM
+                var validationPrompt = $"Analyze this CAD prompt for errors: \"{text}\". Reply with JSON: {{\"valid\":true/false,\"issue\":\"reason if invalid\",\"suggestion\":\"corrected version or tip\"}}. Only JSON, no markdown.";
+
+                string llmResponse = null;
+                try
+                {
+                    // Try local LLM first (fastest)
+                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                     ?? "http://localhost:1234";
+                    var localClient = new Services.LocalHttpLlmClient(localEndpoint);
+                    llmResponse = await localClient.SendPromptAsync(validationPrompt, token);
+                }
+                catch
+                {
+                    // Fallback to Groq if local fails (fast API)
+                    try
+                    {
+                        var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User);
+                        if (!string.IsNullOrWhiteSpace(groqKey))
+                        {
+                            var groqClient = new Services.GroqLlmClient(groqKey);
+                            llmResponse = await groqClient.SendPromptAsync(validationPrompt, token);
+                        }
+                    }
+                    catch { }
+                }
+
+                if (string.IsNullOrWhiteSpace(llmResponse)) 
+                {
+                    // LLM unavailable - show basic positive feedback
+                    UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
+                    return;
+                }
+
+                // Parse LLM response
+                try
+                {
+                    var json = Newtonsoft.Json.Linq.JObject.Parse(llmResponse.Trim());
+                    var valid = json["valid"]?.Value<bool>() ?? true;
+                    var issue = json["issue"]?.Value<string>() ?? "";
+                    var suggestion = json["suggestion"]?.Value<string>() ?? "";
+
+                    if (!valid && !string.IsNullOrWhiteSpace(suggestion))
+                    {
+                        // Translate technical suggestion to friendly English
+                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(suggestion);
+                        UpdatePromptFeedback("\u2728 " + friendlyMsg, Colors.Orange);
+                    }
+                    else if (!valid && !string.IsNullOrWhiteSpace(issue))
+                    {
+                        // Translate technical issue to friendly English
+                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(issue);
+                        UpdatePromptFeedback("\u26a0 " + friendlyMsg, Colors.OrangeRed);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(suggestion))
+                    {
+                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(suggestion);
+                        UpdatePromptFeedback("\ud83d\udca1 Tip: " + friendlyMsg, Colors.DodgerBlue);
+                    }
+                    else
+                    {
+                        UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
+                    }
+                }
+                catch
+                {
+                    // JSON parse failed - use raw response as suggestion
+                    if (llmResponse.Length < 200)
+                    {
+                        string friendlyMsg = Services.FriendlyErrorTranslator.SimplifyComplexError(llmResponse);
+                        UpdatePromptFeedback("\ud83d\udca1 " + friendlyMsg, Colors.DodgerBlue);
+                    }
+                    else
+                    {
+                        UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
+                    }
+                }
+            }
+            catch (TaskCanceledException) { }
+            catch { }
+        }
+
         private void SetDbStatus(string text, Color color)
         {
             _lastDbStatus = text;
@@ -1622,19 +1801,7 @@ namespace AICAD.UI
 
         private string GetEndpointDisplayName(string endpoint)
         {
-            if (string.IsNullOrWhiteSpace(endpoint)) return "Local LLM";
-            try
-            {
-                var lmStudioEnv = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                   ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                   ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                   ?? "http://127.0.0.1:1234";
-                if (!string.IsNullOrWhiteSpace(lmStudioEnv) && endpoint.IndexOf(lmStudioEnv, StringComparison.OrdinalIgnoreCase) >= 0) return "LM Studio";
-                // common shorthand: if endpoint contains localhost:1234 or 127.0.0.1:1234 treat as LM Studio
-                if (endpoint.IndexOf("127.0.0.1:1234", StringComparison.OrdinalIgnoreCase) >= 0 || endpoint.IndexOf("localhost:1234", StringComparison.OrdinalIgnoreCase) >= 0)
-                    return "LM Studio";
-            }
-            catch { }
+            // Always return generic "Local LLM" for any local endpoint
             return "Local LLM";
         }
 
@@ -1732,140 +1899,232 @@ namespace AICAD.UI
             return _client;
         }
 
+        private async Task<string> RefinePromptAsync(string rawPrompt)
+        {
+            try
+            {
+                // Check if prompt refinement is enabled
+                var refineProvider = System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.Process)
+                                    ?? "disabled";
+
+                if (refineProvider.Equals("disabled", StringComparison.OrdinalIgnoreCase))
+                {
+                    // No refinement, return raw prompt
+                    return rawPrompt;
+                }
+
+                AppendStatusLine($"[Refine] Improving prompt using {refineProvider}...");
+
+                // System prompt for refinement LLM
+                var refineSystemPrompt =
+                    "You are a prompt refinement assistant for a CAD system. Your job is to take brief user input and expand it into a clear, detailed CAD specification.\n\n" +
+                    "Rules:\n" +
+                    "- If dimensions are missing, suggest reasonable defaults (e.g., 50mm for width/height, 100mm for depth)\n" +
+                    "- Always specify units (millimeters)\n" +
+                    "- Clarify shape type (box, cylinder, etc.)\n" +
+                    "- Fix grammar and spelling\n" +
+                    "- Expand abbreviations\n" +
+                    "- Keep it concise but complete\n\n" +
+                    "Example:\n" +
+                    "Input: 'box'\n" +
+                    "Output: 'Create a rectangular box with width 50mm, height 50mm, and depth 100mm'\n\n" +
+                    "Input: 'cyl r=20'\n" +
+                    "Output: 'Create a cylinder with radius 20mm and height 100mm'\n\n" +
+                    "Now refine this user input:";
+
+                var fullRefinePrompt = refineSystemPrompt + "\n\nUser input: " + rawPrompt + "\n\nRefined prompt:";
+
+                string refinedText = null;
+                
+                // Create appropriate client based on provider
+                if (refineProvider.Equals("local", StringComparison.OrdinalIgnoreCase))
+                {
+                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                       ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                       ?? "http://127.0.0.1:1234";
+                    var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                        ?? "local-model";
+                    
+                    using (var client = new AICAD.Services.LocalHttpLlmClient(localEndpoint, preferredModel, refineSystemPrompt))
+                    {
+                        refinedText = await client.GenerateAsync(fullRefinePrompt).ConfigureAwait(false);
+                    }
+                }
+                else if (refineProvider.Equals("gemini", StringComparison.OrdinalIgnoreCase))
+                {
+                    var apiKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process);
+                    var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                        ?? "gemini-2.0-flash-exp";
+                    
+                    using (var client = new AICAD.Services.GeminiClient(apiKey, preferredModel))
+                    {
+                        refinedText = await client.GenerateAsync(fullRefinePrompt).ConfigureAwait(false);
+                    }
+                }
+                else if (refineProvider.Equals("groq", StringComparison.OrdinalIgnoreCase))
+                {
+                    var apiKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process);
+                    var preferredModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                        ?? "llama-3.3-70b-versatile";
+                    
+                    using (var client = new AICAD.Services.GroqLlmClient(apiKey, preferredModel))
+                    {
+                        refinedText = await client.GenerateAsync(fullRefinePrompt).ConfigureAwait(false);
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(refinedText))
+                {
+                    var cleaned = refinedText.Trim();
+                    AppendStatusLine($"[Refine] User Prompt: {rawPrompt}");
+                    AppendStatusLine($"[Refine] Refined: {cleaned}");
+                    return cleaned;
+                }
+                else
+                {
+                    AppendStatusLine("[Refine] Warning: Empty response, using original");
+                    return rawPrompt;
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendStatusLine($"[Refine] Error: {ex.Message}, using original prompt");
+                return rawPrompt;
+            }
+        }
+
         private async Task<string> GenerateWithFallbackAsync(string prompt)
         {
             Exception lastEx = null;
 
-            // Preferred model same logic as GetClient
-            var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
-                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
-                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Machine)
-                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
-                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
-                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
-                                 ?? "google/functiongemma-270m";
+            // Load priority order from environment
+            var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                              ?? "local,gemini,groq";
+            var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
-            // 1) Try Local LLM if explicitly configured via LOCAL_LLM_ENDPOINT
-            try
+            foreach (var provider in priority)
             {
-                var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                    ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(localEndpoint))
+                try
                 {
-                    var dispTry = GetEndpointDisplayName(localEndpoint);
-                    AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
-                    try { StartProgressPhase("awaiting_response"); } catch { }
-                    var systemPrompt2 = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
-                                        ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
-                    var localClient = new AICAD.Services.LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt2);
-                    try
+                    if (provider == "local")
                     {
-                        var r = await localClient.GenerateAsync(prompt);
-                        _client = localClient;
-                        _lastModel = localClient.Model;
-                        try { _llmProgressTimer?.Stop(); } catch { }
-                        try { StartProgressPhase("success"); } catch { }
+                        var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                            ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                            ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(localEndpoint))
+                        {
+                            var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                                 ?? "local-model";
+                            var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                               ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                            
+                            var dispTry = GetEndpointDisplayName(localEndpoint);
+                            AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
+                            StartProgressPhase("awaiting_response");
+                            
+                            using (var localClient = new AICAD.Services.LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt))
+                            {
+                                var r = await localClient.GenerateAsync(prompt);
+                                _client = localClient;
+                                _lastModel = localClient.Model;
+                                FinishLlmProgress();
+                                AppendStatusLine("[LLM] " + dispTry + " succeeded: " + localClient.Model);
+                                return r;
+                            }
+                        }
+                    }
+                    else if (provider == "gemini")
+                    {
+                        var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                     ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(gemKey))
+                        {
+                            var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                           ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                           ?? "gemini-1.5-flash";
+                            
+                            AppendStatusLine("[LLM] Trying Gemini (" + gemModel + ")");
+                            StartProgressPhase("awaiting_response");
+                            
+                            var gemClient = new AICAD.Services.GeminiClient(gemKey, gemModel);
+                            var r = await gemClient.GenerateAsync(prompt);
+                            _client = gemClient;
+                            _lastModel = gemClient.Model;
+                            FinishLlmProgress();
+                            AppendStatusLine("[LLM] Gemini succeeded: " + gemClient.Model);
+                            return r;
+                        }
+                    }
+                    else if (provider == "groq")
+                    {
+                        var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                      ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                      ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(groqKey))
+                        {
+                            var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                            ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
+                                            ?? "llama-3.3-70b-versatile";
+                            
+                            AppendStatusLine("[LLM] Trying Groq (" + groqModel + ")");
+                            StartProgressPhase("awaiting_response");
+                            
+                            using (var groqClient = new AICAD.Services.GroqLlmClient(groqKey, groqModel))
+                            {
+                                var r = await groqClient.GenerateAsync(prompt);
+                                _client = groqClient;
+                                _lastModel = groqClient.Model;
+                                FinishLlmProgress();
+                                AppendStatusLine("[LLM] Groq succeeded: " + groqClient.Model);
+                                return r;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                    
+                    // Special handling for Groq rate limit errors (case-insensitive)
+                    if (provider == "groq" && ex.Message.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        AppendStatusLine("⚠️ [GROQ RATE LIMIT] " + ex.Message);
+                        AppendStatusLine("💡 Tip: Using Groq free tier - try Local LM or Gemini, or wait before retrying.");
                         try
                         {
-                            var bar100 = MakeProgressBar(100, 20);
-                            var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
-                            AppendStatusLine(progressMsg100);
-                            try { AddinStatusLogger.Log(null, StatusConsole.FormatLlmProgressDone(bar100, 100)); } catch { }
+                            var stats = AICAD.Services.GroqRateLimiter.GetUsageStats();
+                            AppendStatusLine("📊 " + stats);
                         }
                         catch { }
-                        AppendStatusLine("[LLM] " + dispTry + " succeeded: " + localClient.Model);
-                        return r;
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        lastEx = ex;
-                        AppendStatusLine("[LLM] " + dispTry + " failed: " + ex.Message);
-                        try { localClient.Dispose(); } catch { }
+                        AppendStatusLine("[LLM] " + provider + " failed: " + ex.Message);
                     }
                 }
             }
-            catch (Exception ex)
-            {
-                lastEx = ex;
-                AppendStatusLine("[LLM] Local attempt error: " + ex.Message);
-            }
 
-            // If we've been instructed to force local-only, do not attempt cloud providers.
-            if (FORCE_LOCAL_ONLY)
-            {
-                if (lastEx != null)
-                {
-                    AppendStatusLine("[LLM] Force-local mode enabled; not attempting cloud providers.");
-                    throw new InvalidOperationException("Local LLM failed and cloud fallback is disabled.", lastEx);
-                }
-                else
-                {
-                    AppendStatusLine("[LLM] Force-local mode enabled but no LOCAL_LLM_ENDPOINT configured.");
-                    throw new InvalidOperationException("No local LLM endpoint configured and cloud fallback is disabled.");
-                }
-            }
+            if (lastEx != null) throw lastEx;
+            throw new InvalidOperationException("No LLM providers configured or all failed.");
+        }
 
-            // 2) Try Gemini (Google) if key available
-            if (!FORCE_LOCAL_ONLY)
-            {
+        private void FinishLlmProgress()
+        {
+            try { _llmProgressTimer?.Stop(); } catch { }
+            try { StartProgressPhase("success"); } catch { }
             try
             {
-                var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
-                             ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
-                             ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
-                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.User)
-                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Process)
-                             ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
-                             ?? string.Empty;
-                if (!string.IsNullOrWhiteSpace(gemKey))
-                {
-                    AppendStatusLine("[LLM] Trying Gemini (API key from env)");
-                    var gemClient = new AICAD.Services.GeminiClient(gemKey, preferredModel);
-                    try
-                    {
-                        var r = await gemClient.GenerateAsync(prompt);
-                        _client = gemClient;
-                        _lastModel = gemClient.Model;
-                        try { _llmProgressTimer?.Stop(); } catch { }
-                        try { StartProgressPhase("success"); } catch { }
-                        try
-                        {
-                            var bar100 = MakeProgressBar(100, 20);
-                            var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
-                            AppendStatusLine(progressMsg100);
-                            try { AddinStatusLogger.Log(null, StatusConsole.FormatLlmProgressDone(bar100, 100)); } catch { }
-                        }
-                        catch { }
-                        AppendStatusLine("[LLM] Gemini succeeded: " + gemClient.Model);
-                        return r;
-                    }
-                    catch (Exception ex)
-                    {
-                        lastEx = ex;
-                        AppendStatusLine("[LLM] Gemini failed: " + ex.Message);
-                        try { gemClient.Dispose(); } catch { }
-                    }
-                }
+                var bar100 = MakeProgressBar(100, 20);
+                var progressMsg100 = StatusConsole.FormatLlmProgress(bar100, 100);
+                AppendStatusLine(progressMsg100);
             }
-            catch (Exception ex)
-            {
-                lastEx = ex;
-                AppendStatusLine("[LLM] Gemini attempt error: " + ex.Message);
-            }
-            }
-
-            // All attempts failed
-            if (lastEx != null)
-            {
-                AppendStatusLine("[LLM] All providers failed: " + lastEx.Message);
-                throw new InvalidOperationException("All LLM providers failed. See status log for details.", lastEx);
-            }
-
-            throw new InvalidOperationException("No LLM provider configured (LOCAL_LLM_ENDPOINT or GEMINI_API_KEY).");
+            catch { }
         }
 
         private async Task BuildFromPromptAsync()
@@ -1874,13 +2133,25 @@ namespace AICAD.UI
             if (string.IsNullOrEmpty(text))
             {
                 AppendStatusLine("Enter a prompt describing a simple box or cylinder in mm.");
+                UpdatePromptFeedback("💡 Describe what you want to create (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm height 80mm')", Colors.Gray);
+                return;
+            }
+
+            // Reject meaningless or placeholder prompts
+            var lowerText = text.ToLower();
+            var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "enter prompt", "enter prompt...", "...", ".", "," };
+            if (meaninglessWords.Contains(lowerText) || text.Length < 2)
+            {
+                AppendStatusLine("❌ Please enter a meaningful CAD description (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm').");
+                SetRealTimeStatus("Invalid prompt", Colors.OrangeRed);
+                UpdatePromptFeedback("⚠ Inputs such as '" + text + "' not accepted! Try: 'box 50x50x100mm' or 'cylinder radius 20 height 50'", Colors.OrangeRed);
                 return;
             }
 
             // Prevent re-entry if a build is already running
             if (_isBuilding)
             {
-                AppendStatusLine(StatusConsole.StatusPrefix + " Build already in progress — re-entry prevented");
+                // Silently prevent re-entry (defensive code path)
                 return;
             }
             _isBuilding = true;
@@ -1895,13 +2166,120 @@ namespace AICAD.UI
                 // Keep Build button enabled so the user can request Stop
                 try { build.IsEnabled = true; } catch { }
                 _lastPrompt = text;
+                
+                // Refine prompt if enabled
+                var originalText = text;
+                try
+                {
+                    text = await RefinePromptAsync(text).ConfigureAwait(false);
+                    if (text != originalText)
+                    {
+                        AppendStatusLine($"✨ User input refined automatically! to: {text}");
+                        UpdatePromptFeedback("✅ Input refined: " + text, Colors.Green);
+                    }
+                }
+                catch (Exception refineEx)
+                {
+                    AppendStatusLine($"[Refine] Failed: {refineEx.Message}");
+                    // Continue with original text
+                }
+
                 AppendStatusLine("> " + text);
-                // Kick off progress bar animation (realistic phase)
-                StartProgressPhase("communicating");
-                // Start a run section so status console groups this build attempt
+                
+                // Log current settings first
+                try
+                {
+                    var llmPriority = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                                   ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                                   ?? "local,gemini,groq";
+                    var sampleMode = System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.User)
+                                   ?? System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.Process)
+                                   ?? "few";
+                    var promptRefine = System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.Process)
+                                     ?? "disabled";
+                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                     ?? "http://localhost:1234";
+                    var geminiKeyPresent = !string.IsNullOrWhiteSpace(System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User));
+                    var groqKeyPresent = !string.IsNullOrWhiteSpace(System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User));
+                    var tempDir = System.Environment.GetEnvironmentVariable("AICAD_TEMP_DIR", System.EnvironmentVariableTarget.User)
+                               ?? System.Environment.GetEnvironmentVariable("AICAD_TEMP_DIR", System.EnvironmentVariableTarget.Process)
+                               ?? "Documents\\AICAD\\Temp";
+                    var disableTempWrites = System.Environment.GetEnvironmentVariable("AICAD_DISABLE_TEMP_WRITES", System.EnvironmentVariableTarget.User) == "1";
+                    var mongoConnStr = System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("MDB_CONNECTION_STRING", System.EnvironmentVariableTarget.Machine);
+                    var mongoConnected = !string.IsNullOrWhiteSpace(mongoConnStr);
+                    
+                    // Advanced settings
+                    var forceStaticFewShotEnv = System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.User) ?? "0";
+                    var useFewShotEnv = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User) ?? "1";
+                    var forceOnlyGoodFeedback = System.Environment.GetEnvironmentVariable("AICAD_FORCE_ONLY_GOOD_FEEDBACK", System.EnvironmentVariableTarget.User) ?? "0";
+                    var trainingDataEnabled = System.Environment.GetEnvironmentVariable("AICAD_TRAINING_DATA_ENABLED", System.EnvironmentVariableTarget.User) ?? "1";
+                    
+                    AppendStatusLine($"[Settings] Provider Priority: {llmPriority}");
+                    AppendStatusLine($"[Settings] Sample Mode: {sampleMode}");
+                    AppendStatusLine($"[Settings] Prompt Refinement: {promptRefine}");
+                    AppendStatusLine($"[Settings] Local LLM Endpoint: {localEndpoint}");
+                    AppendStatusLine($"[Settings] Gemini API Key: {(geminiKeyPresent ? "Configured" : "Not Set")}");
+                    AppendStatusLine($"[Settings] Groq API Key: {(groqKeyPresent ? "Configured" : "Not Set")}");
+                    AppendStatusLine($"[Settings] MongoDB Connection: {(mongoConnected ? "Connected" : "Not Connected")}");
+                    AppendStatusLine($"[Settings] Temp Directory: {tempDir}");
+                    AppendStatusLine($"[Settings] Temp Writes: {(disableTempWrites ? "Disabled" : "Enabled")}");
+                    
+                    // Training Data & Advanced Options
+                    AppendStatusLine($"[Training] Data Storage Enabled: {(trainingDataEnabled == "1" ? "Yes" : "No")}");
+                    AppendStatusLine($"[Training] Few-shot Examples Enabled: {(useFewShotEnv == "1" ? "Yes" : "No")}");
+                        // Few-shot related flags from Settings window
+                        try
+                        {
+                            var forceKeyShots = System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", System.EnvironmentVariableTarget.User) ?? "0";
+                            var staticFew = forceStaticFewShotEnv ?? "0";
+                            var randomizeSamples = System.Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", System.EnvironmentVariableTarget.User) ?? "0";
+                            var samplesDbPath = System.Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", System.EnvironmentVariableTarget.User) ?? string.Empty;
+
+                            AppendStatusLine($"[FewShot] Force key/important examples: {(forceKeyShots == "1" ? "Yes" : "No")}");
+                            AppendStatusLine($"[FewShot] Use built-in examples (ignore DB): {(staticFew == "1" ? "Yes" : "No")}");
+                            AppendStatusLine($"[FewShot] Randomize example selection: {(randomizeSamples == "1" ? "Yes" : "No")}");
+                            AppendStatusLine($"[FewShot] Samples DB Path: {(string.IsNullOrWhiteSpace(samplesDbPath) ? "(none)" : samplesDbPath)}");
+                        }
+                        catch { }
+                    AppendStatusLine($"[Training] Force Static Few-shot: {(forceStaticFewShotEnv == "1" ? "Yes" : "No")}");
+                    AppendStatusLine($"[Training] Use Only Good Feedback: {(forceOnlyGoodFeedback == "1" ? "Yes" : "No")}");
+                }
+                catch { }
+
+                // NameEasy auto-update settings (stored in HKCU) - useful for post-run logging
+                try
+                {
+                    string autoMaterial = "0";
+                    string autoDescription = "0";
+                    try
+                    {
+                        using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\\AI-CAD\\NameEasy"))
+                        {
+                            if (key != null)
+                            {
+                                autoMaterial = key.GetValue("AutoUpdateMaterial")?.ToString() ?? "0";
+                                autoDescription = key.GetValue("AutoUpdateDescription")?.ToString() ?? "0";
+                            }
+                        }
+                    }
+                    catch { }
+                    AppendStatusLine($"[AutoUpdate] Material: {(autoMaterial == "1" ? "Enabled" : "Disabled")}");
+                    AppendStatusLine($"[AutoUpdate] Description: {(autoDescription == "1" ? "Enabled" : "Disabled")}");
+                }
+                catch { }
+                
+                // Divider and Run ID
+                AppendStatusLine("―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――");
                 var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                 _lastRunId = runId;
                 AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----");
+                
+                // Kick off progress bar animation (realistic phase)
+                StartProgressPhase("communicating");
                 // Run quick LLM provider health-check and report status before showing communicating state
                 bool providersOk1 = false;
                 try { providersOk1 = await CheckLlmProvidersAsync().ConfigureAwait(false); } catch { providersOk1 = false; }
@@ -1915,8 +2293,6 @@ namespace AICAD.UI
                     return;
                 }
                 SetRealTimeStatus("Communicating with LLM…", Colors.DarkOrange);
-                    // Do NOT auto-apply material/description/mass here — user should apply manually
-                    AppendStatusLine(StatusConsole.StatusPrefix + " Model created. Please set Material and Description manually and click 'Apply Properties' to finalize Mass (will remain 0.000 until linked).");
                         ShowKaraokeScenario("communicating");
                     SetLlmStatus("Sending…", Colors.DarkOrange);
                 SetLastError(null);
@@ -1924,17 +2300,47 @@ namespace AICAD.UI
 
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
                 bool useFewShot = true;
+                int maxFewShotCount = 3; // Default: few-shot uses up to 3 examples
+                
                 try
                 {
+                    // Check the sample mode setting
+                    var sampleMode = System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.User)
+                                   ?? System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.Process)
+                                   ?? "few";
+                    
+                    if (sampleMode == "zero")
+                    {
+                        useFewShot = false;
+                        AppendStatusLine("[Mode] Zero-shot: No examples");
+                    }
+                    else if (sampleMode == "one")
+                    {
+                        useFewShot = true;
+                        maxFewShotCount = 1;
+                        AppendStatusLine("[Mode] One-shot: Using 1 example");
+                    }
+                    else // "few" or default
+                    {
+                        useFewShot = true;
+                        maxFewShotCount = 3;
+                        AppendStatusLine("[Mode] Few-shot: Using up to 3 examples");
+                    }
+                    
+                    // Legacy fallback: check AICAD_USE_FEWSHOT if AICAD_SAMPLE_MODE not set
                     var v = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User)
                             ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Process)
                             ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Machine);
                     if (!string.IsNullOrEmpty(v))
                     {
-                        if (v == "0" || v.Equals("false", StringComparison.OrdinalIgnoreCase)) useFewShot = false;
+                        if (v == "0" || v.Equals("false", StringComparison.OrdinalIgnoreCase)) 
+                        {
+                            useFewShot = false;
+                            AppendStatusLine("[Override] AICAD_USE_FEWSHOT=0: Disabled examples");
+                        }
                     }
                 }
-                catch { useFewShot = true; }
+                catch { useFewShot = true; maxFewShotCount = 3; }
 
                 // If forcing local-only mode, do not feed few-shot examples to the local LLM.
                 if (FORCE_LOCAL_ONLY)
@@ -1956,25 +2362,23 @@ namespace AICAD.UI
                 StringBuilder fewshot = null;
                 if (useFewShot)
                 {
-                    fewshot = new StringBuilder()
-                        .Append("Examples:")
-                        .Append("\nInput: Box 100x50x25 mm")
-                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"rectangle_center\",\"cx\":0,\"cy\":0,\"w\":100,\"h\":50},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":25,\"type\":\"boss\"}\n  ]\n}")
-                        .Append("\nInput: Cylinder 40 dia x 80 mm")
-                        .Append("\nOutput:{\n  \"steps\":[\n    {\"op\":\"new_part\"},\n    {\"op\":\"select_plane\",\"name\":\"Front Plane\"},\n    {\"op\":\"sketch_begin\"},\n    {\"op\":\"circle_center\",\"cx\":0,\"cy\":0,\"diameter\":40},\n    {\"op\":\"sketch_end\"},\n    {\"op\":\"extrude\",\"depth\":80}\n  ]\n}");
+                    // NOTE: hard-coded static examples removed — rely on DB-provided examples when available.
+                    fewshot = new StringBuilder();
 
-                    // Signal we're applying few-shot examples so the status console can group them underneath
-                    SetRealTimeStatus("Applying few-shot examples…", Colors.DarkOrange);
+                    // Signal we're attempting to apply examples so the status console can group them underneath
+                    var exampleType = maxFewShotCount == 1 ? "one-shot example" : "few-shot examples";
+                    SetRealTimeStatus($"Applying {exampleType}…", Colors.DarkOrange);
 
                     if (forceStaticFewShot)
                     {
-                        AddinStatusLogger.Log("FewShot", "Forced static few-shot mode enabled; skipping DB examples");
+                        AddinStatusLogger.Log("FewShot", "Forced static few-shot mode enabled; no built-in examples are available — skipping DB examples per user request");
+                        // When forceStaticFewShot is enabled but there are no built-ins, behave as if few-shot is disabled for DB fetches.
                     }
                     else
                     {
                         if (_goodStore != null)
                         {
-                            var extras = _goodStore.GetRecentFewShots(2);
+                            var extras = _goodStore.GetRecentFewShots(maxFewShotCount);
                             try
                             {
                                 AddinStatusLogger.Log("FewShot", $"GoodStore returned {extras.Count} examples");
@@ -1982,8 +2386,18 @@ namespace AICAD.UI
                                 foreach (var s in extras)
                                 {
                                     i++;
-                                    AddinStatusLogger.Log("FewShot", $"GoodStore example {i}:");
-                                    AddinStatusLogger.Log("FewShot", s);
+                                    AddinStatusLogger.Log("FewShot", $"GoodStore example {i}: (formatted JSON)");
+                                    try
+                                    {
+                                        var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
+                                        var prettyJson = Newtonsoft.Json.JsonConvert.SerializeObject(parsed, Newtonsoft.Json.Formatting.Indented);
+                                        AddinStatusLogger.Log("FewShot", prettyJson);
+                                    }
+                                    catch
+                                    {
+                                        // If JSON parsing fails, log raw
+                                        AddinStatusLogger.Log("FewShot", s);
+                                    }
                                     fewshot.Append(s);
                                 }
                             }
@@ -1992,16 +2406,26 @@ namespace AICAD.UI
                         // If configured to use only the good_feedback store, skip step-store few-shots
                         if (!_forceUseOnlyGoodFeedback && _stepStore != null)
                         {
-                            var more = _stepStore.GetRelevantFewShots(text, 3);
+                            var more = _stepStore.GetRelevantFewShots(text, maxFewShotCount);
                             try
                             {
-                                AddinStatusLogger.Log("FewShot", $"StepStore returned {more.Count} examples");
+                                AddinStatusLogger.Log("FewShot", $"StepStore returned {more.Count} examples (max={maxFewShotCount})");
                                 int j = 0;
                                 foreach (var s in more)
                                 {
                                     j++;
-                                    AddinStatusLogger.Log("FewShot", $"StepStore example {j}:");
-                                    AddinStatusLogger.Log("FewShot", s);
+                                    AddinStatusLogger.Log("FewShot", $"StepStore example {j}: (formatted JSON)");
+                                    try
+                                    {
+                                        var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
+                                        var prettyJson = Newtonsoft.Json.JsonConvert.SerializeObject(parsed, Newtonsoft.Json.Formatting.Indented);
+                                        AddinStatusLogger.Log("FewShot", prettyJson);
+                                    }
+                                    catch
+                                    {
+                                        // If JSON parsing fails, log raw
+                                        AddinStatusLogger.Log("FewShot", s);
+                                    }
                                     fewshot.Append(s);
                                 }
                             }
@@ -2012,7 +2436,8 @@ namespace AICAD.UI
 
                 var sysPrompt =
                     "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
-                    "Supported ops: new_part; select_plane{name}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; sketch_end; extrude{depth,type?}. " +
+                    "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; " +
+                    "extrude{depth,type?}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
                     "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
                 try { AddinStatusLogger.Log("FewShot", $"Final few-shot prompt length={(fewshot==null?0:fewshot.Length)}"); } catch { }
                 // Notify user when few-shot examples are not being included
@@ -2070,21 +2495,11 @@ namespace AICAD.UI
                 try
                 {
                     InitializeStepProgress(new[] {
-                        "Got your request",
-                        "Preparing inputs",
-                        "Connecting to AI",
-                        "Sending request to AI",
-                        "Waiting for AI response",
-                        "AI responded",
-                        "Reading AI response",
-                        "Checking parameters",
-                        "Building sketch",
-                        "Adding features",
-                        "Applying constraints",
-                        "Running checks",
-                        "Saving model",
-                        "Updating UI",
-                        "Complete"
+                        "Got your request", "Preparing inputs", "Connecting to AI",
+                        "Sending request to AI", "Waiting for AI response", "AI responded",
+                        "Reading AI response", "Checking parameters", "Building sketch",
+                        "Adding features", "Applying constraints", "Running checks",
+                        "Saving model", "Updating UI", "Complete"
                     });
                     // Initialize step entries without hardcoded percent values.
                     // Percents will be updated from runtime events (LLM timer, op callbacks, executor updates).
@@ -2177,7 +2592,7 @@ namespace AICAD.UI
                 ShowKaraokeScenario("awaiting_response");
                 SetLlmStatus("OK", Colors.DarkGreen);
 
-                SetRealTimeStatus("Executing plan…", Colors.DarkOrange);
+                SetRealTimeStatus("Executing SolidWorks Operation plan…", Colors.DarkOrange);
                 StartProgressPhase("executing");
                 ShowKaraokeScenario("executing");
                 SetSwStatus("Working…", Colors.DarkOrange);
@@ -2197,91 +2612,86 @@ namespace AICAD.UI
                         break;
                     }
 
-                    // Honor Stop requests before executing plan
                     if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
 
-                    // Keep the fixed pipeline steps only. Do NOT replace the taskpane step list
-                    // with the detailed plan steps returned by the LLM. The application relies
-                    // on the high-level pipeline initialized earlier (e.g. "Got your request",
-                    // "Preparing inputs", ..., "Complete"). Per-user request we leave that list
-                    // intact so the taskpane never shows low-level ops such as "new_part" or
-                    // "select_plane". Individual plan ops will still update the high-level
-                    // progress via UpdateHigherLevelFromOp(op, pct) below.
-
-                    // mark read/checked progress
                     try { SetStepProgress("Reading AI response", 100, StepState.Success); SetStepProgress("Checking parameters", 50, StepState.Running); } catch { }
 
-                        // Preset sequence removed; UI will update from real execution progress
-
-                        // CRITICAL: Execute on UI thread - SolidWorks COM calls MUST be on UI thread
-                        exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
+                    try
                     {
-                        try
+                        planDoc = AugmentPlanWithProperties(planDoc, text);
+
+                        exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
                         {
-                            // update overall progress bar
-                            try { generationProgressBar.Value = Math.Max(0, Math.Min(100, pct)); } catch { }
-                            try { generationProgressText.Text = pct.ToString() + "%"; } catch { }
-
-                            // Update step entry if available
-                            if (idx.HasValue && idx.Value >= 0 && idx.Value < _steps.Count)
-                            {
-                                var vm = _steps[idx.Value];
-                                vm.Percent = pct;
-                                vm.State = pct >= 100 ? StepState.Success : StepState.Running;
-                                vm.Timestamp = DateTime.Now;
-                            }
-                            else
-                            {
-                                // If no index, mark nearest running step by matching op
-                                for (int i = 0; i < _steps.Count; i++)
-                                {
-                                    if (string.Equals(_steps[i].Label, op, StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        _steps[i].Percent = pct;
-                                        _steps[i].State = pct >= 100 ? StepState.Success : StepState.Running;
-                                        _steps[i].Timestamp = DateTime.Now;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            // Also update higher-level fixed steps based on op name
-                            try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
-
-                            // Update header counter based on dynamic steps
                             try
                             {
-                                Dispatcher.BeginInvoke(new Action(() =>
+                                try { generationProgressBar.Value = Math.Max(0, Math.Min(100, pct)); } catch { }
+                                try { generationProgressText.Text = pct.ToString() + "%"; } catch { }
+
+                                if (idx.HasValue && idx.Value >= 0 && idx.Value < _steps.Count)
                                 {
-                                    try
+                                    var vm = _steps[idx.Value];
+                                    vm.Percent = pct;
+                                    vm.State = pct >= 100 ? StepState.Success : StepState.Running;
+                                    vm.Timestamp = DateTime.Now;
+                                }
+                                else
+                                {
+                                    for (int i = 0; i < _steps.Count; i++)
                                     {
-                                        var completed = _steps.Count(s => s.State == StepState.Success);
-                                        if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
+                                        if (string.Equals(_steps[i].Label, op, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            _steps[i].Percent = pct;
+                                            _steps[i].State = pct >= 100 ? StepState.Success : StepState.Running;
+                                            _steps[i].Timestamp = DateTime.Now;
+                                            break;
+                                        }
                                     }
-                                    catch { }
-                                }));
+                                }
+
+                                try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
+
+                                try
+                                {
+                                    Dispatcher.BeginInvoke(new Action(() =>
+                                    {
+                                        try
+                                        {
+                                            var completed = _steps.Count(s => s.State == StepState.Success);
+                                            if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
+                                        }
+                                        catch { }
+                                    }));
+                                }
+                                catch { }
                             }
                             catch { }
-                        }
-                        catch { }
-                    }));
-                    if (exec.Success) break;
+                        }));
+                    }
+                    catch (Exception ex)
+                    {
+                        try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Unhandled exception during plan execution", ex); } catch { }
+                        try { AICAD.Services.TempFileWriter.AppendAllText("AICAD_UnhandledException.log", $"[{DateTime.UtcNow:O}] Exec exception: {ex}\n"); } catch { }
+                        exec = new AICAD.Services.StepExecutionResult { Success = false };
+                    }
+
+                    if (exec != null && exec.Success) break;
 
                     var errDoc = new JObject
                     {
                         ["last_plan"] = SafeJson(planJson),
-                        ["errors"] = new JArray(exec.Log)
+                        ["errors"] = (exec != null) ? new JArray(exec.Log) : new JArray()
                     };
+
                     var corrective =
                         "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
                         errDoc.ToString() +
                         "\nRemember: output only JSON with steps; use Front Plane and mm units.";
+
                     try
                     {
-                        if (exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
+                        if (exec != null && exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
                         {
-                            // Close document on UI thread
-                            Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle));
+                            try { Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle)); } catch { }
                         }
                     }
                     catch { }
@@ -2298,14 +2708,93 @@ namespace AICAD.UI
                 if (exec != null && exec.Success)
                 {
                     AppendStatusLine("Model created.");
-                    // Record that a model was created by this run so properties may be applied
+                    
+                    // VALIDATION: Display validation results from closed-loop verification
+                    if (exec.ValidationReport != null)
+                    {
+                        try
+                        {
+                            var passed = exec.ValidationReport["passed"]?.Value<int>() ?? 0;
+                            var total = exec.ValidationReport["total"]?.Value<int>() ?? 0;
+                            var rate = exec.ValidationReport["success_rate"]?.Value<double>() ?? 0;
+                            AppendStatusLine($"[VALIDATION] {passed}/{total} operations verified ({rate:F1}% success)");
+                            
+                            // Show details of any failed validations
+                            var details = exec.ValidationReport["details"] as JArray;
+                            if (details != null)
+                            {
+                                foreach (var detail in details)
+                                {
+                                    bool valid = detail["valid"]?.Value<bool>() ?? false;
+                                    string op = detail["operation"]?.Value<string>() ?? "unknown";
+                                    string msg = detail["message"]?.Value<string>() ?? "";
+                                    
+                                    if (!valid)
+                                    {
+                                        AppendStatusLine($"  ⚠ {op}: {msg}");
+                                    }
+                                }
+                            }
+                        }
+                        catch (Exception vex)
+                        {
+                            try { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Error displaying validation report: {vex.Message}"); } catch { }
+                        }
+                    }
+                    
+                    // Record that a model was created by this run
                     try { _lastRunCreatedModel = exec.CreatedNewPart; _lastCreatedModelTitle = exec.ModelTitle; } catch { }
-                    try { Dispatcher.Invoke(()=>{ applyPropertiesButton.IsEnabled = (exec.CreatedNewPart); }); } catch { }
+
+                    // Auto-apply properties (Material/Description/Weight) to ensure Weight shows without manual Apply click
+                    try
+                    {
+                        var doc = _swApp?.ActiveDoc as IModelDoc2;
+                        if (doc != null)
+                        {
+                            string material = null;
+                            string desc = null;
+                            string weight = null;
+                            string partName = null;
+                            try
+                            {
+                                // Read UI values on UI thread to avoid cross-thread access
+                                Dispatcher.Invoke(() =>
+                                {
+                                    material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
+                                    desc = typeDescriptionTextBox.Text ?? string.Empty;
+                                    weight = weightTextBox.Text ?? string.Empty;
+                                    partName = previewTextBox.Text?.Trim();
+                                });
+                            }
+                            catch { }
+
+                            SetPartPropertiesOnDocument(doc, material ?? string.Empty, desc ?? string.Empty, weight ?? string.Empty, partName);
+                            try { doc.ForceRebuild3(false); AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", "Model rebuilt after auto-apply properties (ForceRebuild3 false)"); } catch (Exception ex) { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Model rebuild after auto-apply properties failed: {ex.Message}"); }
+                        }
+                    }
+                    catch (Exception propEx)
+                    {
+                        try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Auto-apply properties after build failed", propEx); } catch { }
+                    }
                     StopKaraoke();
                     ShowKaraokeScenario("success");
                     SetRealTimeStatus("Creating model…", Colors.DarkOrange);
                     StartProgressPhase("success");
                     SetSwStatus("OK", Colors.DarkGreen);
+                    
+                    // Mark all remaining steps as complete
+                    try
+                    {
+                        SetStepProgress("Building sketch", 100, StepState.Success);
+                        SetStepProgress("Adding features", 100, StepState.Success);
+                        SetStepProgress("Applying constraints", 100, StepState.Success);
+                        SetStepProgress("Running checks", 100, StepState.Success);
+                        SetStepProgress("Saving model", 100, StepState.Success);
+                        SetStepProgress("Updating UI", 100, StepState.Success);
+                        SetStepProgress("Complete", 100, StepState.Success);
+                    }
+                    catch { }
+                    
                     try { SetModified(false); } catch { }
                     // Reset prompt and UI so user can enter a new prompt immediately
                     try
@@ -2346,13 +2835,19 @@ namespace AICAD.UI
                     var swError = (exec != null && exec.Log.Count > 0 && exec.Log[exec.Log.Count - 1].ContainsKey("error"))
                         ? exec.Log[exec.Log.Count - 1].Value<string>("error")
                         : (errText ?? "Unknown error");
+                    
+                    // Translate technical error to friendly message for taskpane only
+                    string friendlyError = Services.FriendlyErrorTranslator.SimplifyComplexError(swError);
+                    
+                    // Status console (IT admin): show technical details
                     AppendStatusLine("SOLIDWORKS error: " + swError);
                     // Signal an error to the line-based karaoke: mark current line and stop advancing
                     try { SignalKaraokeError(); } catch { StopKaraoke(); }
-                    SetRealTimeStatus("Error: " + swError, Colors.Firebrick);
+                    // Taskpane (designer): show friendly message
+                    SetRealTimeStatus(friendlyError, Colors.Firebrick);
                     SetSwStatus("Error", Colors.Firebrick);
                     if (string.IsNullOrWhiteSpace(errText)) errText = swError;
-                    SetLastError(swError);
+                    SetLastError(friendlyError);
                     try
                     {
                         if (exec != null && exec.CreatedNewPart && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
@@ -2408,8 +2903,11 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 errText = ex.Message + "\n" + ex.StackTrace;
+                string friendlyError = Services.FriendlyErrorTranslator.SimplifyComplexError(ex.Message);
+                // Status console (IT admin): show technical exception
                 AppendStatusLine("Error: " + ex.Message);
-                SetRealTimeStatus("Error: " + ex.Message, Colors.Firebrick);
+                // Taskpane (designer): show friendly message
+                SetRealTimeStatus(friendlyError, Colors.Firebrick);
                 SetLlmStatus("Error", Colors.Firebrick);
                 SetSwStatus("Error", Colors.Firebrick);
                 SetLastError(ex.Message);
@@ -2529,7 +3027,12 @@ namespace AICAD.UI
                         try { build.IsEnabled = true; } catch { }
                     });
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Unhandled exception during plan execution", ex); } catch { }
+                    try { AICAD.Services.TempFileWriter.AppendAllText("AICAD_UnhandledException.log", $"[{DateTime.UtcNow:O}] Exec exception: {ex}\n"); } catch { }
+                    exec = new AICAD.Services.StepExecutionResult { Success = false };
+                }
                 try { _buildCts?.Dispose(); _buildCts = null; } catch { }
             }
         }
@@ -2583,7 +3086,6 @@ namespace AICAD.UI
                     if (nextSeqLbl != null) nextSeqLbl.Content = "Next Sequence: --";
                     previewTextBox.Text = string.Empty;
                     saveWithNameButton.IsEnabled = false;
-                    applyPropertiesButton.IsEnabled = false;
                     return;
                 }
 
@@ -2594,12 +3096,10 @@ namespace AICAD.UI
                 if (nextSeqLbl2 != null) nextSeqLbl2.Content = $"Next Sequence: {_nextSequence:0000}";
                 previewTextBox.Text = partName;
                 saveWithNameButton.IsEnabled = true;
-                applyPropertiesButton.IsEnabled = true;
             }
             catch (Exception ex)
             {
                 saveWithNameButton.IsEnabled = false;
-                applyPropertiesButton.IsEnabled = false;
                 var nextSeqLbl2 = FindName("nextSequenceLabel") as Label;
                 if (nextSeqLbl2 != null) nextSeqLbl2.Content = "Next Sequence: --";
                 previewTextBox.Text = string.Empty;
@@ -2719,7 +3219,7 @@ namespace AICAD.UI
                 }
 
                 // Set properties after successful save
-                SetPartPropertiesOnDocument(doc, material, typeDesc, partName);
+                SetPartPropertiesOnDocument(doc, material, typeDesc, weightTextBox.Text, partName);
 
                 // Commit sequence
                 _seriesManager.CommitSequence(seriesId, _nextSequence, partName, fullPath);
@@ -2727,7 +3227,7 @@ namespace AICAD.UI
                 UpdatePreview();
 
                 // Rebuild to apply material
-                doc.ForceRebuild3(false);
+                try { doc.ForceRebuild3(false); AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", "Model rebuilt after save/apply (ForceRebuild3 false)"); } catch (Exception ex) { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Model rebuild after save/apply failed: {ex.Message}"); }
             }
             catch (Exception ex)
             {
@@ -2736,35 +3236,56 @@ namespace AICAD.UI
             }
         }
 
-        private void SetPartPropertiesOnDocument(IModelDoc2 doc, string material, string description, string partName)
+        private void SetPartPropertiesOnDocument(IModelDoc2 doc, string material, string description, string weight, string partName)
         {
             try
             {
                 var custPropMgr = doc.Extension.CustomPropertyManager[""];
                 if (custPropMgr != null)
                 {
+                    string filename = string.Empty;
+                    // Determine filename for SW links
+                    // Ensure 'filename' is available (don't redeclare if already present)
+                    if (string.IsNullOrWhiteSpace(filename))
+                    {
+                        try { filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName()); } catch { }
+                        if (string.IsNullOrWhiteSpace(filename))
+                        {
+                            var title = doc.GetTitle();
+                            if (!string.IsNullOrWhiteSpace(title))
+                                filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                        }
+                    }
+
                     if (!string.IsNullOrEmpty(material))
                     {
-                        custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                        try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material: {material}"); } catch { }
-
-                        // Apply material to part model (can be disabled at runtime via env var AICAD_APPLY_MATERIAL=0)
                         try
                         {
-                            var applyMat = System.Environment.GetEnvironmentVariable("AICAD_APPLY_MATERIAL") ?? "1";
-                            if (applyMat != "0")
+                            if (!string.IsNullOrWhiteSpace(filename))
                             {
-                                var partDoc = doc as PartDoc;
-                                if (partDoc != null)
-                                {
-                                    string database = "solidworks materials.sldmat";
-                                    partDoc.SetMaterialPropertyName2("", database, material);
-                                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {material}"); } catch { }
-                                }
+                                var matLink = $"\"SW-Material@{filename}.SLDPRT\"";
+                                custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, matLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material link: {matLink}"); } catch { }
                             }
                             else
                             {
-                                try { AddinStatusLogger.Log("TaskpaneWpf", "Skipping material application due to AICAD_APPLY_MATERIAL=0"); } catch { }
+                                // Fallback: set plain text
+                                custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Set Material text: {material}"); } catch { }
+                            }
+                        }
+                        catch { }
+
+                        // Apply material to part model (always apply)
+                        try
+                        {
+                            var partDoc = doc as PartDoc;
+                            if (partDoc != null)
+                            {
+                                string database = "solidworks materials.sldmat";
+                                var resolved = ResolveMaterialName(material);
+                                partDoc.SetMaterialPropertyName2("", database, resolved);
+                                try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {resolved}"); } catch { }
                             }
                         }
                         catch (Exception matEx)
@@ -2778,10 +3299,20 @@ namespace AICAD.UI
                         custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                     }
 
-                    string filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
-                    if (!string.IsNullOrEmpty(filename))
+                    filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
+                    if (string.IsNullOrWhiteSpace(filename))
                     {
-                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, $"\"SW-Mass@{filename}.SLDPRT\"", (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        var title = doc.GetTitle();
+                        if (!string.IsNullOrWhiteSpace(title))
+                            filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(filename))
+                    {
+                        var massLink = $"\"SW-Mass@{filename}.SLDPRT\"";
+                        // Let SolidWorks compute mass; store link in both Mass and Weight custom properties
+                        custPropMgr.Add3("Mass", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        custPropMgr.Add3("Weight", (int)swCustomInfoType_e.swCustomInfoText, massLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                     }
 
                     if (!string.IsNullOrEmpty(partName))
@@ -2796,36 +3327,7 @@ namespace AICAD.UI
             }
         }
 
-        private void ApplyPropertiesButton_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // Let host/UI listeners know properties apply was requested
-                try { ApplyPropertiesRequested?.Invoke(this, EventArgs.Empty); } catch { }
-
-                var partName = previewTextBox.Text?.Trim();
-                var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
-                var typeDesc = typeDescriptionTextBox.Text ?? string.Empty;
-
-                var doc = _swApp?.ActiveDoc as IModelDoc2;
-                if (doc == null)
-                {
-                    SetRealTimeStatus("No active document", Colors.Firebrick);
-                    return;
-                }
-
-                SetPartPropertiesOnDocument(doc, material, typeDesc, partName);
-                doc.ForceRebuild3(false);
-                SetRealTimeStatus("Properties applied", Colors.DarkGreen);
-            }
-            catch (Exception ex)
-            {
-                AppendDetailedStatus("ApplyProps", "Failed", ex);
-                SetRealTimeStatus("Error applying properties", Colors.Firebrick);
-            }
-        }
-
-        public void LoadFromProperties(string material, string description, string mass, string partNo)
+        public void LoadFromProperties(string material, string description, string mass, string partNo, bool logOutput = true)
         {
             try
             {
@@ -2854,13 +3356,17 @@ namespace AICAD.UI
                     // Load description
                     typeDescriptionTextBox.Text = description ?? string.Empty;
 
-                    // Load weight (mass) - ensure it updates even if empty
-                    weightTextBox.Text = mass ?? "0.000";
+                    // Load weight (mass). Leave blank if not resolved to avoid writing 0.000.
+                    weightTextBox.Text = mass ?? string.Empty;
 
                     // Don't overwrite preview with partNo - preview is for generated names
                     // If we want to show existing partNo somewhere, add a separate field
                     
-                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Loaded properties: Mat={material}, Desc={description}, Mass={mass}"); } catch { }
+                    // Only log on final calls (post-build sync), not during sync operations
+                    if (logOutput)
+                    {
+                        try { AddinStatusLogger.Log("TaskpaneWpf", $"Loaded properties: Mat={material}, Desc={description}, Mass={mass}"); } catch { }
+                    }
                 });
             }
             catch (Exception ex)
@@ -2873,11 +3379,11 @@ namespace AICAD.UI
         {
             try
             {
-                if (doc == null) return "0.000";
+                if (doc == null) return string.Empty;
                 var ext = doc.Extension;
-                if (ext == null) return "0.000";
+                if (ext == null) return string.Empty;
                 var custPropMgr = ext.CustomPropertyManager[""];
-                if (custPropMgr == null) return "0.000";
+                if (custPropMgr == null) return string.Empty;
 
                 string val = string.Empty;
                 string resolved = string.Empty;
@@ -2892,7 +3398,7 @@ namespace AICAD.UI
                 }
             }
             catch { }
-            return "0.000";
+            return string.Empty;
         }
 
         private string GetCustomProperty(ICustomPropertyManager mgr, string name)
@@ -2938,15 +3444,57 @@ namespace AICAD.UI
                 if (!string.IsNullOrWhiteSpace(partName)) SetProp("Part Number", partName);
                 SetProp("Material", material ?? string.Empty);
                 SetProp("Description", description ?? string.Empty);
-                if (!string.IsNullOrWhiteSpace(weight)) SetProp("Weight", weight);
 
-                model.ForceRebuild3(false);
+                // Let SolidWorks compute mass: link Weight to SW-Mass for the current file name when available
+                var path = model.GetPathName();
+                var fname = string.IsNullOrWhiteSpace(path) ? null : System.IO.Path.GetFileNameWithoutExtension(path);
+                if (string.IsNullOrWhiteSpace(fname))
+                {
+                    var title = model.GetTitle();
+                    if (!string.IsNullOrWhiteSpace(title))
+                        fname = System.IO.Path.GetFileNameWithoutExtension(title);
+                }
+
+                if (!string.IsNullOrWhiteSpace(fname))
+                {
+                    var massLink = $"\"SW-Mass@{fname}.SLDPRT\"";
+                    SetProp("Weight", massLink);
+                }
+
+                try { model.ForceRebuild3(false); AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", "Model rebuilt after SetPartProperties (ForceRebuild3 false)"); } catch (Exception ex) { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Model rebuild after SetPartProperties failed: {ex.Message}"); }
                 return true;
             }
             catch (Exception ex)
             {
                 status = ex.Message;
                 return false;
+            }
+        }
+
+        private string ResolveMaterialName(string material)
+        {
+            if (string.IsNullOrWhiteSpace(material)) return material ?? string.Empty;
+            var m = material.Trim();
+            switch (m.ToLowerInvariant())
+            {
+                case "aluminum":
+                case "aluminium":
+                    return "Aluminum, 1060 Alloy";
+                case "steel":
+                    return "Plain Carbon Steel";
+                case "stainless":
+                case "stainless steel":
+                    return "Stainless Steel, 304";
+                case "brass":
+                    return "Brass";
+                case "copper":
+                    return "Copper";
+                case "titanium":
+                    return "Titanium, Grade 2";
+                case "plastic":
+                    return "ABS Plastic";
+                default:
+                    return m;
             }
         }
 
@@ -3107,6 +3655,23 @@ namespace AICAD.UI
                         SetDbStatus("GoodStore error: " + _goodStore.LastError, Colors.Firebrick);
                     }
                 }
+
+                // Post feedback via Data API (no credentials needed from users)
+                if (up && _dataApiService != null)
+                {
+                    string plan = ExtractRawJson(_lastReply ?? "{}");
+                    var apiSaved = await _dataApiService.InsertFeedbackAsync(_lastRunId, _lastPrompt, _lastModel, plan, true);
+                    if (apiSaved)
+                    {
+                        SetDbStatus("✓ Feedback sent to company database", Colors.DarkGreen);
+                        AppendStatusLine("[Feedback] Successfully posted to Data API");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(_dataApiService.LastError))
+                    {
+                        AppendStatusLine("[Feedback] Data API error: " + _dataApiService.LastError);
+                    }
+                }
+
                 if (_stepStore != null)
                 {
                     var s2ok = await _stepStore.SaveFeedbackAsync(_lastRunId, up, null);
@@ -3169,6 +3734,68 @@ namespace AICAD.UI
             }
 
             return t;
+        }
+
+        /// <summary>
+        /// Best-effort insertion of material/description steps when missing.
+        /// </summary>
+        private JObject AugmentPlanWithProperties(JObject plan, string userPrompt)
+        {
+            if (plan == null) return plan;
+
+            var steps = plan["steps"] as JArray;
+            if (steps == null)
+            {
+                steps = new JArray();
+                plan["steps"] = steps;
+            }
+
+            bool hasSetMaterial = steps.Any(s => string.Equals((string)s?["op"], "set_material", StringComparison.OrdinalIgnoreCase));
+            bool hasDescription = steps.Any(s => string.Equals((string)s?["op"], "description", StringComparison.OrdinalIgnoreCase));
+
+            string prompt = userPrompt ?? string.Empty;
+            var materialMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "steel", "Steel" },
+                { "stainless", "Stainless Steel" },
+                { "aluminum", "Aluminum" },
+                { "aluminium", "Aluminum" },
+                { "brass", "Brass" },
+                { "copper", "Copper" },
+                { "titanium", "Titanium" },
+                { "plastic", "Plastic" },
+                { "abs", "ABS" },
+                { "pla", "PLA" },
+                { "nylon", "Nylon" },
+                { "wood", "Wood" }
+            };
+
+            string detectedMaterial = materialMap.FirstOrDefault(kv => prompt.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0).Value;
+
+            if (!hasSetMaterial && !string.IsNullOrWhiteSpace(detectedMaterial))
+            {
+                steps.Add(new JObject
+                {
+                    ["op"] = "set_material",
+                    ["material"] = detectedMaterial
+                });
+            }
+
+            if (!hasDescription)
+            {
+                var desc = (prompt ?? string.Empty).Trim();
+                if (desc.Length > 120) desc = desc.Substring(0, 120);
+                if (!string.IsNullOrWhiteSpace(desc))
+                {
+                    steps.Add(new JObject
+                    {
+                        ["op"] = "description",
+                        ["description"] = desc
+                    });
+                }
+            }
+
+            return plan;
         }
 
         private void StatusWindow_CopyErrorClicked(object sender, EventArgs e)

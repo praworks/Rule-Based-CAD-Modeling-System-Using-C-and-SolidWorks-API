@@ -1,0 +1,251 @@
+// MongoDB Update Script for Refactored Prompts
+// Run this in MongoDB shell or Compass
+
+use TaskPaneAddin;
+
+// Clear existing prompts
+db.PromptPresetCollection.deleteMany({});
+
+// Insert refactored prompts focused on creating complete new parts
+db.PromptPresetCollection.insertMany([
+  {
+    "id": "001",
+    "category": "Rectangular Box",
+    "description": "Create a complete rectangular box part",
+    "prompt": "Create a rectangular box with dimensions 100mm x 80mm x 60mm on the Top Plane centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Top Plane",
+        "geometry": "rectangle_center",
+        "constraints": ["centered_origin"],
+        "parameters": {
+          "width": {"value": 100, "unit": "mm"},
+          "height": {"value": 80, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": {"value": 60, "unit": "mm"},
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "002",
+    "category": "Cylindrical Part",
+    "description": "Create a complete cylindrical shaft",
+    "prompt": "Create a cylinder on the Front Plane with a diameter of 40mm and length of 150mm centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Front Plane",
+        "geometry": "circle",
+        "constraints": ["concentric_origin"],
+        "parameters": {
+          "diameter": {"value": 40, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": {"value": 150, "unit": "mm"},
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "003",
+    "category": "Sphere",
+    "description": "Create a complete spherical part using revolve",
+    "prompt": "Create a sphere with radius 50mm on the Right Plane by revolving a semicircle around the vertical axis.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "revolve_boss",
+      "sketch": {
+        "plane": "Right Plane",
+        "geometry": "arc_center",
+        "parameters": {
+          "radius": {"value": 50, "unit": "mm"},
+          "angle": {"value": 180, "unit": "deg"}
+        }
+      },
+      "revolve": {
+        "axis_of_revolution": "sketch_vertical_line",
+        "angle": {"value": 360, "unit": "deg"}
+      }
+    }
+  },
+  {
+    "id": "004",
+    "category": "Hexagonal Prism",
+    "description": "Create a complete hexagonal prism part",
+    "prompt": "Create a hexagonal prism on the Top Plane with a circumscribed circle diameter of 60mm and height of 40mm centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Top Plane",
+        "geometry": "polygon",
+        "constraints": ["centered_origin"],
+        "parameters": {
+          "sides": 6,
+          "circumscribed_diameter": {"value": 60, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": {"value": 40, "unit": "mm"},
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "005",
+    "category": "L-Bracket",
+    "description": "Create a complete L-shaped bracket",
+    "prompt": "Create an L-bracket on the Front Plane with vertical leg 100mm x 80mm, horizontal leg 100mm x 60mm, thickness 10mm, centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Front Plane",
+        "geometry": "L_shape",
+        "constraints": ["centered_origin"],
+        "parameters": {
+          "vertical_height": {"value": 80, "unit": "mm"},
+          "horizontal_width": {"value": 60, "unit": "mm"},
+          "vertical_width": {"value": 100, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": {"value": 10, "unit": "mm"},
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "006",
+    "category": "Cone",
+    "description": "Create a complete conical part using revolve",
+    "prompt": "Create a cone on the Top Plane with base diameter 80mm, top diameter 30mm, and height 120mm centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "revolve_boss",
+      "sketch": {
+        "plane": "Top Plane",
+        "geometry": "trapezoid",
+        "constraints": ["centered_origin"],
+        "parameters": {
+          "base_width": {"value": 40, "unit": "mm"},
+          "top_width": {"value": 15, "unit": "mm"},
+          "height": {"value": 120, "unit": "mm"}
+        }
+      },
+      "revolve": {
+        "axis_of_revolution": "sketch_vertical_line",
+        "angle": {"value": 360, "unit": "deg"}
+      }
+    }
+  },
+  {
+    "id": "007",
+    "category": "Tube/Pipe",
+    "description": "Create a complete tubular part",
+    "prompt": "Create a hollow tube on the Right Plane with outer diameter 50mm, inner diameter 40mm, and length 200mm centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Right Plane",
+        "geometry": "concentric_circles",
+        "constraints": ["concentric_origin"],
+        "parameters": {
+          "outer_diameter": {"value": 50, "unit": "mm"},
+          "inner_diameter": {"value": 40, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": {"value": 200, "unit": "mm"},
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "008",
+    "category": "Triangular Prism",
+    "description": "Create a complete triangular prism part",
+    "prompt": "Create an equilateral triangular prism on the Front Plane with base edge length 70mm and height 100mm centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Front Plane",
+        "geometry": "triangle_equilateral",
+        "constraints": ["centered_origin"],
+        "parameters": {
+          "edge_length": {"value": 70, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": {"value": 100, "unit": "mm"},
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "009",
+    "category": "Wedge",
+    "description": "Create a complete wedge-shaped part",
+    "prompt": "Create a wedge on the Top Plane with base 100mm x 80mm, height 60mm, sloping from one side centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Top Plane",
+        "geometry": "rectangle_center",
+        "constraints": ["centered_origin"],
+        "parameters": {
+          "width": {"value": 100, "unit": "mm"},
+          "height": {"value": 80, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "draft",
+        "depth": {"value": 60, "unit": "mm"},
+        "draft_angle": {"value": 30, "unit": "deg"},
+        "merge": true
+      }
+    }
+  },
+  {
+    "id": "010",
+    "category": "Disc/Plate",
+    "description": "Create a complete flat disc part",
+    "prompt": "Create a circular disc on the Top Plane with diameter 120mm and thickness 15mm centered at the origin.",
+    "expected_json": {
+      "intent": "create_base_feature",
+      "type": "extrusion_boss",
+      "sketch": {
+        "plane": "Top Plane",
+        "geometry": "circle",
+        "constraints": ["concentric_origin"],
+        "parameters": {
+          "diameter": {"value": 120, "unit": "mm"}
+        }
+      },
+      "extrusion": {
+        "direction": "blind",
+        "depth": {"value": 15, "unit": "mm"},
+        "merge": true
+      }
+    }
+  }
+]);
+
+print("Prompts refactored successfully!");
+print("Total prompts: " + db.PromptPresetCollection.countDocuments({}));

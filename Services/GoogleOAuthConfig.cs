@@ -77,7 +77,9 @@ namespace AICAD.Services
 
             if (string.IsNullOrWhiteSpace(clientId)) return null;
 
-            var scopes = new[] { "https://www.googleapis.com/auth/cloud-platform" };
+            // Include OpenID scopes so ID token (email/name) is returned during the OAuth flow,
+            // while also keeping cloud-platform for API access when present.
+            var scopes = new[] { "openid", "email", "profile", "https://www.googleapis.com/auth/cloud-platform" };
             return new GoogleOAuthConfig(clientId.Trim(), string.IsNullOrWhiteSpace(clientSecret) ? null : clientSecret.Trim(), sourcePath, scopes);
         }
 
@@ -128,6 +130,21 @@ namespace AICAD.Services
                     {
                         var matches = Directory.GetFiles(dir, "client_secret*.json", SearchOption.TopDirectoryOnly);
                         if (matches.Length > 0) return matches[0];
+                    }
+                    catch { }
+                }
+
+                // Also search Secrets/ subdirectory in each candidate directory
+                foreach (var dir in EnumerateCandidateDirectories())
+                {
+                    try
+                    {
+                        var secretsDir = Path.Combine(dir, "Secrets");
+                        if (Directory.Exists(secretsDir))
+                        {
+                            var matches = Directory.GetFiles(secretsDir, "client_secret*.json", SearchOption.TopDirectoryOnly);
+                            if (matches.Length > 0) return matches[0];
+                        }
                     }
                     catch { }
                 }

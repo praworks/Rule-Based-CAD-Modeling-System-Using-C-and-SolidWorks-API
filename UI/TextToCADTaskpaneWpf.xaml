@@ -35,11 +35,11 @@
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Select Series" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" x:Name="seriesComboBox" SelectedIndex="0" HorizontalAlignment="Right" Height="26" VerticalContentAlignment="Center" Width="370" Background="{x:Null}">
+                    <ComboBox Grid.Column="1" x:Name="seriesComboBox" SelectedIndex="0" HorizontalAlignment="Stretch" Height="26" VerticalContentAlignment="Center" Background="{x:Null}">
                         <ComboBoxItem>ASM</ComboBoxItem>
                         <ComboBoxItem>PRT</ComboBoxItem>
                         <ComboBoxItem>DRW</ComboBoxItem>
@@ -50,11 +50,11 @@
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Material" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="0" IsEditable="True" Height="26" VerticalContentAlignment="Center" Margin="24,0,0,0" Width="370" HorizontalAlignment="Right" Background="{x:Null}">
+                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="0" IsEditable="True" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Stretch" Background="{x:Null}">
                         <ComboBoxItem>Steel, Mild</ComboBoxItem>
                         <ComboBoxItem>Aluminum 1060 Alloy</ComboBoxItem>
                         <ComboBoxItem>Stainless Steel</ComboBoxItem>
@@ -84,22 +84,22 @@
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Description" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <TextBox Grid.Column="1" x:Name="typeDescriptionTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="False" IsEnabled="True" Style="{StaticResource TextBoxStyle}" Margin="10,0,0,0" Width="370" HorizontalAlignment="Right"/>
+                    <TextBox Grid.Column="1" x:Name="typeDescriptionTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="False" IsEnabled="True" Style="{StaticResource TextBoxStyle}" HorizontalAlignment="Stretch"/>
                 </Grid>
             </Border>
 
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Weight" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <TextBox Grid.Column="1" x:Name="weightTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="True" Style="{StaticResource TextBoxStyle}" Margin="31,0,0,0" Width="370" HorizontalAlignment="Right"/>
+                    <TextBox Grid.Column="1" x:Name="weightTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="True" Style="{StaticResource TextBoxStyle}" HorizontalAlignment="Stretch"/>
                 </Grid>
             </Border>
 
@@ -119,11 +119,6 @@
                     Content="Save With This Name" 
                     Height="26" Margin="0,0,0,4" 
                     Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"/>
-
-                <Button x:Name="applyPropertiesButton" 
-                    Content="Apply Properties" 
-                    Height="26" Margin="0,0,0,2" 
-                    Style="{StaticResource PrimaryButton}" HorizontalAlignment="Stretch"/>
             </StackPanel>
         </StackPanel>
 
@@ -132,60 +127,71 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <Border Grid.Row="1" Background="Transparent" CornerRadius="{StaticResource CardCornerRadius}" Padding="8,4" Margin="0,0,0,4">
                 <StackPanel x:Name="ProgressStatusPanel">
-                    <ItemsControl x:Name="StepsItemsControl" Margin="0,0,0,6">
+                    <ItemsControl x:Name="StepsItemsControl" Margin="0,0,0,2">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Grid Margin="0,3">
+                                <Grid Margin="0,0">
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="28"/>
+                                        <ColumnDefinition Width="22"/>
                                         <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="80"/>
+                                        <ColumnDefinition Width="70"/>
                                     </Grid.ColumnDefinitions>
-                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="●" Foreground="{StaticResource TextMutedBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Pending}"/>
-                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="⟳" Foreground="{StaticResource RunningIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Running}"/>
-                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="✔" Foreground="{StaticResource SuccessIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Success}"/>
-                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="{StaticResource FontSizeLarge}" Text="⚠" Foreground="{StaticResource ErrorIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Error}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11" Text="●" Foreground="{StaticResource TextMutedBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Pending}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11" Text="⟳" Foreground="{StaticResource RunningIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Running}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11" Text="✔" Foreground="{StaticResource SuccessIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Success}"/>
+                                                    <TextBlock Grid.Column="0" VerticalAlignment="Center" FontSize="11" Text="⚠" Foreground="{StaticResource ErrorIconBrush}" Visibility="{Binding State, Converter={StaticResource EnumToVisibilityConverter}, ConverterParameter=Error}"/>
 
-                                    <StackPanel Grid.Column="1">
-                                        <TextBlock Text="{Binding Label}" FontWeight="SemiBold" FontSize="{StaticResource FontSizeTask}"/>
-                                        <TextBlock Text="{Binding Message}" FontSize="{StaticResource FontSizeSmall}" Foreground="{StaticResource TextMutedBrush}"/>
-                                    </StackPanel>
+                                    <TextBlock Grid.Column="1" Text="{Binding Label}" FontWeight="SemiBold" FontSize="10" VerticalAlignment="Center"/>
 
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding BarString}" FontFamily="{StaticResource ConsoleFontFamily}" FontSize="{StaticResource ConsoleFontSize}" VerticalAlignment="Center" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
-                                        <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="6,0,0,0" FontSize="{StaticResource FontSizeSmall}" VerticalAlignment="Center" Foreground="{StaticResource ProgressPercentBrush}" FontWeight="SemiBold" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                        <TextBlock Text="{Binding BarString}" FontFamily="{StaticResource ConsoleFontFamily}" FontSize="8" VerticalAlignment="Center" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
+                                        <TextBlock Text="{Binding Percent, StringFormat='{}{0}%'}" Margin="4,0,0,0" FontSize="9" VerticalAlignment="Center" Foreground="{StaticResource ProgressPercentBrush}" FontWeight="SemiBold" Visibility="{Binding Percent, Converter={StaticResource NullToCollapsedConverter}}"/>
                                     </StackPanel>
                                 </Grid>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
-                    <TextBlock x:Name="KaraokeStatus" FontSize="{StaticResource FontSizeKaraoke}" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,4" Foreground="{StaticResource TextPrimaryBrush}"/>
+                    <TextBlock x:Name="KaraokeStatus" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,2" Foreground="{StaticResource TextPrimaryBrush}" Visibility="Collapsed"/>
+                    
+                    <!-- Progress bar moved here - right after task complete status -->
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="{StaticResource ProgressBarHeight}" Foreground="{StaticResource AccentBrush}" Background="{StaticResource InputBorderBrush}" BorderThickness="0"/>
+                        <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeSmall}" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                    </Grid>
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Row="2" Margin="0,4,0,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="{StaticResource ProgressBarHeight}" Foreground="{StaticResource AccentBrush}" Background="{StaticResource InputBorderBrush}" BorderThickness="0"/>
-                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeSmall}" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
-            </Grid>
-
-            <Grid Grid.Row="3" Margin="0,0,0,4">
+            <Grid Grid.Row="2" Margin="0,0,0,4">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="90"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBox x:Name="prompt" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" Text="Enter prompt..." GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" Style="{StaticResource TextBoxStyle}" Margin="0,0,4,0"/>
+                <!-- User-friendly feedback text above prompt -->
+                <TextBlock Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="2" 
+                           x:Name="promptFeedbackText" 
+                           Text="💡 Describe what you want to create (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm height 80mm')" 
+                           Foreground="{StaticResource TextMutedBrush}" 
+                           FontSize="11" 
+                           Margin="2,0,0,4" 
+                           TextWrapping="Wrap"
+                           Opacity="0.85"/>
 
-                <Button x:Name="build" Grid.Column="1" Content="Build 🚀" Height="26" VerticalAlignment="Top" Style="{StaticResource PrimaryButton}"/>
+                <TextBox x:Name="prompt" Grid.Row="1" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" Text="Enter prompt..." GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" Style="{StaticResource TextBoxStyle}" Margin="0,0,4,0"/>
+
+                <Button x:Name="build" Grid.Row="1" Grid.Column="1" Content="Build 🚀" Height="26" VerticalAlignment="Top" Style="{StaticResource PrimaryButton}"/>
             </Grid>
         </Grid>
 

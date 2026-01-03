@@ -1,25 +1,34 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Diagnostics;
 using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
+using AICAD.Services.Operations;
 
 namespace AICAD.Services
 {
     internal class StepExecutionResult
     {
         public bool Success { get; set; }
-    public List<JObject> Log { get; } = new List<JObject>();
-    public bool CreatedNewPart { get; set; }
-    public string ModelTitle { get; set; }
+        public List<JObject> Log { get; } = new List<JObject>();
+        public bool CreatedNewPart { get; set; }
+        public string ModelTitle { get; set; }
+        /// <summary>Validation results for each step (post-execution geometry checks)</summary>
+        public List<ExecutionValidator.ValidationResult> Validations { get; } = new List<ExecutionValidator.ValidationResult>();
+        /// <summary>Overall validation report</summary>
+        public JObject ValidationReport { get; set; }
     }
 
     internal static class StepExecutor
     {
-        // Supported ops: new_part, select_plane{name}, sketch_begin, sketch_end,
-        // rectangle_center{cx,cy,w,h}, circle_center{cx,cy,r|diameter}, extrude{depth,type?:boss}
-    public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null)
+        private static readonly OperationRegistry _operationRegistry = OperationRegistry.CreateDefault();
+
+        /// <summary>
+        /// Execute a plan with multiple steps using the operation handler registry
+        /// </summary>
+        public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null, bool continueOnError = false)
         {
             var result = new StepExecutionResult();
             try { AddinStatusLogger.Log("StepExecutor", $"Execute: invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
@@ -68,6 +77,12 @@ namespace AICAD.Services
                     var s = NormalizeStep(raw);
                     string op = s.Value<string>("op") ?? string.Empty;
                     var log = new JObject { ["step"] = i, ["op"] = op };
+                    var sw = Stopwatch.StartNew();
+                    
+                    // VALIDATION: Capture model state BEFORE execution
+                    JObject beforeSnapshot = null;
+                    try { if (model != null) beforeSnapshot = ModelInspector.InspectModel(model); } catch { }
+
                     try
                     {
                         // Report progress before executing this step: overall percent and current op
@@ -88,139 +103,99 @@ namespace AICAD.Services
                     }
                     try
                     {
-            try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: starting op='{op}'"); } catch { }
-                        switch (op)
+
+                        // Handle new_part inline to ensure model exists before other handlers
+                        if (string.Equals(op, "new_part", StringComparison.OrdinalIgnoreCase))
                         {
-                            case "new_part":
-                                // Create a new PART document explicitly to avoid template-related crashes
+                            if (model == null)
+                            {
                                 model = (IModelDoc2)swApp.NewPart();
-                                if (model == null) throw new Exception("Failed to create new part (check default template)");
-                                {
-                                    int actErr = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr);
-                                }
-                                sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
+                                if (model == null)
+                                    throw new Exception("Failed to create new part (check default template)");
                                 result.CreatedNewPart = true;
                                 result.ModelTitle = model.GetTitle();
-                                log["success"] = true;
-                                break;
-                            case "select_plane":
-                                RequireModel(model);
+                                int actErr = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr);
+                                sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
+                            }
+                            log["success"] = true;
+                            result.Log.Add(log);
+                            sw.Stop();
+                            try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
+                            continue;
+                        }
+
+                        // Ensure we have a model if new_part was omitted or already processed
+                        if (model == null)
+                        {
+                            model = (IModelDoc2)swApp.ActiveDoc;
+                            if (model == null)
+                            {
+                                model = (IModelDoc2)swApp.NewPart();
+                                if (model == null)
+                                    throw new Exception("Failed to create new part (check default template)");
+                                result.CreatedNewPart = true;
+                                result.ModelTitle = model.GetTitle();
+                            }
+                            int actErr2 = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr2);
+                            sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
+                        }
+
+                        // Look up handler in registry
+                        var handler = _operationRegistry.Get(op);
+                        if (handler == null)
+                            throw new Exception($"Unknown op '{op}' (not registered)");
+
+                        // Execute the operation through its handler
+                        var opResult = handler.Execute(s, model, sketchMgr, featMgr, inSketch);
+                        if (!opResult.Success)
+                            throw new Exception(opResult.ErrorMessage ?? "Operation failed");
+
+                        // Update sketch state if handler changed it
+                        inSketch = opResult.InSketch;
+                        log["success"] = true;
+
+                        // VALIDATION: Capture model state AFTER execution and validate
+                        JObject afterSnapshot = null;
+                        try { if (model != null) afterSnapshot = ModelInspector.InspectModel(model); } catch { }
+                        
+                        if (beforeSnapshot != null && afterSnapshot != null)
+                        {
+                            try
+                            {
+                                var validation = ExecutionValidator.ValidateStep(s, model, beforeSnapshot, afterSnapshot);
+                                result.Validations.Add(validation);
+                                if (!validation.IsValid)
                                 {
-                                    string name = s.Value<string>("name") ?? "Front Plane";
-                                    bool sel = false;
-                                    // Try the requested name first
-                                    try { AddinStatusLogger.Log("StepExecutor", $"Selecting plane: '{name}'"); } catch { }
-                                    sel = model.Extension.SelectByID2(name, "PLANE", 0, 0, 0, false, 0, null, 0);
-                                    // If initial selection fails, try common SolidWorks plane names and simple mappings
-                                    if (!sel)
-                                    {
-                                        var candidates = new System.Collections.Generic.List<string>();
-                                        // normalize
-                                        var n = (name ?? string.Empty).Trim();
-                                        if (!string.IsNullOrEmpty(n))
-                                        {
-                                            candidates.Add(n);
-                                            if (!n.EndsWith(" Plane", StringComparison.OrdinalIgnoreCase)) candidates.Add(n + " Plane");
-                                            // common plane name mappings
-                                            if (n.IndexOf("xy", StringComparison.OrdinalIgnoreCase) >= 0 || n.IndexOf("x-y", StringComparison.OrdinalIgnoreCase) >= 0) candidates.Add("Top Plane");
-                                            if (n.IndexOf("xz", StringComparison.OrdinalIgnoreCase) >= 0) candidates.Add("Front Plane");
-                                            if (n.IndexOf("yz", StringComparison.OrdinalIgnoreCase) >= 0) candidates.Add("Right Plane");
-                                        }
-                                        candidates.AddRange(new[] { "Top Plane", "Front Plane", "Right Plane" });
-                                        foreach (var cand in candidates)
-                                        {
-                                            try { AddinStatusLogger.Log("StepExecutor", $"Trying plane candidate: '{cand}'"); } catch { }
-                                            if (string.IsNullOrWhiteSpace(cand)) continue;
-                                            sel = model.Extension.SelectByID2(cand, "PLANE", 0, 0, 0, false, 0, null, 0);
-                                            if (sel) break;
-                                        }
-                                    }
-                                    if (!sel) throw new Exception($"Could not select plane '{name}' (tried common alternatives)");
-                                    log["success"] = true;
+                                    log["validation_warning"] = validation.Message;
                                 }
-                                break;
-                            case "sketch_begin":
-                                RequireModel(model);
-                                sketchMgr.InsertSketch(true);
-                                inSketch = true;
-                                log["success"] = true;
-                                break;
-                            case "rectangle_center":
-                                RequireModel(model);
-                                if (!inSketch) throw new Exception("Not in sketch");
-                                {
-                                    double cx = ToM(s.Value<double?>("cx") ?? 0);
-                                    double cy = ToM(s.Value<double?>("cy") ?? 0);
-                                    double w = ToM(s.Value<double?>("w") ?? 0);
-                                    double h = ToM(s.Value<double?>("h") ?? 0);
-                                    var rect = sketchMgr.CreateCenterRectangle(cx, cy, 0, cx + w / 2.0, cy + h / 2.0, 0);
-                                    if (rect == null) throw new Exception("Failed to create rectangle");
-                                    log["success"] = true;
-                                }
-                                break;
-                            case "circle_center":
-                                RequireModel(model);
-                                if (!inSketch) throw new Exception("Not in sketch");
-                                {
-                                    double cx = ToM(s.Value<double?>("cx") ?? 0);
-                                    double cy = ToM(s.Value<double?>("cy") ?? 0);
-                                    double r = s["r"] != null ? ToM(s.Value<double>("r")) : (s["diameter"] != null ? ToM(s.Value<double>("diameter")) / 2.0 : 0);
-                                    if (r <= 0) throw new Exception("Missing r or diameter > 0");
-                                    var circ = sketchMgr.CreateCircleByRadius(cx, cy, 0, r);
-                                    if (circ == null) throw new Exception("Failed to create circle");
-                                    log["success"] = true;
-                                }
-                                break;
-                            case "sketch_end":
-                                RequireModel(model);
-                                sketchMgr.InsertSketch(true);
-                                inSketch = false;
-                                log["success"] = true;
-                                break;
-                            case "extrude":
-                                RequireModel(model);
-                                {
-                                    double depth = ToM(s.Value<double?>("depth") ?? 0);
-                                    bool boss = (s.Value<string>("type") ?? "boss").ToLowerInvariant() == "boss";
-                                    var feat = featMgr.FeatureExtrusion2(boss,
-                                        false,
-                                        false,
-                                        (int)swEndConditions_e.swEndCondBlind,
-                                        (int)swEndConditions_e.swEndCondBlind,
-                                        depth,
-                                        0,
-                                        false,
-                                        false,
-                                        false,
-                                        false,
-                                        0,
-                                        0,
-                                        false,
-                                        false,
-                                        false,
-                                        false,
-                                        true,
-                                        false,
-                                        false,
-                                        (int)swStartConditions_e.swStartSketchPlane,
-                                        0,
-                                        false);
-                                    if (feat == null) throw new Exception("Extrude failed");
-                                    log["success"] = true;
-                                }
-                                break;
-                            default:
-                                throw new Exception($"Unknown op '{op}'");
+                            }
+                            catch (Exception valEx)
+                            {
+                                log["validation_error"] = valEx.Message;
+                            }
                         }
                     }
                     catch (Exception ex)
                     {
+                        sw.Stop();
                         log["success"] = false;
                         log["error"] = ex.Message;
                         result.Log.Add(log);
                         result.Success = false;
                         try { AddinStatusLogger.Error("StepExecutor", $"Step {i} failed op='{op}'", ex); } catch { }
-                        return result; // stop at first failure
+                        try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
+
+                        // If continueOnError is enabled, log this failure but process next step
+                        if (!continueOnError)
+                        {
+                            return result; // ORIGINAL: stop at first failure
+                        }
+                        else
+                        {
+                            // NEW: Continue to next step instead of aborting
+                            try { AddinStatusLogger.Log("StepExecutor", $"Continuing to next step despite failure (continueOnError=true)"); } catch { }
+                            continue;
+                        }
                     }
                     result.Log.Add(log);
                     try
@@ -230,10 +205,29 @@ namespace AICAD.Services
                         try { progressCallback?.Invoke(afterPct, op, i); } catch { }
                     }
                     catch { }
-                    try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: completed op='{op}' success={log.Value<bool?>("success")}" ); } catch { }
+                    sw.Stop();
+                    try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
                 }
 
-                result.Success = true;
+                // Check if continueOnError mode: success if ANY step succeeded
+                if (continueOnError)
+                {
+                    var anySuccess = result.Log.Any(l => l["success"]?.Value<bool>() == true);
+                    result.Success = anySuccess;
+                    try { AddinStatusLogger.Log("StepExecutor", $"continueOnError mode: {result.Log.Count} steps, {result.Log.Count(l => l["success"]?.Value<bool>() == true)} succeeded"); } catch { }
+                }
+                else
+                {
+                    result.Success = true;
+                }
+
+                // VALIDATION: Generate validation report
+                if (result.Validations.Count > 0)
+                {
+                    result.ValidationReport = ExecutionValidator.GenerateValidationReport(result.Validations);
+                    try { AddinStatusLogger.Log("StepExecutor", $"Validation report: {result.ValidationReport["passed"]}/{result.ValidationReport["total"]} passed"); } catch { }
+                }
+
                 return result;
             }
             catch (Exception ex)

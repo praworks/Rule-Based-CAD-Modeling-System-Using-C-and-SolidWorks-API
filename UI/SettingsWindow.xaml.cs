@@ -5,20 +5,82 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Shapes;
 using Microsoft.Win32;
 using Newtonsoft.Json.Linq;
 using System.Text;
 using System.Diagnostics;
 using System.Linq;
+using AICAD.Services;
 
 namespace AICAD.UI
 {
     public partial class SettingsWindow : Window
     {
+        public class ProviderItem
+        {
+            public string Id { get; set; }
+            public string DisplayName { get; set; }
+        }
+
+        private System.Collections.ObjectModel.ObservableCollection<ProviderItem> _providers;
+
         public SettingsWindow()
         {
             InitializeComponent();
+            InitializeProviderList();
             LoadAllSettings();
+        }
+
+        private void InitializeProviderList()
+        {
+            _providers = new System.Collections.ObjectModel.ObservableCollection<ProviderItem>();
+            
+            // Load order from env or use default
+            var order = Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", EnvironmentVariableTarget.User);
+            if (string.IsNullOrWhiteSpace(order)) order = "local,gemini,groq";
+
+            var parts = order.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (var p in parts)
+            {
+                AddProviderById(p.Trim().ToLower());
+            }
+
+            // Ensure all are present
+            if (!_providers.Any(x => x.Id == "local")) AddProviderById("local");
+            if (!_providers.Any(x => x.Id == "gemini")) AddProviderById("gemini");
+            if (!_providers.Any(x => x.Id == "groq")) AddProviderById("groq");
+
+            ProviderPriorityListBox.ItemsSource = _providers;
+        }
+
+        private void AddProviderById(string id)
+        {
+            if (id == "local") _providers.Add(new ProviderItem { Id = "local", DisplayName = "💻 LM Studio (Local)" });
+            else if (id == "gemini") _providers.Add(new ProviderItem { Id = "gemini", DisplayName = "☁️ Google Gemini" });
+            else if (id == "groq") _providers.Add(new ProviderItem { Id = "groq", DisplayName = "⚡ Groq" });
+        }
+
+        private void MoveProviderUp_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = ProviderPriorityListBox.SelectedItem as ProviderItem;
+            if (selected == null) return;
+            int index = _providers.IndexOf(selected);
+            if (index > 0)
+            {
+                _providers.Move(index, index - 1);
+            }
+        }
+
+        private void MoveProviderDown_Click(object sender, RoutedEventArgs e)
+        {
+            var selected = ProviderPriorityListBox.SelectedItem as ProviderItem;
+            if (selected == null) return;
+            int index = _providers.IndexOf(selected);
+            if (index < _providers.Count - 1)
+            {
+                _providers.Move(index, index + 1);
+            }
         }
 
         private void NavButton_Click(object sender, RoutedEventArgs e)
@@ -26,7 +88,29 @@ namespace AICAD.UI
             if (sender is System.Windows.Controls.Button btn && btn.Tag is string tag)
             {
                 contentTitle.Text = btn.Content?.ToString() ?? "";
+                HighlightSelectedNav(btn);
                 ShowPanel(tag);
+            }
+        }
+
+        private void HighlightSelectedNav(System.Windows.Controls.Button selectedButton)
+        {
+            // Reset all nav buttons to default
+            var navButtons = new[] { btnGeneral, btnApiKeys, btnMongo, btnSamples, btnNameEasy, btnAccount };
+            foreach (var btn in navButtons)
+            {
+                if (btn != null)
+                {
+                    btn.FontWeight = FontWeights.SemiBold;
+                    btn.Background = Brushes.Transparent;
+                }
+            }
+
+            // Highlight selected
+            if (selectedButton != null)
+            {
+                selectedButton.FontWeight = FontWeights.Bold;
+                selectedButton.Background = (System.Windows.Media.Brush)FindResource("NavHoverBrush");
             }
         }
 
@@ -38,16 +122,164 @@ namespace AICAD.UI
             AccountPanel.Visibility = panelName == "AccountPanel" ? Visibility.Visible : Visibility.Collapsed;
             NameEasyPanel.Visibility = panelName == "NameEasyPanel" ? Visibility.Visible : Visibility.Collapsed;
             SamplesPanel.Visibility = panelName == "SamplesPanel" ? Visibility.Visible : Visibility.Collapsed;
+
+            if (panelName == "ApiKeysPanel")
+            {
+                CheckAllLlmStatuses();
+            }
         }
 
         private void LoadAllSettings()
         {
             try
             {
+                // Highlight General tab by default
+                HighlightSelectedNav(btnGeneral);
+                
+                TryUseSecretsClientFile();
                 LoadMongoButton_Click(null, null);
                 LoadApiButton_Click(null, null);
+                LoadDataApiSettings();
                 try { LoadSamplesButton_Click(null, null); } catch { }
                 try { LoadNameEasySettings(); } catch { }
+                try { LoadAccountInfo(); } catch { }
+            }
+            catch { }
+        }
+
+        // Load existing Google account info from stored tokens
+        private void LoadAccountInfo()
+        {
+            try
+            {
+                var tokenJson = AICAD.Services.CredentialManager.ReadGenericSecret("SolidWorksTextToCAD_OAuthToken");
+                System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: tokenJson is {(string.IsNullOrWhiteSpace(tokenJson) ? "null/empty" : $"{tokenJson.Length} chars")}");
+                
+                if (string.IsNullOrWhiteSpace(tokenJson))
+                {
+                    ShowSignedOutState();
+                    return;
+                }
+
+                var j = JObject.Parse(tokenJson);
+                var idToken = j.Value<string>("id_token");
+                System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: idToken is {(string.IsNullOrWhiteSpace(idToken) ? "null/empty" : "present")}");
+                
+                if (string.IsNullOrWhiteSpace(idToken))
+                {
+                    ShowSignedOutState();
+                    return;
+                }
+
+                var payload = DecodeJwtPayload(idToken);
+                if (payload == null)
+                {
+                    System.Diagnostics.Debug.WriteLine("LoadAccountInfo: payload is null");
+                    ShowSignedOutState();
+                    return;
+                }
+
+                var name = payload.Value<string>("name") ?? payload.Value<string>("preferred_username");
+                var email = payload.Value<string>("email");
+                System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: name={name}, email={email}");
+                
+                if (!string.IsNullOrWhiteSpace(name))
+                {
+                    DisplayNameTextBox.Text = name;
+                    DisplayNameText.Text = name;
+                }
+                if (!string.IsNullOrWhiteSpace(email))
+                {
+                    EmailTextBox.Text = email;
+                    EmailText.Text = email;
+                }
+                
+                ShowSignedInState();
+                System.Diagnostics.Debug.WriteLine("LoadAccountInfo: ShowSignedInState() called");
+            }
+            catch (Exception ex)
+            {
+                // Debug: show what went wrong
+                System.Diagnostics.Debug.WriteLine("LoadAccountInfo failed: " + ex.Message);
+                ShowSignedOutState();
+            }
+        }
+
+        private void ShowSignedInState()
+        {
+            SignedInCard.Visibility = Visibility.Visible;
+            SignedOutCard.Visibility = Visibility.Collapsed;
+        }
+
+        private void ShowSignedOutState()
+        {
+            SignedInCard.Visibility = Visibility.Collapsed;
+            SignedOutCard.Visibility = Visibility.Visible;
+        }
+
+        // If a local Secrets/client_secret*.json exists in a parent directory, register it
+        // as the GOOGLE_OAUTH_CLIENT_FILE (User-level) so the OAuth helper can find it.
+        private void TryUseSecretsClientFile()
+        {
+            try
+            {
+                var dir = new System.IO.DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
+                while (dir != null)
+                {
+                    var secretsDir = System.IO.Path.Combine(dir.FullName, "Secrets");
+                    if (System.IO.Directory.Exists(secretsDir))
+                    {
+                        try
+                        {
+                            var matches = System.IO.Directory.GetFiles(secretsDir, "client_secret*.json", System.IO.SearchOption.TopDirectoryOnly);
+                            if (matches.Length > 0)
+                            {
+                                var file = matches[0];
+                                var existing = Environment.GetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_FILE", EnvironmentVariableTarget.User)
+                                               ?? Environment.GetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_FILE");
+                                if (string.IsNullOrWhiteSpace(existing))
+                                {
+                                    Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_FILE", file, EnvironmentVariableTarget.User);
+                                    ApiStatusTextBlock.Text = "Found local Google client secret and registered for OAuth.";
+                                }
+
+                                // Also set client id/secret env vars if present in the JSON so Load() picks them up immediately.
+                                try
+                                {
+                                    var text = System.IO.File.ReadAllText(file);
+                                    var root = Newtonsoft.Json.Linq.JObject.Parse(text);
+                                    var installed = root["installed"] as Newtonsoft.Json.Linq.JObject ?? root["web"] as Newtonsoft.Json.Linq.JObject;
+                                    if (installed != null)
+                                    {
+                                        var fileClientId = installed.Value<string>("client_id");
+                                        var fileClientSecret = installed.Value<string>("client_secret");
+                                        if (!string.IsNullOrWhiteSpace(fileClientId))
+                                        {
+                                            try {
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_ID", fileClientId.Trim(), EnvironmentVariableTarget.User);
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_ID", fileClientId.Trim(), EnvironmentVariableTarget.Process);
+                                            } catch { }
+                                        }
+                                        if (!string.IsNullOrWhiteSpace(fileClientSecret))
+                                        {
+                                            try {
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_SECRET", fileClientSecret.Trim(), EnvironmentVariableTarget.User);
+                                                Environment.SetEnvironmentVariable("GOOGLE_OAUTH_CLIENT_SECRET", fileClientSecret.Trim(), EnvironmentVariableTarget.Process);
+                                            } catch { }
+                                        }
+                                        // Refresh cached config so the running process picks up the new values immediately
+                                        try { AICAD.Services.GoogleOAuthConfig.RefreshCache(); } catch { }
+                                    }
+                                }
+                                catch { }
+
+                                return;
+                            }
+                        }
+                        catch { }
+                    }
+                    dir = dir.Parent;
+                }
             }
             catch { }
         }
@@ -72,14 +304,22 @@ namespace AICAD.UI
                 MongoDbNameTextBox.Text = Environment.GetEnvironmentVariable("MONGODB_DB", EnvironmentVariableTarget.User) ?? "TaskPaneAddin";
 
                 ApiStatusTextBlock.Text = "";
-                MongoStatusTextBlock.Text = "";
-                MongoLoadedInfoIcon.Visibility = Visibility.Visible;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                
+                // Update status based on whether connection string is configured
+                if (string.IsNullOrWhiteSpace(MongoConnectionStringTextBox.Text))
+                {
+                    UpdateDatabaseStatus("local", "Not Connected", null);
+                    MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    UpdateDatabaseStatus("local", "Ready to test", null);
+                    MongoLoadedInfoIcon.Visibility = Visibility.Visible;
+                }
             }
             catch (Exception ex)
             {
-                MongoStatusTextBlock.Text = "Failed to load: " + ex.Message;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                UpdateDatabaseStatus("local", "Failed to load: " + ex.Message, false);
             }
         }
 
@@ -90,16 +330,14 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("MONGODB_URI", MongoConnectionStringTextBox.Text ?? "", EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_DB", MongoDbNameTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
-                MongoStatusTextBlock.Text = "Saved! Restart SolidWorks.";
+                UpdateDatabaseStatus("local", "Saved! Restart SolidWorks.", true);
                 MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
 
                 System.Windows.MessageBox.Show("DB settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MongoStatusTextBlock.Text = "Failed to save: " + ex.Message;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                UpdateDatabaseStatus("local", "Failed to save: " + ex.Message, false);
             }
         }
 
@@ -107,8 +345,7 @@ namespace AICAD.UI
         {
             // Disable button to prevent re-entry
             TestMongoButton.IsEnabled = false;
-            MongoStatusTextBlock.Text = "Testing connection...";
-            MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Blue);
+            UpdateDatabaseStatus("local", "Testing connection...", null);
 
             try
             {
@@ -117,8 +354,7 @@ namespace AICAD.UI
 
                 if (string.IsNullOrWhiteSpace(conn))
                 {
-                    MongoStatusTextBlock.Text = "No Connection URI entered.";
-                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Orange);
+                    UpdateDatabaseStatus("local", "No Connection URI entered.", false);
                     return;
                 }
 
@@ -133,8 +369,7 @@ namespace AICAD.UI
 
                     Dispatcher.Invoke(() =>
                     {
-                        MongoStatusTextBlock.Text = "Connection OK.";
-                        MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                        UpdateDatabaseStatus("local", "Connection OK", true);
                         MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
                     });
                 }
@@ -142,8 +377,7 @@ namespace AICAD.UI
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        MongoStatusTextBlock.Text = "Test failed: " + ex.Message;
-                        MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                        UpdateDatabaseStatus("local", "Test failed: " + ex.Message, false);
                     });
                 }
             }
@@ -159,15 +393,24 @@ namespace AICAD.UI
             {
                 LocalLlmEndpointTextBox.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", EnvironmentVariableTarget.User) ?? "http://127.0.0.1:1234";
                 // Gemini key is stored in a PasswordBox in the UI
-                try { GeminiApiKeyTextBox.Password = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
-                GroqApiKeyTextBox.Text = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "";
-                LocalLlmModelTextBox.Text = Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", EnvironmentVariableTarget.User) ?? "";
-                // local system prompt
-                // Note: control names differ from original; ignore if absent
+                try { GeminiApiKeyPasswordBox.Password = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
+                try { GroqApiKeyPasswordBox.Password = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
+                
+                // Load Prompt Refinement Provider
+                var refineProvider = Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", EnvironmentVariableTarget.User) ?? "disabled";
+                foreach (ComboBoxItem item in PromptRefineProviderComboBox.Items)
+                {
+                    if (item.Tag.ToString() == refineProvider)
+                    {
+                        PromptRefineProviderComboBox.SelectedItem = item;
+                        break;
+                    }
+                }
 
-                var mode = Environment.GetEnvironmentVariable("AICAD_LLM_MODE", EnvironmentVariableTarget.User) ?? "";
                 ApiStatusTextBlock.Text = "Loaded from environment variables";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+
+                CheckAllLlmStatuses();
             }
             catch (Exception ex)
             {
@@ -181,9 +424,19 @@ namespace AICAD.UI
             try
             {
                 Environment.SetEnvironmentVariable("LOCAL_LLM_ENDPOINT", LocalLlmEndpointTextBox.Text ?? "", EnvironmentVariableTarget.User);
-                try { Environment.SetEnvironmentVariable("GEMINI_API_KEY", GeminiApiKeyTextBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
-                Environment.SetEnvironmentVariable("GROQ_API_KEY", GroqApiKeyTextBox.Text ?? "", EnvironmentVariableTarget.User);
-                Environment.SetEnvironmentVariable("LOCAL_LLM_MODEL", LocalLlmModelTextBox.Text ?? "", EnvironmentVariableTarget.User);
+                try { Environment.SetEnvironmentVariable("GEMINI_API_KEY", GeminiApiKeyPasswordBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("GROQ_API_KEY", GroqApiKeyPasswordBox.Password ?? "", EnvironmentVariableTarget.User); } catch { }
+                
+                // Save Priority
+                var priority = string.Join(",", _providers.Select(p => p.Id));
+                Environment.SetEnvironmentVariable("AICAD_LLM_PRIORITY", priority, EnvironmentVariableTarget.User);
+
+                // Save Prompt Refinement Provider
+                var selectedRefineItem = PromptRefineProviderComboBox.SelectedItem as ComboBoxItem;
+                if (selectedRefineItem != null)
+                {
+                    Environment.SetEnvironmentVariable("PROMPT_REFINE_PROVIDER", selectedRefineItem.Tag.ToString(), EnvironmentVariableTarget.User);
+                }
 
                 ApiStatusTextBlock.Text = "Saved! Restart SolidWorks.";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
@@ -199,124 +452,314 @@ namespace AICAD.UI
 
         private async void TestApiButton_Click(object sender, RoutedEventArgs e)
         {
-            // Disable button immediately on UI thread
-            TestApiButton.IsEnabled = false;
-            UpdateApiStatus("Testing API...", Colors.Blue);
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn == null) return;
+
+            btn.IsEnabled = false;
+            try
+            {
+                if (btn.Name == "TestLocalButton")
+                {
+                    await TestLocalAsync();
+                }
+                else if (btn.Name == "TestGeminiButton")
+                {
+                    await TestGeminiAsync();
+                }
+                else if (btn.Name == "TestGroqButton")
+                {
+                    await TestGroqAsync();
+                }
+            }
+            finally
+            {
+                btn.IsEnabled = true;
+            }
+        }
+
+        private async Task TestLocalAsync()
+        {
+            // Capture UI values on UI thread before going async
+            string endpoint = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                UpdateProviderStatus("Local", "Testing...", null);
+                endpoint = LocalLlmEndpointTextBox.Text?.Trim() ?? string.Empty;
+            });
+
+            if (string.IsNullOrWhiteSpace(endpoint))
+            {
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Local", "No endpoint", false));
+                return;
+            }
 
             try
             {
-                // Determine if user selected local mode by presence of local endpoint
-                var endpoint = LocalLlmEndpointTextBox.Text?.Trim() ?? string.Empty;
-                bool isLocal = !string.IsNullOrWhiteSpace(endpoint);
-
-                if (!isLocal)
+                using (var http = new HttpClient())
                 {
-                    bool anyTested = false;
-
-                    if (!string.IsNullOrWhiteSpace(GeminiApiKeyTextBox.Password))
+                    http.Timeout = TimeSpan.FromSeconds(5);
+                    var testUrl = endpoint.TrimEnd('/') + "/v1/models";
+                    var resp = await http.GetAsync(testUrl).ConfigureAwait(false);
+                    await Dispatcher.InvokeAsync(() =>
                     {
-                        anyTested = true;
-                        try
-                        {
-                            var client = new AICAD.Services.GeminiClient(GeminiApiKeyTextBox.Password.Trim());
-                            var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
-                            // Marshal update to UI thread
-                            Dispatcher.Invoke(() =>
-                            {
-                                if (res != null && res.Success)
-                                {
-                                    UpdateApiStatus($"Gemini OK: Found {res.ModelsFound} models.", Colors.DarkGreen);
-                                }
-                                else
-                                {
-                                    UpdateApiStatus($"Gemini Fail: {res?.Message ?? "Unknown error"}", Colors.Red);
-                                }
-                            });
-                        }
-                        catch (Exception ex)
-                        {
-                            Dispatcher.Invoke(() => UpdateApiStatus("Gemini Error: " + ex.Message, Colors.Red));
-                        }
-                    }
-
-                    if (!string.IsNullOrWhiteSpace(GroqApiKeyTextBox.Text))
-                    {
-                        anyTested = true;
-                        try
-                        {
-                            using (var http = new HttpClient())
-                            {
-                                http.Timeout = TimeSpan.FromSeconds(10);
-                                http.DefaultRequestHeaders.Add("Authorization", "Bearer " + GroqApiKeyTextBox.Text.Trim());
-                                var resp = await http.GetAsync("https://api.groq.com/v1/models").ConfigureAwait(false);
-                                Dispatcher.Invoke(() =>
-                                {
-                                    if (resp.IsSuccessStatusCode)
-                                    {
-                                        // Append if previous success
-                                        if (ApiStatusTextBlock.Foreground is SolidColorBrush sc && sc.Color == Colors.DarkGreen && !string.IsNullOrWhiteSpace(ApiStatusTextBlock.Text))
-                                        {
-                                            ApiStatusTextBlock.Text += " | Groq OK.";
-                                        }
-                                        else
-                                        {
-                                            UpdateApiStatus("Groq OK.", Colors.DarkGreen);
-                                        }
-                                    }
-                                    else
-                                    {
-                                        UpdateApiStatus($"Groq Fail: {resp.StatusCode}", Colors.Red);
-                                    }
-                                });
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            Dispatcher.Invoke(() => UpdateApiStatus("Groq Error: " + ex.Message, Colors.Red));
-                        }
-                    }
-
-                    if (!anyTested)
-                    {
-                        UpdateApiStatus("No Cloud API Keys entered.", Colors.Orange);
-                    }
+                        if (resp.IsSuccessStatusCode)
+                            UpdateProviderStatus("Local", "Connected", true);
+                        else
+                            UpdateProviderStatus("Local", $"Error: {resp.StatusCode}", false);
+                    });
                 }
-                else
+            }
+            catch (Exception)
+            {
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Local", "Offline", false));
+            }
+        }
+
+        private async Task TestGeminiAsync()
+        {
+            // Capture UI values on UI thread before going async
+            string key = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                UpdateProviderStatus("Gemini", "Testing...", null);
+                key = GeminiApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
+            });
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Gemini", "No API Key", false));
+                return;
+            }
+
+            try
+            {
+                var client = new AICAD.Services.GeminiClient(key);
+                var res = await client.TestApiKeyAsync(null).ConfigureAwait(false);
+                await Dispatcher.InvokeAsync(() =>
                 {
-                    // Test local endpoint: ping /v1/models
-                    try
+                    if (res != null && res.Success)
+                        UpdateProviderStatus("Gemini", "Connected", true);
+                    else
+                        UpdateProviderStatus("Gemini", res?.Message ?? "Failed", false);
+                });
+            }
+            catch (Exception)
+            {
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Gemini", "Error", false));
+            }
+        }
+
+        private async Task TestGroqAsync()
+        {
+            // Capture UI values on UI thread before going async
+            string key = null;
+            await Dispatcher.InvokeAsync(() =>
+            {
+                UpdateProviderStatus("Groq", "Testing...", null);
+                UpdateGroqUsageStats(); // Update rate limit stats
+                key = GroqApiKeyPasswordBox.Password?.Trim() ?? string.Empty;
+            });
+
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Groq", "No API Key", false));
+                return;
+            }
+
+            try
+            {
+                using (var http = new HttpClient())
+                {
+                    http.Timeout = TimeSpan.FromSeconds(10);
+                    http.DefaultRequestHeaders.Add("Authorization", "Bearer " + key);
+                    var resp = await http.GetAsync("https://api.groq.com/openai/v1/models").ConfigureAwait(false);
+                    await Dispatcher.InvokeAsync(() =>
                     {
-                        using (var http = new HttpClient())
+                        if (resp.IsSuccessStatusCode)
                         {
-                            http.Timeout = TimeSpan.FromSeconds(5);
-                            var testUrl = endpoint.TrimEnd('/') + "/v1/models";
-                            var resp = await http.GetAsync(testUrl).ConfigureAwait(false);
-                            Dispatcher.Invoke(() =>
-                            {
-                                if (resp.IsSuccessStatusCode)
-                                {
-                                    UpdateApiStatus("Local OK (Server reachable)", Colors.DarkGreen);
-                                }
-                                else
-                                {
-                                    UpdateApiStatus($"Local Fail: {resp.StatusCode}", Colors.Red);
-                                }
-                            });
+                            UpdateProviderStatus("Groq", "Connected", true);
+                            UpdateGroqUsageStats(); // Refresh after test
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Dispatcher.Invoke(() => UpdateApiStatus("Local Error: " + ex.Message, Colors.Red));
-                    }
+                        else
+                            UpdateProviderStatus("Groq", $"Error: {resp.StatusCode}", false);
+                    });
                 }
             }
             catch (Exception ex)
             {
-                Dispatcher.Invoke(() => UpdateApiStatus("Test Error: " + ex.Message, Colors.Red));
+                await Dispatcher.InvokeAsync(() => UpdateProviderStatus("Groq", $"Error: {ex.Message}", false));
             }
-            finally
+        }
+
+        private void UpdateProviderStatus(string provider, string text, bool? success)
+        {
+            Dispatcher.Invoke(() =>
             {
-                Dispatcher.Invoke(() => TestApiButton.IsEnabled = true);
+                Ellipse circle = null;
+                TextBlock txt = null;
+
+                if (provider == "Local") { circle = LmStatusCircle; txt = LmStatusText; }
+                else if (provider == "Gemini") { circle = GeminiStatusCircle; txt = GeminiStatusText; }
+                else if (provider == "Groq") { circle = GroqStatusCircle; txt = GroqStatusText; }
+
+                if (circle != null && txt != null)
+                {
+                    txt.Text = text;
+                    if (success == true)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#28A745"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else if (success == false)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DC3545"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else
+                    {
+                        circle.Fill = new SolidColorBrush(Colors.Gray);
+                        txt.Foreground = new SolidColorBrush(Colors.Gray);
+                    }
+                }
+            });
+        }
+
+        private void UpdateDatabaseStatus(string dbType, string text, bool? success)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                Ellipse circle = null;
+                TextBlock txt = null;
+
+                if (dbType == "local") { circle = MongoStatusCircle; txt = MongoStatusText; }
+                else if (dbType == "cloud") { circle = DataApiStatusCircle; txt = DataApiStatusText; }
+
+                if (circle != null && txt != null)
+                {
+                    txt.Text = text;
+                    if (success == true)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#28A745"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else if (success == false)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DC3545"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else
+                    {
+                        circle.Fill = new SolidColorBrush(Colors.Gray);
+                        txt.Foreground = new SolidColorBrush(Colors.Gray);
+                    }
+                }
+            });
+        }
+
+        private void UpdateGroqUsageStats()
+        {
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    var stats = AICAD.Services.GroqRateLimiter.GetUsageStats();
+                    if (GroqUsageStatsText != null)
+                    {
+                        GroqUsageStatsText.Text = stats;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    if (GroqUsageStatsText != null)
+                    {
+                        GroqUsageStatsText.Text = "Stats unavailable: " + ex.Message;
+                    }
+                }
+            });
+        }
+
+        private void ResetGroqLimits_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var result = System.Windows.MessageBox.Show(
+                    "Reset Groq rate limit tracking? This will clear all usage history.\n\nOnly use this if you're experiencing false rate limit errors.",
+                    "Reset Rate Limits",
+                    MessageBoxButton.YesNo,
+                    MessageBoxImage.Question);
+
+                if (result == MessageBoxResult.Yes)
+                {
+                    AICAD.Services.GroqRateLimiter.Reset();
+                    UpdateGroqUsageStats();
+                    System.Windows.MessageBox.Show("Rate limit tracking has been reset.", "Reset Complete", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                System.Windows.MessageBox.Show("Failed to reset: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void CheckAllLlmStatuses()
+        {
+            Task.Run(async () =>
+            {
+                try
+                {
+                    await TestLocalAsync();
+                    await TestGeminiAsync();
+                    await TestGroqAsync();
+                    await Dispatcher.InvokeAsync(() => UpdateGroqUsageStats()); // Update stats after all tests
+                }
+                catch (Exception ex)
+                {
+                    try { AddinStatusLogger.Error("SettingsWindow", "CheckAllLlmStatuses failed", ex); } catch { }
+                }
+            });
+        }
+
+        private void ToggleApiKeyVisibility_Click(object sender, RoutedEventArgs e)
+        {
+            var btn = sender as System.Windows.Controls.Button;
+            if (btn?.Tag is string provider)
+            {
+                if (provider == "Gemini")
+                {
+                    var isPasswordVisible = GeminiApiKeyTextBox.Visibility == Visibility.Visible;
+                    if (isPasswordVisible)
+                    {
+                        // Hide: copy from TextBox to PasswordBox and show PasswordBox
+                        GeminiApiKeyPasswordBox.Password = GeminiApiKeyTextBox.Text;
+                        GeminiApiKeyTextBox.Visibility = Visibility.Collapsed;
+                        GeminiApiKeyPasswordBox.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        // Show: copy from PasswordBox to TextBox and show TextBox
+                        GeminiApiKeyTextBox.Text = GeminiApiKeyPasswordBox.Password;
+                        GeminiApiKeyPasswordBox.Visibility = Visibility.Collapsed;
+                        GeminiApiKeyTextBox.Visibility = Visibility.Visible;
+                    }
+                }
+                else if (provider == "Groq")
+                {
+                    var isPasswordVisible = GroqApiKeyTextBox.Visibility == Visibility.Visible;
+                    if (isPasswordVisible)
+                    {
+                        // Hide: copy from TextBox to PasswordBox and show PasswordBox
+                        GroqApiKeyPasswordBox.Password = GroqApiKeyTextBox.Text;
+                        GroqApiKeyTextBox.Visibility = Visibility.Collapsed;
+                        GroqApiKeyPasswordBox.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        // Show: copy from PasswordBox to TextBox and show TextBox
+                        GroqApiKeyTextBox.Text = GroqApiKeyPasswordBox.Password;
+                        GroqApiKeyPasswordBox.Visibility = Visibility.Collapsed;
+                        GroqApiKeyTextBox.Visibility = Visibility.Visible;
+                    }
+                }
             }
         }
 
@@ -427,6 +870,9 @@ namespace AICAD.UI
                 // Drive few-shot boolean from the Sample Mode radio buttons: zero-shot -> no few-shot; one/few -> few-shot
                 var useFewFromRadio = (mode == "zero") ? "0" : "1";
                 try { Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", useFewFromRadio, EnvironmentVariableTarget.User); } catch { }
+                
+                // Log for debugging
+                try { System.Diagnostics.Debug.WriteLine($"Sample mode saved: {mode}, AICAD_USE_FEWSHOT={useFewFromRadio}"); } catch { }
                 Environment.SetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", SamplesFileTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
                 // Randomize setting
@@ -437,12 +883,85 @@ namespace AICAD.UI
                 // Note: `AICAD_USE_FEWSHOT` is already driven by the radio buttons above; keep key/static flags from checkboxes
                 try { Environment.SetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", (ChkForceKeyShots?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
                 try { Environment.SetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", (ChkForceStaticFewShot?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION", (ChkSmartExampleSelection?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
 
                 System.Windows.MessageBox.Show("Samples settings saved to environment variables. Restart SolidWorks for changes to take effect.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show("Failed to save samples settings: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
+        }
+
+        private void LoadDataApiSettings()
+        {
+            try
+            {
+                var endpoint = Environment.GetEnvironmentVariable("DATA_API_ENDPOINT", EnvironmentVariableTarget.User);
+                var apiKey = Environment.GetEnvironmentVariable("DATA_API_KEY", EnvironmentVariableTarget.User);
+                DataApiEndpointTextBox.Text = string.IsNullOrWhiteSpace(endpoint)
+                    ? "https://data.mongodb-api.com/app/pedkniqj/endpoint/data/v1"
+                    : endpoint;
+                DataApiKeyPasswordBox.Password = string.IsNullOrWhiteSpace(apiKey)
+                    ? "3b65c98d-3603-433d-bf2d-d4840aecc97c"
+                    : apiKey;
+                
+                // Update status based on whether API key is configured
+                if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "3b65c98d-3603-433d-bf2d-d4840aecc97c")
+                {
+                    UpdateDatabaseStatus("cloud", "Not Connected", null);
+                }
+                else
+                {
+                    UpdateDatabaseStatus("cloud", "Ready to test", null);
+                }
+            }
+            catch { }
+        }
+
+        private void SaveDataApi_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                Environment.SetEnvironmentVariable("DATA_API_ENDPOINT", DataApiEndpointTextBox.Text ?? string.Empty, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("DATA_API_KEY", DataApiKeyPasswordBox.Password ?? string.Empty, EnvironmentVariableTarget.User);
+
+                UpdateDatabaseStatus("cloud", "Saved! Restart SolidWorks.", true);
+                System.Windows.MessageBox.Show("Data API settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
+            }
+            catch (Exception ex)
+            {
+                UpdateDatabaseStatus("cloud", "Save failed: " + ex.Message, false);
+            }
+        }
+
+        private async void TestDataApi_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                UpdateDatabaseStatus("cloud", "Testing connection...", null);
+                var endpoint = DataApiEndpointTextBox.Text?.Trim();
+                var apiKey = DataApiKeyPasswordBox.Password;
+                var service = new DataApiService(endpoint, apiKey);
+                var ok = await service.TestConnectionAsync();
+                if (ok)
+                {
+                    UpdateDatabaseStatus("cloud", "Connection verified!", true);
+                    DataApiErrorDetailsTextBox.Visibility = Visibility.Collapsed;
+                    DataApiErrorDetailsTextBox.Text = string.Empty;
+                }
+                else
+                {
+                    UpdateDatabaseStatus("cloud", "Test failed: see details below", false);
+                    DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
+                    DataApiErrorDetailsTextBox.Text = service.LastError ?? "Unknown error";
+                }
+            }
+            catch (Exception ex)
+            {
+                UpdateDatabaseStatus("cloud", "Test exception: see details below", false);
+                DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
+                DataApiErrorDetailsTextBox.Text = ex.ToString();
             }
         }
 
@@ -464,7 +983,7 @@ namespace AICAD.UI
                 string tokenJson = null;
                 try
                 {
-                    tokenJson = await AICAD.Services.OAuthDesktopHelper.AuthorizeAsync(cfg.ClientId, cfg.Scopes?.ToArray()).ConfigureAwait(false);
+                    tokenJson = await AICAD.Services.OAuthDesktopHelper.AuthorizeAsync(cfg.ClientId, cfg.Scopes?.ToArray(), cfg.ClientSecret).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -490,14 +1009,40 @@ namespace AICAD.UI
                                 var email = payload.Value<string>("email");
                                 Dispatcher.Invoke(() =>
                                 {
-                                    if (!string.IsNullOrWhiteSpace(name)) DisplayNameTextBox.Text = name;
-                                    if (!string.IsNullOrWhiteSpace(email)) EmailTextBox.Text = email;
-                                    GoogleSignOutButton.IsEnabled = true;
+                                    if (!string.IsNullOrWhiteSpace(name))
+                                    {
+                                        DisplayNameTextBox.Text = name;
+                                        DisplayNameText.Text = name;
+                                    }
+                                    if (!string.IsNullOrWhiteSpace(email))
+                                    {
+                                        EmailTextBox.Text = email;
+                                        EmailText.Text = email;
+                                    }
+                                    ShowSignedInState();
                                 });
+
+                                // Validate id_token via Google and create/update user in MongoDB
+                                try
+                                {
+                                    var userDoc = await AICAD.Services.UserService.GetOrCreateFromIdTokenAsync(idToken).ConfigureAwait(false);
+                                    if (userDoc != null)
+                                    {
+                                        Dispatcher.Invoke(() => ApiStatusTextBlock.Text = "Account created/updated in MongoDB.");
+                                    }
+                                    else
+                                    {
+                                        Dispatcher.Invoke(() => ApiStatusTextBlock.Text = "Account not saved: invalid token or MongoDB not configured.");
+                                    }
+                                }
+                                catch { /* ignore failures here - non-fatal for UI */ }
                             }
                         }
 
-                        Dispatcher.Invoke(() => System.Windows.MessageBox.Show("Signed in successfully.", "Signed In", MessageBoxButton.OK, MessageBoxImage.Information));
+                        Dispatcher.Invoke(() =>
+                        {
+                            System.Windows.MessageBox.Show("Signed in successfully!", "Success", MessageBoxButton.OK, MessageBoxImage.Information);
+                        });
                     }
                     catch (Exception ex)
                     {
@@ -507,8 +1052,11 @@ namespace AICAD.UI
             }
             finally
             {
-                GoogleSignInButton.IsEnabled = true;
-                GoogleSignInButton.Content = prevContent;
+                Dispatcher.Invoke(() =>
+                {
+                    GoogleSignInButton.IsEnabled = true;
+                    GoogleSignInButton.Content = prevContent;
+                });
             }
         }
 
@@ -535,8 +1083,10 @@ namespace AICAD.UI
 
                 DisplayNameTextBox.Text = string.Empty;
                 EmailTextBox.Text = string.Empty;
-                GoogleSignOutButton.IsEnabled = false;
-                System.Windows.MessageBox.Show("Signed out (local UI only).", "Signed Out", MessageBoxButton.OK, MessageBoxImage.Information);
+                DisplayNameText.Text = string.Empty;
+                EmailText.Text = string.Empty;
+                ShowSignedOutState();
+                System.Windows.MessageBox.Show("Signed out successfully.", "Signed Out", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
@@ -580,7 +1130,7 @@ namespace AICAD.UI
                 SamplesFileTextBox.Text = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? "";
 
                 var rand = Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", EnvironmentVariableTarget.User) ?? "0";
-                RandomizeSamplesCheckBox.IsChecked = rand == "1" || rand.Equals("true", StringComparison.OrdinalIgnoreCase);
+                RandomizeSamplesCheckBox.IsChecked = rand == "1" || (rand != null && rand.Equals("true", StringComparison.OrdinalIgnoreCase));
 
                 // Load few-shot and related flags (if controls present). If AICAD_USE_FEWSHOT isn't set, derive from radio selection.
                 try
@@ -593,7 +1143,7 @@ namespace AICAD.UI
                     }
                     else
                     {
-                        ChkUseFewShot.IsChecked = (useFew == "1" || useFew.Equals("true", StringComparison.OrdinalIgnoreCase));
+                        ChkUseFewShot.IsChecked = (useFew == "1" || (useFew != null && useFew.Equals("true", StringComparison.OrdinalIgnoreCase)));
                     }
                 }
                 catch { if (ChkUseFewShot != null) ChkUseFewShot.IsChecked = true; }
@@ -601,16 +1151,39 @@ namespace AICAD.UI
                 try
                 {
                     var fk = Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS");
-                    ChkForceKeyShots.IsChecked = fk == "1" || fk.Equals("true", StringComparison.OrdinalIgnoreCase);
+                    ChkForceKeyShots.IsChecked = fk == "1" || (fk != null && fk.Equals("true", StringComparison.OrdinalIgnoreCase));
                 }
                 catch { if (ChkForceKeyShots != null) ChkForceKeyShots.IsChecked = false; }
 
                 try
                 {
                     var fs = Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT");
-                    ChkForceStaticFewShot.IsChecked = fs == "1" || fs.Equals("true", StringComparison.OrdinalIgnoreCase);
+                    ChkForceStaticFewShot.IsChecked = fs == "1" || (fs != null && fs.Equals("true", StringComparison.OrdinalIgnoreCase));
                 }
                 catch { if (ChkForceStaticFewShot != null) ChkForceStaticFewShot.IsChecked = false; }
+
+                try
+                {
+                    var smartSel = Environment.GetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION");
+                    ChkSmartExampleSelection.IsChecked = smartSel == "1" || (smartSel != null && smartSel.Equals("true", StringComparison.OrdinalIgnoreCase));
+                }
+                catch { if (ChkSmartExampleSelection != null) ChkSmartExampleSelection.IsChecked = true; }
+            }
+            catch { }
+        }
+
+        // Update few-shot state immediately when sample mode radio buttons change
+        private void SampleModeRadio_Checked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // zero-shot -> disable few-shot; one/few -> enable few-shot
+                bool useFew = !(SampleModeZeroRadio.IsChecked == true);
+                if (ChkUseFewShot != null)
+                {
+                    ChkUseFewShot.IsChecked = useFew;
+                }
+                try { Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", useFew ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
             }
             catch { }
         }

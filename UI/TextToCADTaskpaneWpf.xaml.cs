@@ -1740,15 +1740,20 @@ namespace AICAD.UI
 
                     if (!valid && !string.IsNullOrWhiteSpace(suggestion))
                     {
-                        UpdatePromptFeedback("\u2728 LLM suggests: " + suggestion, Colors.Orange);
+                        // Translate technical suggestion to friendly English
+                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(suggestion);
+                        UpdatePromptFeedback("\u2728 " + friendlyMsg, Colors.Orange);
                     }
                     else if (!valid && !string.IsNullOrWhiteSpace(issue))
                     {
-                        UpdatePromptFeedback("\u26a0 " + issue, Colors.OrangeRed);
+                        // Translate technical issue to friendly English
+                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(issue);
+                        UpdatePromptFeedback("\u26a0 " + friendlyMsg, Colors.OrangeRed);
                     }
                     else if (!string.IsNullOrWhiteSpace(suggestion))
                     {
-                        UpdatePromptFeedback("\ud83d\udca1 Tip: " + suggestion, Colors.DodgerBlue);
+                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(suggestion);
+                        UpdatePromptFeedback("\ud83d\udca1 Tip: " + friendlyMsg, Colors.DodgerBlue);
                     }
                     else
                     {
@@ -1760,7 +1765,8 @@ namespace AICAD.UI
                     // JSON parse failed - use raw response as suggestion
                     if (llmResponse.Length < 200)
                     {
-                        UpdatePromptFeedback("\ud83d\udca1 " + llmResponse, Colors.DodgerBlue);
+                        string friendlyMsg = Services.FriendlyErrorTranslator.SimplifyComplexError(llmResponse);
+                        UpdatePromptFeedback("\ud83d\udca1 " + friendlyMsg, Colors.DodgerBlue);
                     }
                     else
                     {
@@ -2764,13 +2770,19 @@ namespace AICAD.UI
                     var swError = (exec != null && exec.Log.Count > 0 && exec.Log[exec.Log.Count - 1].ContainsKey("error"))
                         ? exec.Log[exec.Log.Count - 1].Value<string>("error")
                         : (errText ?? "Unknown error");
+                    
+                    // Translate technical error to friendly message for taskpane only
+                    string friendlyError = Services.FriendlyErrorTranslator.SimplifyComplexError(swError);
+                    
+                    // Status console (IT admin): show technical details
                     AppendStatusLine("SOLIDWORKS error: " + swError);
                     // Signal an error to the line-based karaoke: mark current line and stop advancing
                     try { SignalKaraokeError(); } catch { StopKaraoke(); }
-                    SetRealTimeStatus("Error: " + swError, Colors.Firebrick);
+                    // Taskpane (designer): show friendly message
+                    SetRealTimeStatus(friendlyError, Colors.Firebrick);
                     SetSwStatus("Error", Colors.Firebrick);
                     if (string.IsNullOrWhiteSpace(errText)) errText = swError;
-                    SetLastError(swError);
+                    SetLastError(friendlyError);
                     try
                     {
                         if (exec != null && exec.CreatedNewPart && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
@@ -2826,8 +2838,11 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 errText = ex.Message + "\n" + ex.StackTrace;
+                string friendlyError = Services.FriendlyErrorTranslator.SimplifyComplexError(ex.Message);
+                // Status console (IT admin): show technical exception
                 AppendStatusLine("Error: " + ex.Message);
-                SetRealTimeStatus("Error: " + ex.Message, Colors.Firebrick);
+                // Taskpane (designer): show friendly message
+                SetRealTimeStatus(friendlyError, Colors.Firebrick);
                 SetLlmStatus("Error", Colors.Firebrick);
                 SetSwStatus("Error", Colors.Firebrick);
                 SetLastError(ex.Message);

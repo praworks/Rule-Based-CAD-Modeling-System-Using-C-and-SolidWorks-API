@@ -883,6 +883,7 @@ namespace AICAD.UI
                 // Note: `AICAD_USE_FEWSHOT` is already driven by the radio buttons above; keep key/static flags from checkboxes
                 try { Environment.SetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", (ChkForceKeyShots?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
                 try { Environment.SetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", (ChkForceStaticFewShot?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION", (ChkSmartExampleSelection?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
 
                 System.Windows.MessageBox.Show("Samples settings saved to environment variables. Restart SolidWorks for changes to take effect.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -1160,6 +1161,13 @@ namespace AICAD.UI
                     ChkForceStaticFewShot.IsChecked = fs == "1" || (fs != null && fs.Equals("true", StringComparison.OrdinalIgnoreCase));
                 }
                 catch { if (ChkForceStaticFewShot != null) ChkForceStaticFewShot.IsChecked = false; }
+
+                try
+                {
+                    var smartSel = Environment.GetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION");
+                    ChkSmartExampleSelection.IsChecked = smartSel == "1" || (smartSel != null && smartSel.Equals("true", StringComparison.OrdinalIgnoreCase));
+                }
+                catch { if (ChkSmartExampleSelection != null) ChkSmartExampleSelection.IsChecked = true; }
             }
             catch { }
         }

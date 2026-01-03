@@ -35,11 +35,11 @@
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Select Series" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" x:Name="seriesComboBox" SelectedIndex="0" HorizontalAlignment="Right" Height="26" VerticalContentAlignment="Center" Width="370" Background="{x:Null}">
+                    <ComboBox Grid.Column="1" x:Name="seriesComboBox" SelectedIndex="0" HorizontalAlignment="Stretch" Height="26" VerticalContentAlignment="Center" Background="{x:Null}">
                         <ComboBoxItem>ASM</ComboBoxItem>
                         <ComboBoxItem>PRT</ComboBoxItem>
                         <ComboBoxItem>DRW</ComboBoxItem>
@@ -50,11 +50,11 @@
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Material" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="0" IsEditable="True" Height="26" VerticalContentAlignment="Center" Margin="24,0,0,0" Width="370" HorizontalAlignment="Right" Background="{x:Null}">
+                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="0" IsEditable="True" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Stretch" Background="{x:Null}">
                         <ComboBoxItem>Steel, Mild</ComboBoxItem>
                         <ComboBoxItem>Aluminum 1060 Alloy</ComboBoxItem>
                         <ComboBoxItem>Stainless Steel</ComboBoxItem>
@@ -84,22 +84,22 @@
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Description" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <TextBox Grid.Column="1" x:Name="typeDescriptionTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="False" IsEnabled="True" Style="{StaticResource TextBoxStyle}" Margin="10,0,0,0" Width="370" HorizontalAlignment="Right"/>
+                    <TextBox Grid.Column="1" x:Name="typeDescriptionTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="False" IsEnabled="True" Style="{StaticResource TextBoxStyle}" HorizontalAlignment="Stretch"/>
                 </Grid>
             </Border>
 
             <Border Background="Transparent" BorderBrush="{StaticResource InputBorderBrush}" BorderThickness="0" Margin="0,0,0,6" Padding="4,2">
                 <Grid>
                     <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Weight" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <TextBox Grid.Column="1" x:Name="weightTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="True" Style="{StaticResource TextBoxStyle}" Margin="31,0,0,0" Width="370" HorizontalAlignment="Right"/>
+                    <TextBox Grid.Column="1" x:Name="weightTextBox" Height="26" VerticalContentAlignment="Center" IsReadOnly="True" Style="{StaticResource TextBoxStyle}" HorizontalAlignment="Stretch"/>
                 </Grid>
             </Border>
 
@@ -132,7 +132,6 @@
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
             <Border Grid.Row="1" Background="Transparent" CornerRadius="{StaticResource CardCornerRadius}" Padding="8,4" Margin="0,0,0,4">
@@ -162,19 +161,20 @@
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
                     <TextBlock x:Name="KaraokeStatus" FontSize="11" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,2,0,2" Foreground="{StaticResource TextPrimaryBrush}" Visibility="Collapsed"/>
+                    
+                    <!-- Progress bar moved here - right after task complete status -->
+                    <Grid Margin="0,4,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="Auto"/>
+                        </Grid.ColumnDefinitions>
+                        <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="{StaticResource ProgressBarHeight}" Foreground="{StaticResource AccentBrush}" Background="{StaticResource InputBorderBrush}" BorderThickness="0"/>
+                        <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeSmall}" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                    </Grid>
                 </StackPanel>
             </Border>
 
-            <Grid Grid.Row="2" Margin="0,4,0,8">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                </Grid.ColumnDefinitions>
-                <ProgressBar x:Name="generationProgressBar" Grid.Column="0" Height="{StaticResource ProgressBarHeight}" Foreground="{StaticResource AccentBrush}" Background="{StaticResource InputBorderBrush}" BorderThickness="0"/>
-                <TextBlock x:Name="generationProgressText" Grid.Column="1" Text="" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeSmall}" Margin="8,0,0,0" VerticalAlignment="Center" FontWeight="SemiBold"/>
-            </Grid>
-
-            <Grid Grid.Row="3" Margin="0,0,0,4">
+            <Grid Grid.Row="2" Margin="0,0,0,4">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>

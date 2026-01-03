@@ -19,7 +19,7 @@ namespace AICAD.Services
     {
         // Supported ops: new_part, select_plane{name}, sketch_begin, sketch_end,
         // rectangle_center{cx,cy,w,h}, circle_center{cx,cy,r|diameter}, extrude{depth,type?:boss}
-    public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null)
+    public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null, bool continueOnError = false)
         {
             var result = new StepExecutionResult();
             try { AddinStatusLogger.Log("StepExecutor", $"Execute: invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
@@ -220,7 +220,18 @@ namespace AICAD.Services
                         result.Log.Add(log);
                         result.Success = false;
                         try { AddinStatusLogger.Error("StepExecutor", $"Step {i} failed op='{op}'", ex); } catch { }
-                        return result; // stop at first failure
+                        
+                        // If continueOnError is enabled, log this failure but process next step
+                        if (!continueOnError)
+                        {
+                            return result; // ORIGINAL: stop at first failure
+                        }
+                        else
+                        {
+                            // NEW: Continue to next step instead of aborting
+                            try { AddinStatusLogger.Log("StepExecutor", $"Continuing to next step despite failure (continueOnError=true)"); } catch { }
+                            continue;
+                        }
                     }
                     result.Log.Add(log);
                     try
@@ -233,7 +244,17 @@ namespace AICAD.Services
                     try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: completed op='{op}' success={log.Value<bool?>("success")}" ); } catch { }
                 }
 
-                result.Success = true;
+                // Check if continueOnError mode: success if ANY step succeeded
+                if (continueOnError)
+                {
+                    var anySuccess = result.Log.Any(l => l["success"]?.Value<bool>() == true);
+                    result.Success = anySuccess;
+                    try { AddinStatusLogger.Log("StepExecutor", $"continueOnError mode: {result.Log.Count} steps, {result.Log.Count(l => l["success"]?.Value<bool>() == true)} succeeded"); } catch { }
+                }
+                else
+                {
+                    result.Success = true;
+                }
                 return result;
             }
             catch (Exception ex)

@@ -562,6 +562,9 @@
                                     <CheckBox x:Name="ChkUseFewShot" Content="Enable few-shot learning" ToolTip="Use multiple examples to improve AI accuracy" Margin="0,4" />
                                     <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Include example input→output pairs in prompts so the AI can learn from examples. Improves accuracy but may increase response time and prompt size.</TextBlock>
 
+                                    <CheckBox x:Name="ChkSmartExampleSelection" Content="Enable smart example selection" ToolTip="Automatically select most relevant examples based on sketch context" Margin="0,4" />
+                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Intelligently select examples that match the current sketch context, improving relevance and response quality. Uses semantic similarity to find the best matching examples.</TextBlock>
+
                                     <CheckBox x:Name="ChkForceKeyShots" Content="Use only key/important examples" ToolTip="Prioritize high-quality curated examples" Margin="0,4" />
                                     <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Prefer a small curated set of high-quality examples to improve reliability and reduce noisy examples.</TextBlock>
 

@@ -2226,8 +2226,44 @@ namespace AICAD.UI
                     // Training Data & Advanced Options
                     AppendStatusLine($"[Training] Data Storage Enabled: {(trainingDataEnabled == "1" ? "Yes" : "No")}");
                     AppendStatusLine($"[Training] Few-shot Examples Enabled: {(useFewShotEnv == "1" ? "Yes" : "No")}");
+                        // Few-shot related flags from Settings window
+                        try
+                        {
+                            var forceKeyShots = System.Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", System.EnvironmentVariableTarget.User) ?? "0";
+                            var staticFew = forceStaticFewShotEnv ?? "0";
+                            var randomizeSamples = System.Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", System.EnvironmentVariableTarget.User) ?? "0";
+                            var samplesDbPath = System.Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", System.EnvironmentVariableTarget.User) ?? string.Empty;
+
+                            AppendStatusLine($"[FewShot] Force key/important examples: {(forceKeyShots == "1" ? "Yes" : "No")}");
+                            AppendStatusLine($"[FewShot] Use built-in examples (ignore DB): {(staticFew == "1" ? "Yes" : "No")}");
+                            AppendStatusLine($"[FewShot] Randomize example selection: {(randomizeSamples == "1" ? "Yes" : "No")}");
+                            AppendStatusLine($"[FewShot] Samples DB Path: {(string.IsNullOrWhiteSpace(samplesDbPath) ? "(none)" : samplesDbPath)}");
+                        }
+                        catch { }
                     AppendStatusLine($"[Training] Force Static Few-shot: {(forceStaticFewShotEnv == "1" ? "Yes" : "No")}");
                     AppendStatusLine($"[Training] Use Only Good Feedback: {(forceOnlyGoodFeedback == "1" ? "Yes" : "No")}");
+                }
+                catch { }
+
+                // NameEasy auto-update settings (stored in HKCU) - useful for post-run logging
+                try
+                {
+                    string autoMaterial = "0";
+                    string autoDescription = "0";
+                    try
+                    {
+                        using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\\AI-CAD\\NameEasy"))
+                        {
+                            if (key != null)
+                            {
+                                autoMaterial = key.GetValue("AutoUpdateMaterial")?.ToString() ?? "0";
+                                autoDescription = key.GetValue("AutoUpdateDescription")?.ToString() ?? "0";
+                            }
+                        }
+                    }
+                    catch { }
+                    AppendStatusLine($"[AutoUpdate] Material: {(autoMaterial == "1" ? "Enabled" : "Disabled")}");
+                    AppendStatusLine($"[AutoUpdate] Description: {(autoDescription == "1" ? "Enabled" : "Disabled")}");
                 }
                 catch { }
                 

@@ -128,26 +128,6 @@
                                 </StackPanel>
                             </GroupBox>
 
-                            <GroupBox Header="☁️ Data API (Cloud Feedback)" Margin="0,8,0,0">
-                                <StackPanel>
-                                    <TextBlock Text="Post feedback to MongoDB without passwords" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
-                                    
-                                    <Label Content="API Endpoint" ToolTip="MongoDB Data API endpoint URL" />
-                                    <TextBox x:Name="DataApiEndpointTextBox" Height="28" Text="https://data.mongodb-api.com/app/aicad-data-api/endpoint/data/v1" ToolTip="Default endpoint for AI-CAD" />
-                                    
-                                    <Label Content="API Key" Margin="0,6,0,0" ToolTip="MongoDB Data API access key" />
-                                    <PasswordBox x:Name="DataApiKeyPasswordBox" Height="28" ToolTip="Your secure API key" />
-                                    
-                                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                        <Button x:Name="TestDataApiButton" Content="Test Connection" Click="TestDataApi_Click" Style="{StaticResource FlatNavButton}" />
-                                        <Button x:Name="SaveDataApiButton" Content="Save API Settings" Click="SaveDataApi_Click" Style="{StaticResource PrimaryButton}" Margin="8,0,0,0" />
-                                    </StackPanel>
-                                    
-                                    <TextBlock x:Name="DataApiStatusTextBlock" Text="" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,6,0,0" />
-                                    <TextBox x:Name="DataApiErrorDetailsTextBox" Text="" Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0" Height="80" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" Visibility="Collapsed" />
-                                </StackPanel>
-                            </GroupBox>
-
                             <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -164,13 +144,32 @@
                         </StackPanel>
 
                         <StackPanel x:Name="MongoPanel" Visibility="Collapsed">
-                            <TextBlock Text="Configure your MongoDB database connection for storing CAD data and AI training examples" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
+                            <TextBlock Text="Configure your database connections for storing CAD data, AI training examples, and cloud feedback" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
 
-                            <TabControl Margin="0,8,0,0" Background="Transparent">
-                                <TabItem Header="Connection Setup">
+                            <!-- Database Type Toggle -->
+                            <Label Content="Database Configuration" FontWeight="SemiBold" Margin="0,0,0,4" />
+                            <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                <RadioButton x:Name="LocalDatabaseRadio" Content="💾 Local MongoDB" GroupName="DatabaseType" IsChecked="True" ToolTip="Configure local MongoDB server connection" />
+                                <RadioButton x:Name="CloudDatabaseRadio" Content="☁️ Cloud Data API" GroupName="DatabaseType" Margin="16,0,0,0" ToolTip="Configure MongoDB Data API (passwordless cloud access)" />
+                            </StackPanel>
+
+                            <!-- Dynamic Content Area -->
+                            <StackPanel Margin="0,8,0,0">
+                                <!-- Local MongoDB Panel -->
+                                <StackPanel x:Name="LocalDatabasePanel">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsChecked, ElementName=LocalDatabaseRadio}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
                                     <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
                                         <StackPanel>
-                                            <TextBlock Text="Database Connection" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
+                                            <TextBlock Text="Local MongoDB Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
 
                                             <Label Content="Server Address" ToolTip="MongoDB server hostname or IP address" />
                                             <TextBox x:Name="DbHostTextBox" Height="28" Text="localhost" ToolTip="Enter localhost for local database or remote server address" />
@@ -208,19 +207,64 @@
                                             <!-- Hidden advanced connection string (kept for compatibility with existing test/save code) -->
                                             <TextBox x:Name="MongoConnectionStringTextBox" Visibility="Collapsed" />
 
-                                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0" VerticalAlignment="Center">
-                                                <TextBlock x:Name="MongoStatusTextBlock" Text="" Foreground="{StaticResource TextPrimaryBrush}" />
-                                                <TextBlock x:Name="MongoLoadedInfoIcon" Text="🛈" Margin="8,0,0,0" Visibility="Collapsed" Foreground="{StaticResource AccentBrush}" ToolTip="Value loaded from System Environment Variables." />
-                                            </StackPanel>
-
-                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                                <Button x:Name="TestMongoButton" Content="Test Connection" Style="{StaticResource PrimaryButton}" Click="TestMongoButton_Click" />
-                                                <Button x:Name="ResetMongoButton" Content="Reset to Defaults" Style="{StaticResource FlatNavButton}" Click="LoadMongoButton_Click" Margin="8,0,0,0" />
-                                            </StackPanel>
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse x:Name="MongoStatusCircle" Fill="Gray" Width="12" Height="12" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="MongoStatusText" Text="Unknown" Grid.Column="1" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
+                                                <TextBlock x:Name="MongoLoadedInfoIcon" Text="🛈" Grid.Column="1" Margin="8,0,0,0" Visibility="Collapsed" Foreground="{StaticResource AccentBrush}" ToolTip="Value loaded from System Environment Variables." HorizontalAlignment="Right" />
+                                                <Button x:Name="TestMongoButton" Content="Test" Grid.Column="2" Margin="8,0,0,0" Style="{StaticResource FlatNavButton}" Click="TestMongoButton_Click" />
+                                                <Button x:Name="ApplyMongoButton" Content="Apply" Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="LoadMongoButton_Click" />
+                                            </Grid>
                                         </StackPanel>
                                     </Border>
-                                </TabItem>
-                            </TabControl>
+                                </StackPanel>
+
+                                <!-- Cloud Data API Panel -->
+                                <StackPanel x:Name="CloudDatabasePanel">
+                                    <StackPanel.Style>
+                                        <Style TargetType="StackPanel">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding IsChecked, ElementName=CloudDatabaseRadio}" Value="True">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </StackPanel.Style>
+                                    <Border Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="10" CornerRadius="{StaticResource StandardCornerRadius}">
+                                        <StackPanel>
+                                            <TextBlock Text="MongoDB Data API Configuration" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" FontSize="14" Margin="0,0,0,8" />
+                                            <TextBlock Text="Post feedback to MongoDB without connection strings or passwords" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
+                                            
+                                            <Label Content="API Endpoint" ToolTip="MongoDB Data API endpoint URL" />
+                                            <TextBox x:Name="DataApiEndpointTextBox" Height="28" Text="https://data.mongodb-api.com/app/aicad-data-api/endpoint/data/v1" ToolTip="Default endpoint for AI-CAD" />
+                                            
+                                            <Label Content="API Key" Margin="0,6,0,0" ToolTip="MongoDB Data API access key" />
+                                            <PasswordBox x:Name="DataApiKeyPasswordBox" Height="28" ToolTip="Your secure API key" />
+
+                                            <Grid Margin="0,12,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Ellipse x:Name="DataApiStatusCircle" Fill="Gray" Width="12" Height="12" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                                <TextBlock x:Name="DataApiStatusText" Text="Unknown" Grid.Column="1" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
+                                                <Button x:Name="TestDataApiButton" Content="Test" Grid.Column="2" Margin="8,0,0,0" Style="{StaticResource FlatNavButton}" Click="TestDataApi_Click" />
+                                                <Button x:Name="ApplyDataApiButton" Content="Apply" Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="SaveDataApi_Click" />
+                                            </Grid>
+                                            
+                                            <TextBox x:Name="DataApiErrorDetailsTextBox" Text="" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,0" Height="80" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" IsReadOnly="True" Visibility="Collapsed" />
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
                         </StackPanel>
 
                         <StackPanel x:Name="ApiKeysPanel" Visibility="Collapsed">

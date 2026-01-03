@@ -304,14 +304,22 @@ namespace AICAD.UI
                 MongoDbNameTextBox.Text = Environment.GetEnvironmentVariable("MONGODB_DB", EnvironmentVariableTarget.User) ?? "TaskPaneAddin";
 
                 ApiStatusTextBlock.Text = "";
-                MongoStatusTextBlock.Text = "";
-                MongoLoadedInfoIcon.Visibility = Visibility.Visible;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                
+                // Update status based on whether connection string is configured
+                if (string.IsNullOrWhiteSpace(MongoConnectionStringTextBox.Text))
+                {
+                    UpdateDatabaseStatus("local", "Not Connected", null);
+                    MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
+                }
+                else
+                {
+                    UpdateDatabaseStatus("local", "Ready to test", null);
+                    MongoLoadedInfoIcon.Visibility = Visibility.Visible;
+                }
             }
             catch (Exception ex)
             {
-                MongoStatusTextBlock.Text = "Failed to load: " + ex.Message;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                UpdateDatabaseStatus("local", "Failed to load: " + ex.Message, false);
             }
         }
 
@@ -322,16 +330,14 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("MONGODB_URI", MongoConnectionStringTextBox.Text ?? "", EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("MONGODB_DB", MongoDbNameTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
-                MongoStatusTextBlock.Text = "Saved! Restart SolidWorks.";
+                UpdateDatabaseStatus("local", "Saved! Restart SolidWorks.", true);
                 MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
 
                 System.Windows.MessageBox.Show("DB settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                MongoStatusTextBlock.Text = "Failed to save: " + ex.Message;
-                MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                UpdateDatabaseStatus("local", "Failed to save: " + ex.Message, false);
             }
         }
 
@@ -339,8 +345,7 @@ namespace AICAD.UI
         {
             // Disable button to prevent re-entry
             TestMongoButton.IsEnabled = false;
-            MongoStatusTextBlock.Text = "Testing connection...";
-            MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Blue);
+            UpdateDatabaseStatus("local", "Testing connection...", null);
 
             try
             {
@@ -349,8 +354,7 @@ namespace AICAD.UI
 
                 if (string.IsNullOrWhiteSpace(conn))
                 {
-                    MongoStatusTextBlock.Text = "No Connection URI entered.";
-                    MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Orange);
+                    UpdateDatabaseStatus("local", "No Connection URI entered.", false);
                     return;
                 }
 
@@ -365,8 +369,7 @@ namespace AICAD.UI
 
                     Dispatcher.Invoke(() =>
                     {
-                        MongoStatusTextBlock.Text = "Connection OK.";
-                        MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                        UpdateDatabaseStatus("local", "Connection OK", true);
                         MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
                     });
                 }
@@ -374,8 +377,7 @@ namespace AICAD.UI
                 {
                     Dispatcher.Invoke(() =>
                     {
-                        MongoStatusTextBlock.Text = "Test failed: " + ex.Message;
-                        MongoStatusTextBlock.Foreground = new SolidColorBrush(Colors.Red);
+                        UpdateDatabaseStatus("local", "Test failed: " + ex.Message, false);
                     });
                 }
             }
@@ -599,6 +601,38 @@ namespace AICAD.UI
                 if (provider == "Local") { circle = LmStatusCircle; txt = LmStatusText; }
                 else if (provider == "Gemini") { circle = GeminiStatusCircle; txt = GeminiStatusText; }
                 else if (provider == "Groq") { circle = GroqStatusCircle; txt = GroqStatusText; }
+
+                if (circle != null && txt != null)
+                {
+                    txt.Text = text;
+                    if (success == true)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#28A745"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else if (success == false)
+                    {
+                        circle.Fill = new SolidColorBrush((Color)ColorConverter.ConvertFromString("#DC3545"));
+                        txt.Foreground = circle.Fill;
+                    }
+                    else
+                    {
+                        circle.Fill = new SolidColorBrush(Colors.Gray);
+                        txt.Foreground = new SolidColorBrush(Colors.Gray);
+                    }
+                }
+            });
+        }
+
+        private void UpdateDatabaseStatus(string dbType, string text, bool? success)
+        {
+            Dispatcher.Invoke(() =>
+            {
+                Ellipse circle = null;
+                TextBlock txt = null;
+
+                if (dbType == "local") { circle = MongoStatusCircle; txt = MongoStatusText; }
+                else if (dbType == "cloud") { circle = DataApiStatusCircle; txt = DataApiStatusText; }
 
                 if (circle != null && txt != null)
                 {
@@ -870,7 +904,16 @@ namespace AICAD.UI
                 DataApiKeyPasswordBox.Password = string.IsNullOrWhiteSpace(apiKey)
                     ? "3b65c98d-3603-433d-bf2d-d4840aecc97c"
                     : apiKey;
-                DataApiStatusTextBlock.Text = string.Empty;
+                
+                // Update status based on whether API key is configured
+                if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "3b65c98d-3603-433d-bf2d-d4840aecc97c")
+                {
+                    UpdateDatabaseStatus("cloud", "Not Connected", null);
+                }
+                else
+                {
+                    UpdateDatabaseStatus("cloud", "Ready to test", null);
+                }
             }
             catch { }
         }
@@ -882,14 +925,12 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("DATA_API_ENDPOINT", DataApiEndpointTextBox.Text ?? string.Empty, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("DATA_API_KEY", DataApiKeyPasswordBox.Password ?? string.Empty, EnvironmentVariableTarget.User);
 
-                DataApiStatusTextBlock.Text = "Saved! Restart SolidWorks.";
-                DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                UpdateDatabaseStatus("cloud", "Saved! Restart SolidWorks.", true);
                 System.Windows.MessageBox.Show("Data API settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
             catch (Exception ex)
             {
-                DataApiStatusTextBlock.Text = "Save failed: " + ex.Message;
-                DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
+                UpdateDatabaseStatus("cloud", "Save failed: " + ex.Message, false);
             }
         }
 
@@ -897,29 +938,27 @@ namespace AICAD.UI
         {
             try
             {
+                UpdateDatabaseStatus("cloud", "Testing connection...", null);
                 var endpoint = DataApiEndpointTextBox.Text?.Trim();
                 var apiKey = DataApiKeyPasswordBox.Password;
                 var service = new DataApiService(endpoint, apiKey);
                 var ok = await service.TestConnectionAsync();
                 if (ok)
                 {
-                    DataApiStatusTextBlock.Text = "Connection verified!";
-                    DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
+                    UpdateDatabaseStatus("cloud", "Connection verified!", true);
                     DataApiErrorDetailsTextBox.Visibility = Visibility.Collapsed;
                     DataApiErrorDetailsTextBox.Text = string.Empty;
                 }
                 else
                 {
-                    DataApiStatusTextBlock.Text = "Test failed: see details below";
-                    DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
+                    UpdateDatabaseStatus("cloud", "Test failed: see details below", false);
                     DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
                     DataApiErrorDetailsTextBox.Text = service.LastError ?? "Unknown error";
                 }
             }
             catch (Exception ex)
             {
-                DataApiStatusTextBlock.Text = "Test exception: see details below";
-                DataApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.Firebrick);
+                UpdateDatabaseStatus("cloud", "Test exception: see details below", false);
                 DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
                 DataApiErrorDetailsTextBox.Text = ex.ToString();
             }

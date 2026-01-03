@@ -1,11 +1,16 @@
 using System;
 using System.Reflection;
+using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 
 namespace AICAD.Services.Operations.PartFeatures
 {
+    internal static class PartFeatureHelpers
+    {
+        public static double ToMeters(double mm) => mm / 1000.0;
+    }
     /// <summary>
     /// Handler for "extrude" operation - creates an extrusion (boss or cut)
     /// </summary>
@@ -20,7 +25,7 @@ namespace AICAD.Services.Operations.PartFeatures
                 if (featMgr == null)
                     return OperationResult.CreateFailure("Feature manager not available");
 
-                double depth = ToMeters(step.Value<double?>("depth") ?? 0);
+                double depth = PartFeatureHelpers.ToMeters(step.Value<double?>("depth") ?? 0);
                 bool isBoss = (step.Value<string>("type") ?? "boss").ToLowerInvariant() == "boss";
 
                 var feat = featMgr.FeatureExtrusion2(isBoss,
@@ -35,19 +40,20 @@ namespace AICAD.Services.Operations.PartFeatures
                 if (feat == null)
                     return OperationResult.CreateFailure("Extrude operation failed");
 
-                return OperationResult.CreateSuccess(stillInSketch: false, data: feat);
+                // Force rebuild so the feature tree and bodies are updated
+                try { model.ForceRebuild3(false); AddinStatusLogger.Log("ExtrudeHandler", "Model rebuilt (ForceRebuild3 false)"); } catch { }
+
+                return OperationResult.CreateSuccess(stillInSketch: false, data: new { featureName = feat.Name });
             }
             catch (Exception ex)
             {
                 return OperationResult.CreateFailure($"extrude failed: {ex.Message}");
             }
+            }
         }
 
-        private static double ToMeters(double mm) => mm / 1000.0;
-    }
-
     /// <summary>
-    /// Handler for "revolve" operation - creates a revolved feature
+    /// Handler for "revolve" operation - creates a revolve feature (profile around axis)
     /// </summary>
     public class RevolveHandler : IOperationHandler
     {
@@ -57,8 +63,6 @@ namespace AICAD.Services.Operations.PartFeatures
             {
                 if (model == null)
                     return OperationResult.CreateFailure("Model not initialized");
-                if (featMgr == null)
-                    return OperationResult.CreateFailure("Feature manager not available");
 
                 // TODO: Implement revolve (requires axis selection and profile sketch)
                 return OperationResult.CreateFailure("Revolve operation not yet implemented");
@@ -128,149 +132,83 @@ namespace AICAD.Services.Operations.PartFeatures
                 if (featMgr == null)
                     return OperationResult.CreateFailure("Feature manager not available");
 
-                double radius = ToMeters(step.Value<double?>("radius") ?? step.Value<double?>("r") ?? 0);
-                if (radius <= 0)
+                double rawRadiusMm = step.Value<double?>("radius") ?? step.Value<double?>("r") ?? 0;
+                double radiusMeters = PartFeatureHelpers.ToMeters(rawRadiusMm);
+                if (radiusMeters <= 0)
                     return OperationResult.CreateFailure("Fillet radius must be > 0");
 
-                // If the JSON step does not include explicit target entities, perform implicit selection
-                var part = (IPartDoc)model;
-                if (part == null)
-                    return OperationResult.CreateFailure("Not a part document");
+                AddinStatusLogger.Log("FilletHandler", $"Applying Radius: {rawRadiusMm}mm ({radiusMeters}m)");
 
-                bool hasExplicitTargets = false;
-                try
-                {
-                    hasExplicitTargets = (step["targets"] != null) || (step["edges"] != null) || (step["edge_ids"] != null) || (step["selection"] != null);
-                }
-                catch { hasExplicitTargets = false; }
+                try { model.ForceRebuild3(false); } catch { }
+                try { model.ClearSelection2(true); } catch { }
+
+                SelectionMgr selMgr = (SelectionMgr)model.SelectionManager;
+                SelectData selData = selMgr.CreateSelectData();
+                try { selData.Mark = 1; } catch { }
 
                 int edgeCount = 0;
-                model.ClearSelection2(true);
+                IFeature filletFeat = null;
 
-                AddinStatusLogger.Log("FilletHandler", $"hasExplicitTargets={hasExplicitTargets}");
+                var part = (IPartDoc)model;
+                if (part == null) return OperationResult.CreateFailure("Not a part document");
 
-                if (!hasExplicitTargets)
+                var bodies = (object[])part.GetBodies2((int)swBodyType_e.swSolidBody, true);
+                if (bodies != null && bodies.Length > 0)
                 {
-                    // Implicit selection: try to select edges from the last feature added
-                    AddinStatusLogger.Log("FilletHandler", "Attempting implicit edge selection...");
-                    try
+                    var liveBody = bodies[bodies.Length - 1] as IBody2;
+                    if (liveBody != null)
                     {
-                        // Select all solid-body edges in the part (reliable API call)
-                        var bodies = (object[])part.GetBodies2((int)swBodyType_e.swSolidBody, false);
-                        if (bodies != null)
+                        var edges = (object[])liveBody.GetEdges();
+                        if (edges != null)
                         {
-                            foreach (IBody2 body in bodies)
+                            foreach (var eObj in edges)
                             {
-                                if (body == null) continue;
-                                var edges = (object[])body.GetEdges();
-                                if (edges == null) continue;
-
-                                foreach (var eObj in edges)
-                                {
-                                    var edgeDyn = eObj as dynamic;
-                                    bool sel = false;
-                                    try { sel = edgeDyn?.Select4(true, null) ?? false; } catch { }
-                                    if (!sel)
-                                    {
-                                        try { sel = edgeDyn?.Select2(true, null) ?? false; } catch { }
-                                    }
-                                    if (sel) edgeCount++;
-                                }
+                                try { ((dynamic)eObj).Select4(true, selData); } catch { try { ((dynamic)eObj).Select2(true, selData); } catch { } }
+                                edgeCount++;
                             }
                         }
                     }
-                    catch { /* swallow and allow fallback below */ }
-
-                    AddinStatusLogger.Log("FilletHandler", $"After implicit selection: edgeCount={edgeCount}");
                 }
-                else
-                {
-                    // If explicit targets exist, we expect they were handled elsewhere (or pre-selected).
-                    // Fall back to selecting all part edges if nothing is selected yet.
-                    try
-                    {
-                        var bodies = (object[])part.GetBodies2((int)swBodyType_e.swSolidBody, false);
-                        if (bodies != null)
-                        {
-                            foreach (IBody2 body in bodies)
-                            {
-                                if (body == null) continue;
-                                var edges = (object[])body.GetEdges();
-                                if (edges == null) continue;
-
-                                foreach (var eObj in edges)
-                                {
-                                    var edgeDyn = eObj as dynamic;
-                                    bool sel = false;
-                                    try { sel = edgeDyn?.Select4(true, null) ?? false; } catch { }
-                                    if (!sel)
-                                    {
-                                        try { sel = edgeDyn?.Select2(true, null) ?? false; } catch { }
-                                    }
-                                    if (sel) edgeCount++;
-                                }
-                            }
-                        }
-                    }
-                    catch { }
-                }
-                    // If no edges selected via edge object selection, try selecting by constructed names using last feature name
-                    if (edgeCount == 0)
-                    {
-                        AddinStatusLogger.Log("FilletHandler", "edgeCount=0, trying SelectByID2 fallback...");
-                        try
-                        {
-                            var lastFeat = model.Extension.GetLastFeatureAdded() as IFeature;
-                            var featName = lastFeat?.Name ?? string.Empty;
-                            if (!string.IsNullOrWhiteSpace(featName))
-                            {
-                                // Try common edge naming patterns: Edge1@FeatName, EDGE1@FeatName, etc.
-                                for (int i = 1; i <= 200 && edgeCount == 0; i++)
-                                {
-                                    try
-                                    {
-                                        string[] candidates = new string[] { $"Edge{i}@{featName}", $"EDGE{i}@{featName}", $"EDGE {i}@{featName}" };
-                                        foreach (var cand in candidates)
-                                        {
-                                            bool s = model.Extension.SelectByID2(cand, "EDGE", 0, 0, 0, true, 0, null, 0);
-                                            if (s) edgeCount++;
-                                        }
-                                    }
-                                    catch { }
-                                }
-                            }
-                        }
-                        catch { }
-                        
-                        AddinStatusLogger.Log("FilletHandler", $"After SelectByID2 fallback: edgeCount={edgeCount}");
-                    }
-
-                AddinStatusLogger.Log("FilletHandler", $"Final edgeCount before FeatureFillet2: {edgeCount}");
 
                 if (edgeCount == 0)
-                    return OperationResult.CreateFailure("No edges found to fillet (selection API not available)");
+                    return OperationResult.CreateFailure("No edges found to fillet.");
 
-                // Attempt fillet using IModelDoc2.FeatureFillet2 (7 params, returns int status)
-                int status = 0;
+                // Try batch FeatureFillet3
                 try
                 {
-                    status = model.FeatureFillet2(radius, true, true, false, 0, 1, new double[] { radius });
-                    AddinStatusLogger.Log("FilletHandler", $"FeatureFillet2 returned status={status}");
+                    dynamic dynFeatMgr = model.FeatureManager;
+                    var f = dynFeatMgr.FeatureFillet3(3, radiusMeters, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+                    if (f != null) filletFeat = f as IFeature;
+                }
+                catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException bindEx)
+                {
+                    AddinStatusLogger.Log("FilletHandler", $"FeatureFillet3 not available on this SolidWorks version: {bindEx.Message}");
                 }
                 catch (Exception ex)
                 {
-                    return OperationResult.CreateFailure($"Fillet API call failed: {ex.Message}");
+                    AddinStatusLogger.Log("FilletHandler", $"FeatureFillet3 error: {ex.Message}");
                 }
 
+                // Fallback to legacy FeatureFillet2 if needed
+                if (filletFeat == null)
+                {
+                    try
+                    {
+                        int status = model.FeatureFillet2(radiusMeters, true, true, false, 0, 1, new double[] { radiusMeters });
+                        AddinStatusLogger.Log("FilletHandler", $"Legacy FeatureFillet2 returned status={status}");
+                        if (status == 0)
+                            return OperationResult.CreateFailure($"Fillet feature creation failed (selected {edgeCount} edges)");
+                    }
+                    catch (Exception ex)
+                    {
+                        return OperationResult.CreateFailure($"Fillet API call failed: {ex.Message}");
+                    }
+                }
+
+                try { model.ForceRebuild3(false); } catch { }
                 model.ClearSelection2(true);
 
-                if (status == 0)
-                    return OperationResult.CreateFailure($"Fillet feature creation failed (selected {edgeCount} edges)");
-
-                // Force model rebuild so feature tree updates before validation
-                try { model.ForceRebuild3(false); } catch { }
-
-                return OperationResult.CreateSuccess(stillInSketch: false, data: new { edgeCount, radiusMm = step.Value<double?>("radius"), status });
+                return OperationResult.CreateSuccess(stillInSketch: false, data: new { edgeCount, radiusMm = rawRadiusMm, featureName = filletFeat?.Name });
             }
             catch (Exception ex)
             {
@@ -278,7 +216,6 @@ namespace AICAD.Services.Operations.PartFeatures
             }
         }
 
-        private static double ToMeters(double mm) => mm / 1000.0;
     }
 
     /// <summary>
@@ -295,7 +232,7 @@ namespace AICAD.Services.Operations.PartFeatures
                 if (featMgr == null)
                     return OperationResult.CreateFailure("Feature manager not available");
 
-                double distance = ToMeters(step.Value<double?>("distance") ?? step.Value<double?>("d") ?? 0);
+                double distance = PartFeatureHelpers.ToMeters(step.Value<double?>("distance") ?? step.Value<double?>("d") ?? 0);
                 if (distance <= 0)
                     return OperationResult.CreateFailure("Chamfer distance must be > 0");
 
@@ -308,7 +245,6 @@ namespace AICAD.Services.Operations.PartFeatures
             }
         }
 
-        private static double ToMeters(double mm) => mm / 1000.0;
     }
 
     /// <summary>
@@ -348,7 +284,7 @@ namespace AICAD.Services.Operations.PartFeatures
                 if (featMgr == null)
                     return OperationResult.CreateFailure("Feature manager not available");
 
-                double depth = ToMeters(step.Value<double?>("depth") ?? 0);
+                double depth = PartFeatureHelpers.ToMeters(step.Value<double?>("depth") ?? 0);
 
                 // TODO: Implement pocket (similar to extrude but as cut operation)
                 return OperationResult.CreateFailure("Pocket operation not yet fully implemented");
@@ -359,6 +295,5 @@ namespace AICAD.Services.Operations.PartFeatures
             }
         }
 
-        private static double ToMeters(double mm) => mm / 1000.0;
     }
 }

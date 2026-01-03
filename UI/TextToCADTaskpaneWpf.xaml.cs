@@ -2091,8 +2091,8 @@ namespace AICAD.UI
                 {
                     lastEx = ex;
                     
-                    // Special handling for Groq rate limit errors
-                    if (provider == "groq" && ex.Message.Contains("rate limit"))
+                    // Special handling for Groq rate limit errors (case-insensitive)
+                    if (provider == "groq" && ex.Message.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         AppendStatusLine("⚠️ [GROQ RATE LIMIT] " + ex.Message);
                         AppendStatusLine("💡 Tip: Using Groq free tier - try Local LM or Gemini, or wait before retrying.");
@@ -2769,7 +2769,7 @@ namespace AICAD.UI
                             catch { }
 
                             SetPartPropertiesOnDocument(doc, material ?? string.Empty, desc ?? string.Empty, weight ?? string.Empty, partName);
-                            try { doc.ForceRebuild3(false); } catch { }
+                            try { doc.ForceRebuild3(false); AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", "Model rebuilt after auto-apply properties (ForceRebuild3 false)"); } catch (Exception ex) { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Model rebuild after auto-apply properties failed: {ex.Message}"); }
                         }
                     }
                     catch (Exception propEx)
@@ -3227,7 +3227,7 @@ namespace AICAD.UI
                 UpdatePreview();
 
                 // Rebuild to apply material
-                doc.ForceRebuild3(false);
+                try { doc.ForceRebuild3(false); AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", "Model rebuilt after save/apply (ForceRebuild3 false)"); } catch (Exception ex) { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Model rebuild after save/apply failed: {ex.Message}"); }
             }
             catch (Exception ex)
             {
@@ -3461,7 +3461,7 @@ namespace AICAD.UI
                     SetProp("Weight", massLink);
                 }
 
-                model.ForceRebuild3(false);
+                try { model.ForceRebuild3(false); AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", "Model rebuilt after SetPartProperties (ForceRebuild3 false)"); } catch (Exception ex) { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Model rebuild after SetPartProperties failed: {ex.Message}"); }
                 return true;
             }
             catch (Exception ex)

@@ -24,8 +24,51 @@ namespace AICAD.Services
             try
             {
                 result["title"] = model.GetTitle() ?? "Untitled";
-                result["feature_count"] = 0;
-                result["features"] = new JArray();
+
+                // Enumerate features to detect geometry creation between validation snapshots
+                var features = new JArray();
+                int featureCount = 0;
+                try
+                {
+                    var skipTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        "HistoryFolder", "CommentsFolder", "NotesFolder", "LightsFolder",
+                        "MaterialFolder", "RefPlane", "OriginProfileFeature", "RefPoint",
+                        "RefAxis", "SolidBodyFolder", "SurfaceBodyFolder", "SheetMetal",
+                        "ProfileFeature"
+                    };
+
+                    var feat = model.FirstFeature();
+                    while (feat != null)
+                    {
+                        string type = string.Empty;
+                        string name = string.Empty;
+                        try { type = feat.GetTypeName2() ?? string.Empty; } catch { type = string.Empty; }
+                        try { name = feat.Name ?? string.Empty; } catch { name = string.Empty; }
+                        bool suppressed = false;
+                        try { suppressed = feat.IsSuppressed(); } catch { suppressed = false; }
+
+                        if (!suppressed && !skipTypes.Contains(type))
+                        {
+                            featureCount++;
+                            features.Add(new JObject { ["name"] = name, ["type"] = type });
+                            AddinStatusLogger.Log("ModelInspector", $"Counted feature: {name} (type={type})");
+                        }
+                        else if (!suppressed)
+                        {
+                            AddinStatusLogger.Log("ModelInspector", $"Skipped feature: {name} (type={type}, skipped=true)");
+                        }
+
+                        feat = feat.GetNextFeature();
+                    }
+                }
+                catch (Exception enumEx) 
+                { 
+                    AddinStatusLogger.Log("ModelInspector", $"Feature enumeration failed: {enumEx.Message}");
+                }
+                result["feature_count"] = featureCount;
+                result["features"] = features;
+                AddinStatusLogger.Log("ModelInspector", $"Enumerated {featureCount} features (non-folder/non-suppressed)");
 
                 // Query body geometry for edge/face counts
                 var partDoc = model as IPartDoc;
@@ -55,7 +98,7 @@ namespace AICAD.Services
                     }
                 }
 
-                // Query custom properties (global, not configuration-specific)
+                // Query custom properties and resolved material name (configuration-aware)
                 try
                 {
                     var custMgr = model.Extension.CustomPropertyManager[""];

@@ -24,7 +24,6 @@ namespace AICAD.Services
             try
             {
                 result["title"] = model.GetTitle() ?? "Untitled";
-                result["type"] = model.GetType().Name;
                 result["feature_count"] = 0;
                 result["features"] = new JArray();
 

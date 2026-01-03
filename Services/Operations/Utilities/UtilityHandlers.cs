@@ -135,12 +135,12 @@ namespace AICAD.Services.Operations.Utilities
                 if (string.IsNullOrWhiteSpace(material))
                     return OperationResult.CreateFailure("Missing material name");
 
-                string config = model.ConfigurationManager?.ActiveConfiguration?.Name ?? "";
                 bool applied = false;
 
                 try
                 {
-                    var cust = model.Extension.CustomPropertyManager[config];
+                    // Use global custom properties (empty string for config)
+                    var cust = model.Extension.CustomPropertyManager[""];
                     cust?.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                 }
                 catch
@@ -180,8 +180,8 @@ namespace AICAD.Services.Operations.Utilities
                 if (string.IsNullOrWhiteSpace(description))
                     return OperationResult.CreateFailure("Missing description text");
 
-                string config = model.ConfigurationManager?.ActiveConfiguration?.Name ?? "";
-                var cust = model.Extension.CustomPropertyManager[config];
+                // Use global custom properties (empty string for config)
+                var cust = model.Extension.CustomPropertyManager[""];
                 cust?.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
 
                 return OperationResult.CreateSuccess(data: new { description });

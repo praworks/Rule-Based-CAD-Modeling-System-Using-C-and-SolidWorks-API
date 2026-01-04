@@ -5,21 +5,24 @@ using SolidWorks.Interop.swconst;
 
 namespace AICAD.Services.Operations.PartFeatures
 {
-    internal static class ChamferOP
+    /// <summary>
+    /// Handler for "chamfer" operation - adds chamfer to edges
+    /// </summary>
+    public class ChamferHandler : IOperationHandler
     {
-        public static AICAD.Services.Operations.OperationResult ExecuteChamfer(JObject step, IModelDoc2 model, IFeatureManager featMgr)
+        public OperationResult Execute(JObject step, IModelDoc2 model, ISketchManager sketchMgr, IFeatureManager featMgr, bool inSketch)
         {
             try
             {
                 if (model == null)
-                    return AICAD.Services.Operations.OperationResult.CreateFailure("Model not initialized");
+                    return OperationResult.CreateFailure("Model not initialized");
                 if (featMgr == null)
-                    return AICAD.Services.Operations.OperationResult.CreateFailure("Feature manager not available");
+                    return OperationResult.CreateFailure("Feature manager not available");
 
                 double rawDistMm = step.Value<double?>("distance") ?? step.Value<double?>("d") ?? step.Value<double?>("dist") ?? 0;
                 double distance = PartFeatureHelpers.ToMeters(rawDistMm);
                 if (distance <= 0)
-                    return AICAD.Services.Operations.OperationResult.CreateFailure("Chamfer distance must be > 0");
+                    return OperationResult.CreateFailure("Chamfer distance must be > 0");
 
                 AddinStatusLogger.Log("ChamferOP", $"Applying Chamfer: {rawDistMm}mm ({distance}m)");
 
@@ -34,7 +37,7 @@ namespace AICAD.Services.Operations.PartFeatures
                 IFeature chamferFeat = null;
 
                 var part = (IPartDoc)model;
-                if (part == null) return AICAD.Services.Operations.OperationResult.CreateFailure("Not a part document");
+                if (part == null) return OperationResult.CreateFailure("Not a part document");
 
                 var bodies = (object[])part.GetBodies2((int)swBodyType_e.swSolidBody, true);
                 var edgeList = new System.Collections.Generic.List<object>();
@@ -56,7 +59,7 @@ namespace AICAD.Services.Operations.PartFeatures
 
                 edgeCount = edgeList.Count;
                 if (edgeCount == 0)
-                    return AICAD.Services.Operations.OperationResult.CreateFailure("No edges found to chamfer.");
+                    return OperationResult.CreateFailure("No edges found to chamfer.");
 
                 // Try newer FeatureChamfer API (FeatureManager)
                 // Try batch FeatureChamfer3 (if supported) by selecting all edges first
@@ -136,18 +139,19 @@ namespace AICAD.Services.Operations.PartFeatures
                     }
 
                     if (!anyCreated)
-                        return AICAD.Services.Operations.OperationResult.CreateFailure("Chamfer API not available or failed on this SolidWorks version");
+                        return OperationResult.CreateFailure("Chamfer API not available or failed on this SolidWorks version");
                 }
 
                 try { model.ForceRebuild3(false); } catch { }
                 model.ClearSelection2(true);
 
-                return AICAD.Services.Operations.OperationResult.CreateSuccess(stillInSketch: false, data: new { edgeCount, distanceMm = rawDistMm, featureName = chamferFeat?.Name });
+                return OperationResult.CreateSuccess(stillInSketch: false, data: new { edgeCount, distanceMm = rawDistMm, featureName = chamferFeat?.Name });
             }
             catch (Exception ex)
             {
-                return AICAD.Services.Operations.OperationResult.CreateFailure($"chamfer failed: {ex.Message}");
+                return OperationResult.CreateFailure($"chamfer failed: {ex.Message}");
             }
         }
+
     }
 }

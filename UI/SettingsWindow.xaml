@@ -111,6 +111,7 @@
                                 <StackPanel>
                                     <CheckBox x:Name="ChkConfirmBeforeApply" Content="Ask for confirmation before applying changes" ToolTip="Show a confirmation dialog before applying naming changes" Margin="0,4" />
                                     <CheckBox x:Name="ChkBackupBeforeRename" Content="Create backup files before renaming (.bak)" ToolTip="Automatically create backup copies of files before renaming operations" Margin="0,4" />
+                                    <CheckBox x:Name="ChkEnableExceptionClassifier" Content="Enable LLM Error Reporting (Traffic Cop)" ToolTip="Send filtered exceptions to the configured local LLM for troubleshooting (opt-in)" Margin="0,4" />
                                 </StackPanel>
                             </GroupBox>
 
@@ -293,6 +294,11 @@
                                 <RadioButton x:Name="LmStudioRadio" Content="💻 LM Studio (Local)" GroupName="Provider" IsChecked="True" ToolTip="Configure locally hosted AI models" />
                                 <RadioButton x:Name="GeminiRadio" Content="☁️ Google Gemini" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Google's cloud AI service" />
                                 <RadioButton x:Name="GroqRadio" Content="⚡ Groq" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Groq's high-speed AI service" />
+                            </StackPanel>
+
+                            <!-- Quick access to enable Traffic Cop from the AI Provider panel -->
+                            <StackPanel Margin="0,8,0,0">
+                                <CheckBox x:Name="ChkEnableExceptionClassifier_AiProvider" Content="Enable LLM Error Reporting (Traffic Cop)" ToolTip="Send filtered exceptions to the configured local LLM for troubleshooting (opt-in)" Margin="0,4" />
                             </StackPanel>
 
                             <!-- Dynamic Content Area -->

@@ -100,5 +100,45 @@ namespace AICAD.Services
                 return false;
             }
         }
+
+        // Bool helpers stored as 0/1 strings
+        public static bool GetBool(string key, bool defaultValue)
+        {
+            try
+            {
+                using (var reg = Registry.CurrentUser.OpenSubKey(RegistryPath))
+                {
+                    if (reg != null)
+                    {
+                        var v = reg.GetValue(key);
+                        if (v != null)
+                        {
+                            var s = v.ToString();
+                            if (s == "1" || s.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
+                            if (s == "0" || s.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return defaultValue;
+        }
+
+        public static bool SetBool(string key, bool value)
+        {
+            try
+            {
+                using (var reg = Registry.CurrentUser.CreateSubKey(RegistryPath))
+                {
+                    reg?.SetValue(key, value ? "1" : "0");
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AddinLogger.Error(nameof(SettingsManager), "Failed to save setting " + key + "", ex);
+                return false;
+            }
+        }
     }
 }

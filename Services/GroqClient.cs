@@ -17,7 +17,9 @@ namespace AICAD.Services
     /// </summary>
     public class GroqClient : IDisposable
     {
-        private readonly HttpClient _http;
+        // Shared HttpClient for GroqClient instances
+        private static readonly HttpClient _sharedHttp = CreateSharedHttpClient();
+        private readonly HttpClient _http = _sharedHttp;
         private readonly string _apiKey;
 
         // Safety thresholds (tunable)
@@ -29,11 +31,10 @@ namespace AICAD.Services
             _apiKey = !string.IsNullOrWhiteSpace(apiKey) ? apiKey :
                      (Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "");
 
-            _http = new HttpClient();
-            _http.Timeout = TimeSpan.FromSeconds(30);
+            // Using shared HttpClient; apply default header if API key present
             if (!string.IsNullOrWhiteSpace(_apiKey))
             {
-                _http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+                try { _sharedHttp.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey); } catch { }
             }
 
             // conservative defaults
@@ -41,9 +42,17 @@ namespace AICAD.Services
             MinRemainingTokensThreshold = 128;
         }
 
+        // Do not dispose shared HttpClient
         public void Dispose()
         {
-            try { _http.Dispose(); } catch { }
+            // no-op
+        }
+
+        private static HttpClient CreateSharedHttpClient()
+        {
+            var c = new HttpClient();
+            c.Timeout = TimeSpan.FromSeconds(30);
+            return c;
         }
 
         public class RateLimitInfo

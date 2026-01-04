@@ -22,6 +22,25 @@ namespace AICAD.Services
             var line = string.IsNullOrWhiteSpace(category) ? "ERROR: " + message : $"[ERROR:{category}] {message}";
             if (ex != null) line += " => " + ex.ToString();
             Emit(line);
+
+            try
+            {
+                // Decide whether to send this exception to the LLM for analysis
+                if (ex != null)
+                {
+                    if (ExceptionClassifier.ShouldSend(ex, category, message, out var reason))
+                    {
+                        // Fire-and-forget reporting so we don't block callers
+                        try { System.Threading.Tasks.Task.Run(() => LlmErrorReporter.ReportAsync(category, message, ex)); } catch { }
+                    }
+                    else
+                    {
+                        // Optionally log why it was not sent
+                        AddinStatusLogger.Log("ExceptionClassifier", $"Not sending to LLM: {reason}");
+                    }
+                }
+            }
+            catch { }
         }
 
         private static void Emit(string line)

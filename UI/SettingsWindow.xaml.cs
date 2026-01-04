@@ -30,6 +30,19 @@ namespace AICAD.UI
             InitializeComponent();
             InitializeProviderList();
             LoadAllSettings();
+            try
+            {
+                // Keep the two checkboxes in sync if both panels are visible
+                ChkEnableExceptionClassifier.Checked += ToggleExceptionClassifierChanged;
+                ChkEnableExceptionClassifier.Unchecked += ToggleExceptionClassifierChanged;
+            }
+            catch { }
+            try
+            {
+                ChkEnableExceptionClassifier_AiProvider.Checked += ToggleExceptionClassifierChanged;
+                ChkEnableExceptionClassifier_AiProvider.Unchecked += ToggleExceptionClassifierChanged;
+            }
+            catch { }
         }
 
         private void InitializeProviderList()
@@ -143,6 +156,11 @@ namespace AICAD.UI
                 try { LoadSamplesButton_Click(null, null); } catch { }
                 try { LoadNameEasySettings(); } catch { }
                 try { LoadAccountInfo(); } catch { }
+                try {
+                    var enabled = AICAD.Services.SettingsManager.GetBool("EnableExceptionClassifier", false);
+                    ChkEnableExceptionClassifier.IsChecked = enabled;
+                    try { ChkEnableExceptionClassifier_AiProvider.IsChecked = enabled; } catch { }
+                } catch { }
             }
             catch { }
         }
@@ -1193,7 +1211,23 @@ namespace AICAD.UI
             SaveMongoButton_Click(sender, e);
             SaveApiKeysButton_Click(sender, e);
             SaveSamplesButton_Click(sender, e);
+            try {
+                // Prefer whichever checkbox reflects the user's last action
+                bool enabled = (ChkEnableExceptionClassifier.IsChecked == true) || (ChkEnableExceptionClassifier_AiProvider?.IsChecked == true);
+                AICAD.Services.SettingsManager.SetBool("EnableExceptionClassifier", enabled);
+            } catch { }
             System.Windows.MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+
+        private void ToggleExceptionClassifierChanged(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var state = (sender as CheckBox)?.IsChecked == true;
+                try { ChkEnableExceptionClassifier.IsChecked = state; } catch { }
+                try { ChkEnableExceptionClassifier_AiProvider.IsChecked = state; } catch { }
+            }
+            catch { }
         }
     }
 }

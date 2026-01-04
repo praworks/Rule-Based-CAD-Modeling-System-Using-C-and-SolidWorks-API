@@ -24,7 +24,7 @@ namespace AICAD.Services.Operations.PartFeatures
                 if (distance <= 0)
                     return OperationResult.CreateFailure("Chamfer distance must be > 0");
 
-                AddinStatusLogger.Log("ChamferOP", $"Applying Chamfer: {rawDistMm}mm ({distance}m)");
+                AddinStatusLogger.Log("ChamferHandler", $"Applying Chamfer: {rawDistMm}mm ({distance}m)");
 
                 try { model.ForceRebuild3(false); } catch { }
                 try { model.ClearSelection2(true); } catch { }
@@ -51,105 +51,50 @@ namespace AICAD.Services.Operations.PartFeatures
                         {
                             foreach (var eObj in edges)
                             {
-                                edgeList.Add(eObj);
+                                Entity ent = (Entity)eObj;
+                                ent.Select4(true, selData);
+                                edgeCount++;
                             }
                         }
                     }
+
                 }
 
-                edgeCount = edgeList.Count;
                 if (edgeCount == 0)
                     return OperationResult.CreateFailure("No edges found to chamfer.");
 
-                // Try newer FeatureChamfer API (FeatureManager)
-                // Try batch FeatureChamfer3 (if supported) by selecting all edges first
+                // 4. Apply Chamfer (Symmetric / Equal Distance)
+                // We use the simpler "InsertChamfer" method.
+                // It automatically creates a symmetric chamfer when only one distance is provided.
                 try
                 {
-                    // select all edges with the same selection mark
-                    foreach (var eObj in edgeList)
-                    {
-                        try { ((dynamic)eObj).Select4(true, selData); } catch { try { ((dynamic)eObj).Select2(true, selData); } catch { } }
-                    }
+                    // Use dynamic invocation to support different SW interop versions
+                    dynamic dynFeatMgr = featMgr;
+                    // InsertFeatureChamfer(ChamferType, Distance1, Distance2, Angle, Flip, ...)
+                    // 0 = swFeatureChamferUniformDistance (equal distance chamfer)
+                    // distance = width (same for both distances for symmetric)
+                    var f2 = dynFeatMgr.InsertFeatureChamfer(0, distance, distance, 0, 0, null, null);
 
-                    dynamic dynFeatMgr = model.FeatureManager;
-                    try
+                    if (f2 != null)
                     {
-                        var f = dynFeatMgr.FeatureChamfer3(0, distance, 0, 0, 0, 0, 0);
-                        if (f != null) chamferFeat = f as IFeature;
+                        chamferFeat = f2 as IFeature;
                     }
-                    catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException bindEx)
+                    else
                     {
-                        AddinStatusLogger.Log("ChamferOP", $"FeatureChamfer3 not available: {bindEx.Message}");
-                    }
-                    catch (Exception ex)
-                    {
-                        AddinStatusLogger.Log("ChamferOP", $"FeatureChamfer3 error: {ex.Message}");
+                        return OperationResult.CreateFailure($"SolidWorks failed to create the chamfer. Check if {rawDistMm}mm is too large for these edges.");
                     }
                 }
-                catch (Exception) { }
-
-                // Fallback to legacy ModelDoc API if needed - try several common signatures to maximize compatibility
-                if (chamferFeat == null)
+                catch (Exception ex)
                 {
-                    bool anyCreated = false;
-
-                    // Fallback: try per-edge legacy calls. Some SolidWorks versions expect a single selected edge per call.
-                    foreach (var eObj in edgeList)
-                    {
-                        try { model.ClearSelection2(true); } catch { }
-                        var singleSel = selMgr.CreateSelectData();
-                        try { singleSel.Mark = 1; } catch { }
-                        try { ((dynamic)eObj).Select4(true, singleSel); } catch { try { ((dynamic)eObj).Select2(true, singleSel); } catch { } }
-
-                        var perAttempts = new[] {
-                            new { Desc = "FeatureChamfer2(distance, bool, int, int, int)", Call = (Func<dynamic,int>)(m => (int)m.FeatureChamfer2(distance, true, 0, 0, 0)) },
-                            new { Desc = "FeatureChamfer2(distance, distance, int, int, int)", Call = (Func<dynamic,int>)(m => (int)m.FeatureChamfer2(distance, distance, 0, 0, 0)) },
-                            new { Desc = "FeatureChamfer2(distance, bool)", Call = (Func<dynamic,int>)(m => (int)m.FeatureChamfer2(distance, true)) },
-                            new { Desc = "FeatureChamfer2(distance, distance)", Call = (Func<dynamic,int>)(m => (int)m.FeatureChamfer2(distance, distance)) }
-                        };
-
-                        dynamic dynModel = model;
-                        foreach (var at in perAttempts)
-                        {
-                            try
-                            {
-                                int status = at.Call(dynModel);
-                                AddinStatusLogger.Log("ChamferOP", $"Per-edge attempt {at.Desc} returned status={status}");
-                                if (status != 0)
-                                {
-                                    anyCreated = true;
-                                    break;
-                                }
-                            }
-                            catch (Microsoft.CSharp.RuntimeBinder.RuntimeBinderException bindEx)
-                            {
-                                AddinStatusLogger.Log("ChamferOP", $"Per-edge attempt {at.Desc} not available: {bindEx.Message}");
-                            }
-                            catch (Exception ex)
-                            {
-                                AddinStatusLogger.Log("ChamferOP", $"Per-edge attempt {at.Desc} threw: {ex.Message}");
-                            }
-                        }
-
-                        if (anyCreated)
-                        {
-                            // keep going to try chamfering other edges as well
-                            continue;
-                        }
-                    }
-
-                    if (!anyCreated)
-                        return OperationResult.CreateFailure("Chamfer API not available or failed on this SolidWorks version");
+                    return OperationResult.CreateFailure($"API Error: {ex.Message}");
                 }
 
-                try { model.ForceRebuild3(false); } catch { }
                 model.ClearSelection2(true);
-
-                return OperationResult.CreateSuccess(stillInSketch: false, data: new { edgeCount, distanceMm = rawDistMm, featureName = chamferFeat?.Name });
+                return OperationResult.CreateSuccess(stillInSketch: false, data: new { edgeCount, featureName = chamferFeat.Name });
             }
             catch (Exception ex)
             {
-                return OperationResult.CreateFailure($"chamfer failed: {ex.Message}");
+                return OperationResult.CreateFailure($"Chamfer handler exception: {ex.Message}");
             }
         }
 

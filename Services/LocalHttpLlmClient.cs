@@ -12,7 +12,8 @@ namespace AICAD.Services
     /// </summary>
     public class LocalHttpLlmClient : ILlmClient, IDisposable
     {
-        private readonly HttpClient _http;
+        // Shared HttpClient to avoid disposed/connection issues when multiple callers create/dispose instances.
+        private static readonly HttpClient _sharedHttp = CreateSharedHttpClient();
         private readonly string _endpoint;
         private string _model; // Removed 'readonly' so we can update it from the response
         private readonly string _systemPrompt;
@@ -32,9 +33,14 @@ namespace AICAD.Services
             }
             _model = model ?? throw new ArgumentNullException(nameof(model));
             _systemPrompt = systemPrompt;
-            _http = new HttpClient();
-            // Increase default timeout to 180s to allow slower local LLMs more time (Qwen, Llama-based runtimes)
-            _http.Timeout = TimeSpan.FromSeconds(180);
+            // Shared HttpClient already configured with a sensible timeout.
+        }
+
+        private static HttpClient CreateSharedHttpClient()
+        {
+            var c = new HttpClient();
+            c.Timeout = TimeSpan.FromSeconds(180);
+            return c;
         }
 
         public string Model => _model;
@@ -63,13 +69,13 @@ namespace AICAD.Services
             {
                 using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
                 {
-                    resp = await _http.PostAsync(_endpoint, content).ConfigureAwait(false);
+                    resp = await _sharedHttp.PostAsync(_endpoint, content).ConfigureAwait(false);
                 }
             }
             catch (TaskCanceledException tex)
             {
                 // More actionable message: local LLM may be busy, crashed, or out of VRAM (Qwen/Llama variants)
-                var msg = $"Local LLM request to {_endpoint} timed out after {_http.Timeout.TotalSeconds}s. " +
+                var msg = $"Local LLM request to {_endpoint} timed out after {_sharedHttp.Timeout.TotalSeconds}s. " +
                           "The local model may be busy, out of VRAM, or the server may be unresponsive. " +
                           "Try restarting the local LLM or lowering the model size.\n" + tex.Message;
                 AddinStatusLogger.Error("LocalHttpLlmClient", "Request timed out", tex);
@@ -139,9 +145,10 @@ namespace AICAD.Services
             return await GenerateAsync(prompt).ConfigureAwait(false);
         }
 
+        // Do not dispose the shared HttpClient; keep it for the app lifetime.
         public void Dispose()
         {
-            _http?.Dispose();
+            // no-op
         }
     }
 }

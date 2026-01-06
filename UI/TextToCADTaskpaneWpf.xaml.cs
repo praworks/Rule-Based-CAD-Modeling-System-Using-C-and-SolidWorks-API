@@ -55,11 +55,73 @@ namespace AICAD.UI
 
         private async Task<bool> CheckLlmProvidersAsync()
         {
+            // If we've already performed a provider check this session, return cached result
+            try
+            {
+                if (_providersCheckedOnce)
+                {
+                    AppendStatusLine("[LLM-STATUS] Provider check skipped: already performed this session");
+                    return _providersLastOk;
+                }
+            }
+            catch { }
+
             var anyOk = false;
             try
             {
                 using (var http = new HttpClient())
                 {
+                    // Respect provider priority: if any configured provider appears usable, mark OK.
+                    try
+                    {
+                        var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                                          ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                                          ?? "local,gemini,groq";
+                        var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+                        foreach (var prov in priority)
+                        {
+                            try
+                            {
+                                if (prov == "groq")
+                                {
+                                    var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                                  ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                                  ?? string.Empty;
+                                    if (!string.IsNullOrWhiteSpace(groqKey))
+                                    {
+                                        AppendStatusLine("[LLM-STATUS] Groq API key present");
+                                        anyOk = true;
+                                    }
+                                }
+                                else if (prov == "gemini")
+                                {
+                                    var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                                 ?? string.Empty;
+                                    if (!string.IsNullOrWhiteSpace(gemKey))
+                                    {
+                                        AppendStatusLine("[LLM-STATUS] Gemini API key present");
+                                        anyOk = true;
+                                    }
+                                }
+                                else if (prov == "local")
+                                {
+                                    // Local will be checked below via HTTP probes; note its presence here for visibility
+                                    var localEndpointPresence = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                                              ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                                              ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
+                                                              ?? string.Empty;
+                                    if (!string.IsNullOrWhiteSpace(localEndpointPresence))
+                                    {
+                                        AppendStatusLine("[LLM-STATUS] Local endpoint configured: " + GetEndpointDisplayName(localEndpointPresence));
+                                        // don't mark anyOk yet; actual HTTP check happens below
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
                     var lmStudioEndpoint = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
                                          ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Process)
                                          ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine);
@@ -156,7 +218,11 @@ namespace AICAD.UI
                     }
                 }
             }
-            catch { }
+            finally
+            {
+                // Cache result and mark that we've checked providers this session
+                try { _providersLastOk = anyOk; _providersCheckedOnce = true; } catch { }
+            }
 
             return anyOk;
         }
@@ -199,6 +265,9 @@ namespace AICAD.UI
         private System.Diagnostics.Stopwatch _llmProgressStopwatch = null;
         private double _llmAverageSeconds = 32.0; // seconds used for ETA (loaded from settings)
         private const double _llmEmaAlpha = 0.2; // EMA smoothing factor
+        // Provider check caching: run provider health-check only once per session (first Build)
+        private bool _providersCheckedOnce = false;
+        private bool _providersLastOk = false;
         // Force using only good_feedback from a specific MongoDB (when true)
         private readonly bool _forceUseOnlyGoodFeedback = true;
         private readonly string _forcedGoodFeedbackMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
@@ -2227,7 +2296,28 @@ namespace AICAD.UI
                     AppendStatusLine($"[Settings] MongoDB Connection: {(mongoConnected ? "Connected" : "Not Connected")}");
                     AppendStatusLine($"[Settings] Temp Directory: {tempDir}");
                     AppendStatusLine($"[Settings] Temp Writes: {(disableTempWrites ? "Disabled" : "Enabled")}");
+
                     
+
+                    // Training Data & Advanced Options
+                    // Traffic Cop logging
+                    try
+                    {
+                        var trafficCopEnabled = AICAD.Services.SettingsManager.GetBool("EnableExceptionClassifier", false);
+                        AppendStatusLine($"[Settings] Traffic Cop Enabled: {(trafficCopEnabled ? "Yes" : "No")}");
+                    }
+                    catch
+                    {
+                        try
+                        {
+                            var tcEnv = System.Environment.GetEnvironmentVariable("AICAD_ENABLE_EXCEPTION_CLASSIFIER", System.EnvironmentVariableTarget.User)
+                                      ?? System.Environment.GetEnvironmentVariable("AICAD_ENABLE_EXCEPTION_CLASSIFIER", System.EnvironmentVariableTarget.Process)
+                                      ?? "0";
+                            AppendStatusLine($"[Settings] Traffic Cop Enabled (env): {(tcEnv == "1" ? "Yes" : "No")}");
+                        }
+                        catch { AppendStatusLine("[Settings] Traffic Cop Enabled: Unknown"); }
+                    }
+
                     // Training Data & Advanced Options
                     AppendStatusLine($"[Training] Data Storage Enabled: {(trainingDataEnabled == "1" ? "Yes" : "No")}");
                     AppendStatusLine($"[Training] Few-shot Examples Enabled: {(useFewShotEnv == "1" ? "Yes" : "No")}");
@@ -2695,6 +2785,26 @@ namespace AICAD.UI
                         }
                     }
                     catch { }
+
+                    // Ask the user before attempting an automatic corrective retry via LLM
+                    bool allowRetry = false;
+                    try
+                    {
+                        var mbRes = System.Windows.MessageBoxResult.No;
+                        Dispatcher.Invoke(() => mbRes = System.Windows.MessageBox.Show(
+                            "AI-generated plan failed. Allow the LLM to try to automatically fix and retry?\n\nSelect Yes to let the AI attempt a corrected plan; No to abort.",
+                            "Confirm AI retry",
+                            System.Windows.MessageBoxButton.YesNo,
+                            System.Windows.MessageBoxImage.Question));
+                        allowRetry = (mbRes == System.Windows.MessageBoxResult.Yes);
+                    }
+                    catch { allowRetry = false; }
+
+                    if (!allowRetry)
+                    {
+                        AppendStatusLine("User declined automatic LLM corrective retry.");
+                        break; // exit retry loop
+                    }
 
                     var llmFixSw = System.Diagnostics.Stopwatch.StartNew();
                     if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();

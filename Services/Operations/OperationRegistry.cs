@@ -24,7 +24,8 @@ namespace AICAD.Services.Operations
             if (handler == null)
                 throw new ArgumentNullException(nameof(handler));
 
-            _handlers[operationName.ToLowerInvariant()] = handler;
+            var key = operationName.Trim().ToLowerInvariant();
+            _handlers[key] = handler;
             return this;
         }
 
@@ -36,7 +37,8 @@ namespace AICAD.Services.Operations
             if (string.IsNullOrWhiteSpace(operationName))
                 return null;
 
-            return _handlers.TryGetValue(operationName.ToLowerInvariant(), out var handler) ? handler : null;
+            var key = operationName.Trim().ToLowerInvariant();
+            return _handlers.TryGetValue(key, out var handler) ? handler : null;
         }
 
         /// <summary>
@@ -44,8 +46,9 @@ namespace AICAD.Services.Operations
         /// </summary>
         public bool Contains(string operationName)
         {
-            return !string.IsNullOrWhiteSpace(operationName) && 
-                   _handlers.ContainsKey(operationName.ToLowerInvariant());
+            if (string.IsNullOrWhiteSpace(operationName)) return false;
+            var key = operationName.Trim().ToLowerInvariant();
+            return _handlers.ContainsKey(key);
         }
 
         /// <summary>
@@ -67,6 +70,9 @@ namespace AICAD.Services.Operations
             registry.Register("new_part", new Utilities.NewPartHandler());
             registry.Register("select_plane", new Utilities.SelectPlaneHandler());
             registry.Register("select_face", new Utilities.SelectFaceHandler());
+            registry.Register("set_units", new Utilities.SetUnitsHandler());
+            registry.Register("set_document_units", new Utilities.SetUnitsHandler());
+            registry.Register("set_unit", new Utilities.SetUnitsHandler());
             registry.Register("set_material", new Utilities.SetMaterialHandler());
             registry.Register("description", new Utilities.DescriptionHandler());
             registry.Register("zoom_to_fit", new Utilities.ZoomToFitHandler());
@@ -79,6 +85,10 @@ namespace AICAD.Services.Operations
             registry.Register("line", new Sketching.LineHandler());
             registry.Register("arc", new Sketching.ArcHandler());
             registry.Register("dimension", new Sketching.DimensionHandler());
+            // LLMs may emit alternative names — accept common aliases for robustness
+            registry.Register("auto_dimension", new Sketching.DimensionHandler());
+            registry.Register("auto-dimension", new Sketching.DimensionHandler());
+            registry.Register("autodimension", new Sketching.DimensionHandler());
             registry.Register("constraint", new Sketching.ConstraintHandler());
 
             // ===== PART FEATURES =====

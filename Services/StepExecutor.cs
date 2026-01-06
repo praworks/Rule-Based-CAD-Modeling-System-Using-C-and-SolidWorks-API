@@ -43,6 +43,9 @@ namespace AICAD.Services
             {
                 var steps = plan.ContainsKey("steps") && plan["steps"] is JArray ? (JArray)plan["steps"] : new JArray();
                     try { AddinStatusLogger.Log("StepExecutor", $"Execute: resolved {steps.Count} steps"); } catch { }
+                // Pre-validation removed: execute steps as provided and let handlers decide.
+                // Track retries per-step to avoid infinite clarification loops
+                var retryCounts = new Dictionary<int, int>();
                 IModelDoc2 model = null;
                 ISketchManager sketchMgr = null;
                 IFeatureManager featMgr = null;
@@ -76,12 +79,13 @@ namespace AICAD.Services
                     var raw = steps[i];
                     var s = NormalizeStep(raw);
                     string op = s.Value<string>("op") ?? string.Empty;
+                    var opLower = (op ?? string.Empty).ToLowerInvariant();
                     var log = new JObject { ["step"] = i, ["op"] = op };
                     var sw = Stopwatch.StartNew();
                     
                     // VALIDATION: Capture model state BEFORE execution
                     JObject beforeSnapshot = null;
-                    try { if (model != null) beforeSnapshot = ModelInspector.InspectModel(model); } catch { }
+                    try { if (model != null) beforeSnapshot = ModelInspector.InspectModel(model, emitLogs: false); } catch { }
 
                     try
                     {
@@ -143,20 +147,207 @@ namespace AICAD.Services
                         // Look up handler in registry
                         var handler = _operationRegistry.Get(op);
                         if (handler == null)
+                        {
+                            // Attempt a one-time clarification with the LLM to correct the op if possible.
+                            var rc = retryCounts.ContainsKey(i) ? retryCounts[i] : 0;
+                            if (rc < 1)
+                            {
+                                try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: unknown op '{op}' — requesting LLM correction (retry {rc + 1}/1)"); } catch { }
+                                try
+                                {
+                                    var clarified = ClarificationService.ClarifySingleStep(s, new { error = "unknown_op", message = $"Unknown op '{op}'" });
+                                    if (clarified != null)
+                                    {
+                                        steps[i] = clarified;
+                                        retryCounts[i] = rc + 1;
+                                        try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: applied LLM-corrected step; will retry"); } catch { }
+                                        i--; // retry this index
+                                        continue;
+                                    }
+                                    else
+                                    {
+                                        var exNo = new Exception($"Unknown op '{op}' (not registered)");
+                                        try { exNo.Data["llm_prompt"] = ClarificationService.LastPromptUsed; } catch { }
+                                        try { exNo.Data["llm_reply"] = ClarificationService.LastRawReply; } catch { }
+                                        throw exNo;
+                                    }
+                                }
+                                catch (Exception exClar) { try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: LLM clarification failed: {exClar.Message}"); } catch { } }
+                            }
+
                             throw new Exception($"Unknown op '{op}' (not registered)");
+                        }
 
                         // Execute the operation through its handler
-                        var opResult = handler.Execute(s, model, sketchMgr, featMgr, inSketch);
+                        OperationResult opResult = null;
+                        try
+                        {
+                            opResult = handler.Execute(s, model, sketchMgr, featMgr, inSketch);
+                        }
+                        catch (Exception handlerEx)
+                        {
+                            // Self-heal on handler exception for dimension-like ops
+                            if (opLower == "dimension" || opLower.StartsWith("dimension"))
+                            {
+                                var rc = retryCounts.ContainsKey(i) ? retryCounts[i] : 0;
+                                if (rc < 1)
+                                {
+                                    try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: handler threw '{handlerEx.Message}' — requesting LLM repair (attempt {rc + 1}/1)"); } catch { }
+                                    var clarified = ClarificationService.ClarifySingleStep(s, new { error = "handler_exception", message = handlerEx.Message });
+                                    if (clarified != null)
+                                    {
+                                        if (clarified is JArray arr)
+                                        {
+                                            var replaceArr = new List<JToken>();
+                                            foreach (var el in arr) replaceArr.Add(el);
+                                            if (replaceArr.Count > 0)
+                                            {
+                                                steps[i] = replaceArr[0];
+                                                for (int ins = 1; ins < replaceArr.Count; ins++) steps.Insert(i + ins, replaceArr[ins]);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            steps[i] = clarified;
+                                        }
+                                        retryCounts[i] = rc + 1;
+                                        try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Applied LLM repair for index {i}; will retry"); } catch { }
+                                        i--; // retry this index
+                                        continue;
+                                    }
+                                    else
+                                    {
+                                        var exNo = new Exception(handlerEx.Message, handlerEx);
+                                        try { exNo.Data["llm_prompt"] = ClarificationService.LastPromptUsed; } catch { }
+                                        try { exNo.Data["llm_reply"] = ClarificationService.LastRawReply; } catch { }
+                                        throw exNo;
+                                    }
+                                }
+                            }
+                            throw;
+                        }
+
                         if (!opResult.Success)
+                        {
+                            // Self-heal when a dimension handler reports a failure (e.g., missing cx/cy/w/h)
+                            if (opLower == "dimension" || opLower.StartsWith("dimension"))
+                            {
+                                var rc = retryCounts.ContainsKey(i) ? retryCounts[i] : 0;
+                                if (rc < 1)
+                                {
+                                    try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: dimension handler reported failure '{opResult.ErrorMessage}' — requesting LLM repair (attempt {rc + 1}/1)"); } catch { }
+                                    var clarified = ClarificationService.ClarifySingleStep(s, new { error = "handler_failure", message = opResult.ErrorMessage, data = opResult.Data });
+                                    if (clarified != null)
+                                    {
+                                        // If LLM returned an array, splice it; if object, replace.
+                                        if (clarified is JArray arr)
+                                        {
+                                            var replaceArr = new List<JToken>();
+                                            foreach (var el in arr) replaceArr.Add(el);
+                                            if (replaceArr.Count > 0)
+                                            {
+                                                steps[i] = replaceArr[0];
+                                                for (int ins = 1; ins < replaceArr.Count; ins++) steps.Insert(i + ins, replaceArr[ins]);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            steps[i] = clarified;
+                                        }
+                                        retryCounts[i] = rc + 1;
+                                        try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Applied LLM repair for index {i}; will retry"); } catch { }
+                                        i--; // retry this index
+                                        continue;
+                                    }
+                                    else
+                                    {
+                                        var exNo = new Exception(opResult.ErrorMessage ?? "Operation failed");
+                                        try { exNo.Data["llm_prompt"] = ClarificationService.LastPromptUsed; } catch { }
+                                        try { exNo.Data["llm_reply"] = ClarificationService.LastRawReply; } catch { }
+                                        throw exNo;
+                                    }
+                                }
+                            }
                             throw new Exception(opResult.ErrorMessage ?? "Operation failed");
+                        }
 
                         // Update sketch state if handler changed it
                         inSketch = opResult.InSketch;
                         log["success"] = true;
+                        // Attach any structured data returned by the handler (e.g., created/set counts)
+                        try
+                        {
+                            if (opResult.Data != null)
+                            {
+                                log["data"] = Newtonsoft.Json.Linq.JToken.FromObject(opResult.Data);
+                            }
+                        }
+                        catch { }
+
+                        // If a dimension handler reports no created/set counts, request clarification and retry (self-heal)
+                        try
+                        {
+                            int createdCount = -1, setCount = -1;
+                            if (opResult.Data != null)
+                            {
+                                try
+                                {
+                                    var jt = Newtonsoft.Json.Linq.JToken.FromObject(opResult.Data);
+                                    createdCount = jt["createdCount"]?.Value<int>() ?? jt["created"]?.Value<int>() ?? -1;
+                                    setCount = jt["setCount"]?.Value<int>() ?? jt["set"]?.Value<int>() ?? -1;
+                                }
+                                catch { }
+                            }
+                            if ((opLower == "dimension" || opLower.StartsWith("dimension")) && createdCount == 0 && setCount == 0)
+                            {
+                                var rc = retryCounts.ContainsKey(i) ? retryCounts[i] : 0;
+                                if (rc < 1)
+                                {
+                                    try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: dimension handler made no changes — requesting LLM repair (attempt {rc + 1}/1)"); } catch { }
+                                    var clarified = ClarificationService.ClarifySingleStep(s, opResult.Data);
+                                    if (clarified != null)
+                                    {
+                                        // If LLM returned an array, splice it; if object, replace.
+                                        if (clarified is JArray arr)
+                                        {
+                                            var replaceArr = new List<JToken>();
+                                            foreach (var el in arr) replaceArr.Add(el);
+                                            if (replaceArr.Count > 0)
+                                            {
+                                                steps[i] = replaceArr[0];
+                                                for (int ins = 1; ins < replaceArr.Count; ins++) steps.Insert(i + ins, replaceArr[ins]);
+                                            }
+                                        }
+                                        else
+                                        {
+                                            steps[i] = clarified;
+                                        }
+                                        retryCounts[i] = rc + 1;
+                                        try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Applied LLM repair for index {i}; will retry"); } catch { }
+                                        i--; // retry this index
+                                        continue;
+                                    }
+                                    else
+                                    {
+                                        var exNo = new Exception("No dimensions were created or value-set by the handler");
+                                        try { exNo.Data["llm_prompt"] = ClarificationService.LastPromptUsed; } catch { }
+                                        try { exNo.Data["llm_reply"] = ClarificationService.LastRawReply; } catch { }
+                                        throw exNo;
+                                    }
+                                }
+                                // If we get here, clarification did not produce replacement or already retried; fail the step
+                                throw new Exception("No dimensions were created or value-set by the handler");
+                            }
+                        }
+                        catch (Exception exClar)
+                        {
+                            // bubble up as normal exception below
+                            throw exClar;
+                        }
 
                         // VALIDATION: Capture model state AFTER execution and validate
                         JObject afterSnapshot = null;
-                        try { if (model != null) afterSnapshot = ModelInspector.InspectModel(model); } catch { }
+                        try { if (model != null) afterSnapshot = ModelInspector.InspectModel(model, emitLogs: false); } catch { }
                         
                         if (beforeSnapshot != null && afterSnapshot != null)
                         {
@@ -180,10 +371,20 @@ namespace AICAD.Services
                         sw.Stop();
                         log["success"] = false;
                         log["error"] = ex.Message;
+                        try
+                        {
+                            if (ex.Data != null)
+                            {
+                                if (ex.Data.Contains("llm_prompt")) log["llm_prompt"] = ex.Data["llm_prompt"]?.ToString();
+                                if (ex.Data.Contains("llm_reply")) log["llm_reply"] = ex.Data["llm_reply"]?.ToString();
+                            }
+                        }
+                        catch { }
                         result.Log.Add(log);
                         result.Success = false;
-                        try { AddinStatusLogger.Error("StepExecutor", $"Step {i} failed op='{op}'", ex); } catch { }
+                        // Log completion/info first, then emit the error-level message so the status line appears before the error entry
                         try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
+                        try { AddinStatusLogger.Error("StepExecutor", $"Step {i} failed op='{op}'", ex); } catch { }
 
                         // If continueOnError is enabled, log this failure but process next step
                         if (!continueOnError)

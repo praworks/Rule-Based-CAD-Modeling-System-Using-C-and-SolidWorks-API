@@ -76,6 +76,10 @@ namespace AICAD.UI
             host._chkUseFewShot = new CheckBox { Text = "Enable Few-Shot examples (use examples from DB)", Dock = DockStyle.Fill, Padding = new Padding(3,12,0,0), Margin = new Padding(0,8,0,8) };
             host._chkAllowMultipleBuilds = new CheckBox { Text = "Allow multiple build requests (disable button protection)", Dock = DockStyle.Fill, Padding = new Padding(3,12,0,0), Margin = new Padding(0,8,0,8) };
 
+            // Auto-retry controls: whether to request corrective plan from LLM on failure
+            host._chkAutoRetryOnFailure = new CheckBox { Text = "Auto-request plan fixes from LLM on failure", Dock = DockStyle.Fill, Padding = new Padding(3,12,0,0), Margin = new Padding(0,8,0,8) };
+            host._nudAutoRetryMaxAttempts = new NumericUpDown { Dock = DockStyle.Left, Width = 80, Minimum = 1, Maximum = 10, Value = 2, Margin = new Padding(0,8,0,8) };
+
             // Status label
             host._lblApiStatus = new Label { Text = "", Dock = DockStyle.Fill, Padding = new Padding(0,8,0,8) };
             UITheme.ApplyLabelStyle(host._lblApiStatus);
@@ -99,6 +103,12 @@ namespace AICAD.UI
             table.SetColumnSpan(host._chkUseFewShot, 2); table.Controls.Add(host._chkUseFewShot, 0, r); r++;
             table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45)); // allow multiple
             table.SetColumnSpan(host._chkAllowMultipleBuilds, 2); table.Controls.Add(host._chkAllowMultipleBuilds, 0, r); r++;
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45)); // auto-retry checkbox
+            table.SetColumnSpan(host._chkAutoRetryOnFailure, 2); table.Controls.Add(host._chkAutoRetryOnFailure, 0, r); r++;
+            table.RowStyles.Add(new RowStyle(SizeType.Absolute, 45)); // auto-retry max attempts
+            var lblAutoMax = new Label { Text = "Auto-Retry Max Attempts:", Dock = DockStyle.Fill, Padding = new Padding(0,12,0,0), AutoSize = false, TextAlign = ContentAlignment.MiddleLeft };
+            UITheme.ApplyLabelStyle(lblAutoMax);
+            table.Controls.Add(lblAutoMax, 0, r); table.Controls.Add(host._nudAutoRetryMaxAttempts, 1, r); r++;
             table.RowStyles.Add(new RowStyle(SizeType.Absolute, 30)); // status
             table.SetColumnSpan(host._lblApiStatus, 2); table.Controls.Add(host._lblApiStatus, 0, r); r++;
             table.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // filler

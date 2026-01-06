@@ -190,27 +190,7 @@ namespace AICAD.Services.Operations.Sketching
         }
     }
 
-    /// <summary>
-    /// Handler for "dimension" operation - adds dimension to sketch geometry
-    /// </summary>
-    public class DimensionHandler : IOperationHandler
-    {
-        public OperationResult Execute(JObject step, IModelDoc2 model, ISketchManager sketchMgr, IFeatureManager featMgr, bool inSketch)
-        {
-            try
-            {
-                if (!inSketch)
-                    return OperationResult.CreateFailure("Must be in sketch mode to add dimension");
-
-                // TODO: Implement dimension constraint
-                return OperationResult.CreateFailure("Dimension operation not yet implemented");
-            }
-            catch (Exception ex)
-            {
-                return OperationResult.CreateFailure($"dimension failed: {ex.Message}");
-            }
-        }
-    }
+    // DimensionHandler extracted to its own file
 
     /// <summary>
     /// Handler for "constraint" operation - adds constraint to sketch geometry

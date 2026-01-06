@@ -15,7 +15,7 @@ namespace AICAD.Services
         /// <summary>
         /// Inspect model and return all geometry facts
         /// </summary>
-        public static JObject InspectModel(IModelDoc2 model)
+        public static JObject InspectModel(IModelDoc2 model, bool emitLogs = true)
         {
             if (model == null)
                 return new JObject { ["error"] = "Model not available" };
@@ -52,11 +52,6 @@ namespace AICAD.Services
                         {
                             featureCount++;
                             features.Add(new JObject { ["name"] = name, ["type"] = type });
-                            AddinStatusLogger.Log("ModelInspector", $"Counted feature: {name} (type={type})");
-                        }
-                        else if (!suppressed)
-                        {
-                            AddinStatusLogger.Log("ModelInspector", $"Skipped feature: {name} (type={type}, skipped=true)");
                         }
 
                         feat = feat.GetNextFeature();
@@ -68,7 +63,8 @@ namespace AICAD.Services
                 }
                 result["feature_count"] = featureCount;
                 result["features"] = features;
-                AddinStatusLogger.Log("ModelInspector", $"Enumerated {featureCount} features (non-folder/non-suppressed)");
+                if (emitLogs)
+                    AddinStatusLogger.Log("ModelInspector", $"Enumerated {featureCount} features (non-folder/non-suppressed)");
 
                 // Query body geometry for edge/face counts
                 var partDoc = model as IPartDoc;
@@ -119,6 +115,14 @@ namespace AICAD.Services
                         result["mass"] = mass ?? "";
                         result["weight"] = weight ?? "";
                     }
+                }
+                catch { }
+
+                // Scan and serialize sketch/annotation dimensions (best-effort)
+                try
+                {
+                    var dims = DimensionScanner.ScanDimensions(model, emitLogs);
+                    result["dimensions"] = dims;
                 }
                 catch { }
 

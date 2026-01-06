@@ -25,6 +25,9 @@ namespace AICAD.UI
         internal TextBox _txtMongoPassword;
         internal CheckBox _chkUseFewShot;
         internal CheckBox _chkAllowMultipleBuilds;
+        // Auto-retry settings
+        internal CheckBox _chkAutoRetryOnFailure;
+        internal NumericUpDown _nudAutoRetryMaxAttempts;
         internal Button _btnToggleMongoPwVisibility;
         internal Button _btnSaveMongo;
         internal Button _btnLoadMongo;
@@ -356,6 +359,17 @@ namespace AICAD.UI
                 
                 var amb = Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS");
                 _chkAllowMultipleBuilds.Checked = string.IsNullOrEmpty(amb) ? false : (amb == "1" || amb.Equals("true", StringComparison.OrdinalIgnoreCase));
+                try
+                {
+                    var auto = AICAD.Services.SettingsManager.GetBool("AutoRetryOnFailure", true);
+                    if (_chkAutoRetryOnFailure != null) _chkAutoRetryOnFailure.Checked = auto;
+                    var max = AICAD.Services.SettingsManager.GetDouble("AutoRetryMaxAttempts", 2);
+                    if (_nudAutoRetryMaxAttempts != null)
+                    {
+                        try { _nudAutoRetryMaxAttempts.Value = (decimal)max; } catch { }
+                    }
+                }
+                catch { }
                 
                 _lblApiStatus.Text = "Loaded from environment variables";
                 _lblApiStatus.ForeColor = Color.DarkGreen;
@@ -381,6 +395,13 @@ namespace AICAD.UI
                 Environment.SetEnvironmentVariable("AICAD_LLM_MODE", mode, EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", _chkUseFewShot.Checked ? "1" : "0", EnvironmentVariableTarget.User);
                 Environment.SetEnvironmentVariable("AICAD_ALLOW_MULTIPLE_BUILDS", _chkAllowMultipleBuilds.Checked ? "1" : "0", EnvironmentVariableTarget.User);
+                try
+                {
+                    AICAD.Services.SettingsManager.SetBool("AutoRetryOnFailure", _chkAutoRetryOnFailure != null && _chkAutoRetryOnFailure.Checked);
+                    if (_nudAutoRetryMaxAttempts != null)
+                        AICAD.Services.SettingsManager.SetDouble("AutoRetryMaxAttempts", (double)_nudAutoRetryMaxAttempts.Value);
+                }
+                catch { }
                 
                 _lblApiStatus.Text = "Saved! Restart SolidWorks.";
                 _lblApiStatus.ForeColor = Color.DarkGreen;

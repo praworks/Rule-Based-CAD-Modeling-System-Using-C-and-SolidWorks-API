@@ -14,6 +14,8 @@ namespace AICAD.Services
     {
         // Shared HttpClient to avoid disposed/connection issues when multiple callers create/dispose instances.
         private static readonly HttpClient _sharedHttp = CreateSharedHttpClient();
+        // Track endpoints marked unreachable so callers can fail fast for a cooldown period
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _endpointDeadUntil = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly string _endpoint;
         private string _model; // Removed 'readonly' so we can update it from the response
         private readonly string _systemPrompt;
@@ -47,6 +49,17 @@ namespace AICAD.Services
 
         public async Task<string> GenerateAsync(string prompt)
         {
+            // If this endpoint was recently marked dead, fail fast to avoid repeated socket attempts
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_endpoint) && _endpointDeadUntil.TryGetValue(_endpoint, out var until) && DateTime.UtcNow < until)
+                {
+                    AddinStatusLogger.Log("LocalHttpLlmClient", $"Skipping request to {_endpoint} - previously marked unreachable until {until:u}");
+                    return null;
+                }
+            }
+            catch { }
+
             if (string.IsNullOrWhiteSpace(prompt)) return string.Empty;
 
             var messages = new System.Collections.Generic.List<object>();
@@ -74,18 +87,51 @@ namespace AICAD.Services
             }
             catch (TaskCanceledException tex)
             {
-                // More actionable message: local LLM may be busy, crashed, or out of VRAM (Qwen/Llama variants)
-                var msg = $"Local LLM request to {_endpoint} timed out after {_sharedHttp.Timeout.TotalSeconds}s. " +
-                          "The local model may be busy, out of VRAM, or the server may be unresponsive. " +
-                          "Try restarting the local LLM or lowering the model size.\n" + tex.Message;
-                AddinStatusLogger.Error("LocalHttpLlmClient", "Request timed out", tex);
-                // Throw with a friendly message so UI can surface it to the user
-                throw new TimeoutException(msg, tex);
+                AddinStatusLogger.Error("LocalHttpLlmClient", $"Request to {_endpoint} timed out", tex);
+                try
+                {
+                    var env = System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.Process)
+                              ?? "300";
+                    if (!int.TryParse(env, out var secs)) secs = 300;
+                    var until = DateTime.UtcNow.AddSeconds(secs);
+                    _endpointDeadUntil[_endpoint] = until;
+                    AddinStatusLogger.Log("LocalHttpLlmClient", $"Endpoint {_endpoint} marked unreachable until {until:u} due to timeout");
+                }
+                catch { }
+                return null;
             }
             catch (Exception ex)
             {
                 AddinStatusLogger.Error("LocalHttpLlmClient", "Request failed", ex);
-                throw;
+                // If this looks like a connection-refused / socket error, mark the endpoint dead for cooldown
+                try
+                {
+                    var isSocket = false;
+                    Exception cur = ex;
+                    while (cur != null)
+                    {
+                        if (cur is System.Net.Sockets.SocketException) { isSocket = true; break; }
+                        if (cur is System.Net.Http.HttpRequestException && cur.InnerException is System.Net.Sockets.SocketException) { isSocket = true; break; }
+                        var msg = cur.Message ?? string.Empty;
+                        if (msg.IndexOf("refused", StringComparison.OrdinalIgnoreCase) >= 0
+                            || msg.IndexOf("no connection could be made", StringComparison.OrdinalIgnoreCase) >= 0)
+                        { isSocket = true; break; }
+                        cur = cur.InnerException;
+                    }
+                    if (isSocket)
+                    {
+                        var env = System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.User)
+                                  ?? System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.Process)
+                                  ?? "300";
+                        if (!int.TryParse(env, out var secs)) secs = 300;
+                        var until = DateTime.UtcNow.AddSeconds(secs);
+                        _endpointDeadUntil[_endpoint] = until;
+                        AddinStatusLogger.Log("LocalHttpLlmClient", $"Endpoint {_endpoint} marked unreachable until {until:u}");
+                    }
+                }
+                catch { }
+                return null;
             }
 
             var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);

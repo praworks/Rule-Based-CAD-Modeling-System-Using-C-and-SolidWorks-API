@@ -5,6 +5,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
+using AICAD.Services;
 
 namespace AICAD.UI
 {
@@ -38,6 +39,17 @@ namespace AICAD.UI
 
             BtnCopyError.Click += (s, e) => { try { CopyErrorClicked?.Invoke(this, EventArgs.Empty); } catch { } };
             BtnCopyRun.Click += (s, e) => { try { CopyRunClicked?.Invoke(this, EventArgs.Empty); } catch { } };
+
+            // Initialize Topmost toggle from settings
+            try
+            {
+                var top = SettingsManager.GetBool("StatusWindowTopmost", true);
+                this.Topmost = top;
+                try { ChkTopmost.IsChecked = top; } catch { }
+                ChkTopmost.Checked += (s, e) => { try { this.Topmost = true; SettingsManager.SetBool("StatusWindowTopmost", true); } catch { } };
+                ChkTopmost.Unchecked += (s, e) => { try { this.Topmost = false; SettingsManager.SetBool("StatusWindowTopmost", false); } catch { } };
+            }
+            catch { }
 
             var ctx = new ContextMenu();
             var miCopy = new MenuItem { Header = "Copy" };

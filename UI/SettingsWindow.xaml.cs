@@ -35,12 +35,33 @@ namespace AICAD.UI
                 // Keep the two checkboxes in sync if both panels are visible
                 ChkEnableExceptionClassifier.Checked += ToggleExceptionClassifierChanged;
                 ChkEnableExceptionClassifier.Unchecked += ToggleExceptionClassifierChanged;
+                try
+                {
+                    ChkStatusWindowTopmost.Checked += (s, e) => { try { SettingsManager.SetBool("StatusWindowTopmost", true); UpdateStatusWindowTopmost(true); } catch { } };
+                    ChkStatusWindowTopmost.Unchecked += (s, e) => { try { SettingsManager.SetBool("StatusWindowTopmost", false); UpdateStatusWindowTopmost(false); } catch { } };
+                }
+                catch { }
             }
             catch { }
+            // (Duplicate quick-access checkbox removed from XAML)
+        }
+
+        private void UpdateStatusWindowTopmost(bool topmost)
+        {
             try
             {
-                ChkEnableExceptionClassifier_AiProvider.Checked += ToggleExceptionClassifierChanged;
-                ChkEnableExceptionClassifier_AiProvider.Unchecked += ToggleExceptionClassifierChanged;
+                // If a StatusWindow is open in this process, update its Topmost property
+                foreach (Window w in Application.Current.Windows)
+                {
+                    try
+                    {
+                        if (w is StatusWindow sw)
+                        {
+                            sw.Topmost = topmost;
+                        }
+                    }
+                    catch { }
+                }
             }
             catch { }
         }
@@ -159,7 +180,10 @@ namespace AICAD.UI
                 try {
                     var enabled = AICAD.Services.SettingsManager.GetBool("EnableExceptionClassifier", false);
                     ChkEnableExceptionClassifier.IsChecked = enabled;
-                    try { ChkEnableExceptionClassifier_AiProvider.IsChecked = enabled; } catch { }
+                } catch { }
+                try {
+                    var top = AICAD.Services.SettingsManager.GetBool("StatusWindowTopmost", true);
+                    ChkStatusWindowTopmost.IsChecked = top;
                 } catch { }
             }
             catch { }
@@ -1212,8 +1236,8 @@ namespace AICAD.UI
             SaveApiKeysButton_Click(sender, e);
             SaveSamplesButton_Click(sender, e);
             try {
-                // Prefer whichever checkbox reflects the user's last action
-                bool enabled = (ChkEnableExceptionClassifier.IsChecked == true) || (ChkEnableExceptionClassifier_AiProvider?.IsChecked == true);
+                // Persist the single Traffic Cop checkbox value
+                bool enabled = (ChkEnableExceptionClassifier.IsChecked == true);
                 AICAD.Services.SettingsManager.SetBool("EnableExceptionClassifier", enabled);
             } catch { }
             System.Windows.MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButton.OK, MessageBoxImage.Information);
@@ -1225,7 +1249,17 @@ namespace AICAD.UI
             {
                 var state = (sender as CheckBox)?.IsChecked == true;
                 try { ChkEnableExceptionClassifier.IsChecked = state; } catch { }
-                try { ChkEnableExceptionClassifier_AiProvider.IsChecked = state; } catch { }
+                try
+                {
+                    // Persist immediately so the change takes effect without clicking Save All
+                    AICAD.Services.SettingsManager.SetBool("EnableExceptionClassifier", state);
+                }
+                catch { }
+                try
+                {
+                    AICAD.Services.AddinStatusLogger.Log("Settings", $"EnableExceptionClassifier={(state ? "Enabled" : "Disabled")}");
+                }
+                catch { }
             }
             catch { }
         }

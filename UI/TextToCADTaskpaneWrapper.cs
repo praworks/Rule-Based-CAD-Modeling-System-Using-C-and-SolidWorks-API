@@ -31,11 +31,6 @@ namespace AICAD.UI
         public event EventHandler<TextToCADTaskpaneWpf.PromptChangedEventArgs> PromptTextChanged;
 
         /// <summary>
-        /// Raised when Apply Properties is requested in WPF
-        /// </summary>
-        public event EventHandler ApplyPropertiesRequested;
-
-        /// <summary>
         /// Proxy to read/set the prompt text on the WPF control
         /// </summary>
         public string PromptText { get => _wpfControl?.PromptText; set { if (_wpfControl != null) _wpfControl.PromptText = value; } }
@@ -76,7 +71,6 @@ namespace AICAD.UI
                         try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
                     };
                     _wpfControl.PromptTextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, e); } catch { } };
-                    _wpfControl.ApplyPropertiesRequested += (s, e) => { try { ApplyPropertiesRequested?.Invoke(this, EventArgs.Empty); } catch { } };
                 }
                 catch (Exception evtEx)
                 {

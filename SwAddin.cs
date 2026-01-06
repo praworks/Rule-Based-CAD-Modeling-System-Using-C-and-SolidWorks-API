@@ -20,7 +20,6 @@ namespace AICAD
         private TaskpaneView _textToCadTaskpaneView;
         private UI.TextToCADTaskpaneWrapper _textToCadControl;
         private SeriesManager _seriesManager;
-        private string _pendingPartName = null;
         private IModelDoc2 _currentDoc = null;
         private PartDoc _activePartDoc = null;
         private DPartDocEvents_RegenPostNotifyEventHandler _partRegenPostHandler;
@@ -60,7 +59,6 @@ namespace AICAD
                         try { _ = _textToCadControl.RunBuildFromPromptAsync(); } catch { }
                     };
                     _textToCadControl.PromptTextChanged += (s, e) => { /* try { AddinStatusLogger.Log("AICadAddin", $"Prompt changed (len={e.Text?.Length})"); } catch { } */ };
-                    _textToCadControl.ApplyPropertiesRequested += (s, e) => { /* try { AddinStatusLogger.Log("AICadAddin", "Apply properties requested from Taskpane"); } catch { } */ };
                 }
                 catch { }
 
@@ -76,9 +74,9 @@ namespace AICAD
                     HookDocRegenForActiveDocument();
                     // try { AddinStatusLogger.Log("AICadAddin", "Hooked RegenPostNotify for active document"); } catch { }
                 }
-                catch (Exception hookEx)
+                catch
                 {
-                    // try { AddinStatusLogger.Error("AICadAddin", "Failed to hook RegenPostNotify", hookEx); } catch { }
+                    // try { AddinStatusLogger.Error("AICadAddin", "Failed to hook RegenPostNotify"); } catch { }
                 }
 
                 // Initial sync
@@ -87,9 +85,9 @@ namespace AICAD
                     SyncUiFromActiveDocument();
                     // try { AddinStatusLogger.Log("AICadAddin", "Initial sync completed"); } catch { }
                 }
-                catch (Exception syncEx)
+                catch
                 {
-                    // try { AddinStatusLogger.Error("AICadAddin", "Initial sync failed", syncEx); } catch { }
+                    // try { AddinStatusLogger.Error("AICadAddin", "Initial sync failed"); } catch { }
                 }
             }
             catch (Exception ex)
@@ -111,9 +109,9 @@ namespace AICAD
                 (_app as SldWorks).ActiveDocChangeNotify += OnActiveDocChange;
                 // try { AddinStatusLogger.Log("AICadAddin", "Event handlers attached"); } catch { }
             }
-            catch (Exception ex)
+            catch
             {
-                // try { AddinStatusLogger.Error("AICadAddin", "Failed to attach event handlers", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Failed to attach event handlers"); } catch { }
             }
         }
 
@@ -129,9 +127,9 @@ namespace AICAD
                 }
                 // try { AddinStatusLogger.Log("AICadAddin", "Event handlers detached"); } catch { }
             }
-            catch (Exception ex)
+            catch
             {
-                // try { AddinStatusLogger.Error("AICadAddin", "Failed to detach event handlers", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Failed to detach event handlers"); } catch { }
             }
         }
 
@@ -288,9 +286,9 @@ namespace AICAD
                     // try { AddinStatusLogger.Log("AICadAddin", "RegenPostNotify hooked"); } catch { }
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                // try { AddinStatusLogger.Error("AICadAddin", "Error hooking RegenPostNotify", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Error hooking RegenPostNotify"); } catch { }
             }
         }
 
@@ -321,9 +319,9 @@ namespace AICAD
                 // try { AddinStatusLogger.Log("AICadAddin", "RegenPostNotify fired; syncing UI"); } catch { }
                 SyncUiFromActiveDocument();
             }
-            catch (Exception ex)
+            catch
             {
-                // try { AddinStatusLogger.Error("AICadAddin", "Error during RegenPostNotify sync", ex); } catch { }
+                // try { AddinStatusLogger.Error("AICadAddin", "Error during RegenPostNotify sync"); } catch { }
             }
             return 0;
         }

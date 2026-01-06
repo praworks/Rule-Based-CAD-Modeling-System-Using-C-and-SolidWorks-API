@@ -14,6 +14,14 @@ namespace AICAD.Services
     /// </summary>
     public static class ClarificationService
     {
+        // Shared default system prompt - DRY principle: define once, use everywhere
+        public const string DEFAULT_SYSTEM_PROMPT = 
+            "You are a CAD planning agent for SOLIDWORKS. " +
+            "Convert user requests into step plan JSON with a top-level 'steps' array. " +
+            "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; extrude{depth,type?}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
+            "ALWAYS use op:'auto_dimension' for ALL sketch dimensions and include numeric fields cx, cy, w, h in mm. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle. " +
+            "Units are millimeters. Output ONLY raw JSON - no markdown, no extra text.";
+
         // Expose last used prompt and raw reply for callers to log when helpful
         public static string LastPromptUsed { get; private set; }
         public static string LastRawReply { get; private set; }
@@ -78,7 +86,7 @@ namespace AICAD.Services
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
                                 var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                                                   ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle.";
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -87,6 +95,14 @@ namespace AICAD.Services
                                     lastReply = reply;
                                     try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
                                     AddinStatusLogger.Log("ClarificationService", "Local LLM reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
                                     var extracted = ExtractJsonArray(reply);
                                     if (extracted != null) return extracted;
                                 }
@@ -102,13 +118,24 @@ namespace AICAD.Services
                                 var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                                ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                                ?? "gemini-1.5-flash";
-                                var gemClient = GetGeminiClient(gemKey, gemModel);
+                                var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                                     ?? DEFAULT_SYSTEM_PROMPT;
+                                var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
                                     var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini");
                                     lastReply = reply;
                                     try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
                                     AddinStatusLogger.Log("ClarificationService", "Gemini reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
                                     var extracted = ExtractJsonArray(reply);
                                     if (extracted != null) return extracted;
                                 }
@@ -131,6 +158,14 @@ namespace AICAD.Services
                                     lastReply = reply;
                                     try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
                                     AddinStatusLogger.Log("ClarificationService", "Groq reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
                                     var extracted = ExtractJsonArray(reply);
                                     if (extracted != null) return extracted;
                                 }
@@ -233,7 +268,7 @@ namespace AICAD.Services
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
                                 var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                                                   ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle.";
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -257,7 +292,10 @@ namespace AICAD.Services
                                 var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                                ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                                ?? "gemini-1.5-flash";
-                                var gemClient = GetGeminiClient(gemKey, gemModel);
+                                var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                                     ?? DEFAULT_SYSTEM_PROMPT;
+                                var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
                                     var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(prompt), "gemini");
@@ -279,7 +317,10 @@ namespace AICAD.Services
                                 var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
-                                var groqClient = GetGroqClient(groqKey, groqModel);
+                                var groqSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                                      ?? DEFAULT_SYSTEM_PROMPT;
+                                var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)
                                 {
                                     var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(prompt), "groq");
@@ -336,10 +377,13 @@ namespace AICAD.Services
         {
              // Strong directive: return only a JSON array. If required numeric values are missing,
              // choose safe defaults (cx=0, cy=0, w=100, h=100) rather than asking questions.
-             return "INSTRUCTIONS:\n" +
+             // Additionally: ALWAYS include explicit dimension steps for any sketch geometry you create.
+             return DEFAULT_SYSTEM_PROMPT + "\n\n" +
+                 "INSTRUCTIONS:\n" +
                  "- You MUST reply with a single JSON ARRAY only (no surrounding text, no commentary).\n" +
                  "- Each element must be a complete step object matching the SolidWorks plan schema.\n" +
-                 "- For rectangle dimension steps, use numeric fields: \"op\":\"dimension\", \"cx\", \"cy\", \"w\", \"h\" (all in mm).\n" +
+                "- For rectangle geometry, include numeric fields for the shape and prefer using the auto-dimension operator: \"op\":\"auto_dimension\" (or \"auto-dimension\"). Include numeric fields such as \"cx\", \"cy\", \"w\", \"h\" (all in mm).\n" +
+                "- ALWAYS include appropriate \"auto_dimension\" steps (op:\"auto_dimension\") for any sketch geometry you create (e.g., horizontal and vertical dimensions for rectangles with a numeric \"value\" in mm).\n" +
                  "- If any numeric values are missing, do NOT ask questions — fill sensible defaults: cx=0, cy=0, w=100, h=100.\n" +
                  "- Do NOT emit any natural-language question or explanation. Output JSON ONLY.\n\n" +
                  "Provide corrected steps for the following missing entries (same order):\n" + missing.ToString();
@@ -348,9 +392,11 @@ namespace AICAD.Services
         private static string BuildSingleStepPrompt(JObject step, object handlerData)
         {
             var sb = new System.Text.StringBuilder();
+            sb.AppendLine(DEFAULT_SYSTEM_PROMPT + "\n");
             sb.AppendLine("INSTRUCTIONS:");
             sb.AppendLine("- Reply with a single JSON OBJECT only (no commentary).\n");
             sb.AppendLine("- The object must be a valid plan step. For dimension steps include numeric fields: cx, cy, w, h (mm).\n");
+            sb.AppendLine("- ALWAYS use op:'auto_dimension' (NOT 'dimension') for sketch dimension steps.\n");
             sb.AppendLine("- If you need numeric values, do NOT ask questions — supply sensible defaults: cx=0, cy=0, w=100, h=100.\n");
             sb.AppendLine("- Do NOT include any natural-language text; output JSON only.\n");
             sb.AppendLine("Original step:");
@@ -479,7 +525,7 @@ namespace AICAD.Services
             return false;
         }
 
-        private static GeminiClient GetGeminiClient(string key, string model)
+        private static GeminiClient GetGeminiClient(string key, string model, string systemPrompt = null)
         {
             if (string.IsNullOrWhiteSpace(key)) return null;
             lock (_clientLock)
@@ -490,14 +536,14 @@ namespace AICAD.Services
                 if (!same)
                 {
                     try { (_geminiClient as IDisposable)?.Dispose(); } catch { }
-                    _geminiClient = new GeminiClient(key, model);
+                    _geminiClient = new GeminiClient(key, model, systemPrompt);
                     _geminiKey = key; _geminiModel = model;
                 }
                 return _geminiClient;
             }
         }
 
-        private static GroqLlmClient GetGroqClient(string key, string model)
+        private static GroqLlmClient GetGroqClient(string key, string model, string systemPrompt = null)
         {
             if (string.IsNullOrWhiteSpace(key)) return null;
             lock (_clientLock)
@@ -508,7 +554,7 @@ namespace AICAD.Services
                 if (!same)
                 {
                     try { (_groqClient as IDisposable)?.Dispose(); } catch { }
-                    _groqClient = new GroqLlmClient(key, model);
+                    _groqClient = new GroqLlmClient(key, model, systemPrompt);
                     _groqKey = key; _groqModel = model;
                 }
                 return _groqClient;
@@ -518,10 +564,176 @@ namespace AICAD.Services
         private static string AwaitWithTimeout(Func<Task<string>> taskFactory, string provider, int seconds = 120)
         {
             var task = taskFactory();
-            var completed = Task.WhenAny(task, Task.Delay(TimeSpan.FromSeconds(seconds))).GetAwaiter().GetResult();
-            if (completed != task)
+            var timeoutMs = seconds * 1000;
+            bool completed = Task.WaitAll(new[] { task }, timeoutMs);
+            
+            if (!completed)
+            {
                 throw new TimeoutException($"LLM {provider} timed out after {seconds}s");
-            return task.GetAwaiter().GetResult();
+            }
+            
+            // Task is guaranteed to be completed here; safely get result
+            return task.Result;
+        }
+
+        /// <summary>
+        /// Generate raw LLM text using the configured provider priority (AICAD_LLM_PRIORITY).
+        /// This is a synchronous helper that mirrors the provider selection logic used
+        /// by the clarifier helpers and returns the raw reply or null.
+        /// </summary>
+        public static string GenerateWithPriority(string prompt, int timeoutSeconds = 120)
+        {
+            try
+            {
+                var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                                  ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                                  ?? "local,gemini,groq";
+                var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+
+                Exception lastEx = null;
+                string lastReply = null;
+                var promptText = prompt;
+                foreach (var provider in priority)
+                {
+                    try
+                    {
+                        if (IsProviderMarkedDead(provider))
+                        {
+                            AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
+                            continue;
+                        }
+                        if (provider == "local")
+                        {
+                            var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                                ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                                ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(localEndpoint))
+                            {
+                                var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                                     ?? "local-model";
+                                var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                                   ?? DEFAULT_SYSTEM_PROMPT;
+
+                                var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
+                                if (localClient != null)
+                                {
+                                    var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
+                                    lastReply = reply;
+                                    try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
+                                    AddinStatusLogger.Log("ClarificationService", "Local LLM reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
+                                    return reply;
+                                }
+                            }
+                        }
+                        else if (provider == "gemini")
+                        {
+                            var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                         ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                         ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(gemKey))
+                            {
+                                var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                               ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                               ?? "gemini-1.5-flash";
+                                var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                                     ?? DEFAULT_SYSTEM_PROMPT;
+                                var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
+                                if (gemClient != null)
+                                {
+                                    var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini", timeoutSeconds);
+                                    lastReply = reply;
+                                    try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
+                                    AddinStatusLogger.Log("ClarificationService", "Gemini reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
+                                    return reply;
+                                }
+                            }
+                        }
+                        else if (provider == "groq")
+                        {
+                            var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                          ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                          ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(groqKey))
+                            {
+                                var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                                ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
+                                                ?? "llama-3.3-70b-versatile";
+                                var groqSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                                      ?? DEFAULT_SYSTEM_PROMPT;
+                                var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
+                                if (groqClient != null)
+                                {
+                                    var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(promptText), "groq", timeoutSeconds);
+                                    lastReply = reply;
+                                    try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
+                                    AddinStatusLogger.Log("ClarificationService", "Groq reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
+                                    return reply;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (ex is TimeoutException || IsConnectionRefused(ex))
+                        {
+                            try { AddinStatusLogger.Log("ClarificationService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
+                            try { MarkProviderDead(provider); } catch { }
+                            continue;
+                        }
+
+                        lastEx = ex;
+                        if (provider == "groq" && ex.Message.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            AddinStatusLogger.Log("ClarificationService", "⚠️ [GROQ RATE LIMIT] " + ex.Message);
+                        }
+                        else
+                        {
+                            AddinStatusLogger.Log("ClarificationService", provider + " failed: " + ex.Message);
+                        }
+                    }
+                }
+
+                if (lastEx != null)
+                {
+                    try { LastRawReply = lastReply; } catch { }
+                    try { LastPromptUsed = promptText; } catch { }
+                    try { if (!string.IsNullOrEmpty(lastReply)) lastEx.Data["llm_reply"] = lastReply; } catch { }
+                    try { if (!string.IsNullOrEmpty(promptText)) lastEx.Data["llm_prompt"] = promptText; } catch { }
+                    throw lastEx;
+                }
+            }
+            catch (Exception ex)
+            {
+                AddinStatusLogger.Error("ClarificationService", "GenerateWithPriority failed", ex);
+            }
+            return null;
         }
     }
 }

@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using System.Text;
 
+#pragma warning disable CS0618 // UITheme is obsolete
+
 namespace AICAD.UI
 {
     /// <summary>
@@ -49,17 +51,6 @@ namespace AICAD.UI
         // New controls for direct key entry
         internal TextBox _txtGeminiKey;
         internal TextBox _txtGroqKey;
-        
-        // Labels handled by Tabs
-        internal Label _lblProvider;
-        internal Label _lblLlmMode;
-        internal Label _lblApiKeyLabel;
-        internal Label _lblLocalEndpointLabel;
-        internal Label _lblLocalModelLabel;
-        internal Label _lblLocalSysLabel;
-        internal Label _lblCloudProvider;
-        internal Label _lblGeminiKey;
-        internal Label _lblGroqKey;
         
         // NameEasy Tab Controls
         internal TextBox _txtNameEasyPath;
@@ -338,7 +329,7 @@ namespace AICAD.UI
             }
         }
         
-        internal async void BtnLoadApiKey_Click(object sender, EventArgs e)
+        internal void BtnLoadApiKey_Click(object sender, EventArgs e)
         {
             try
             {

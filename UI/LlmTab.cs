@@ -2,6 +2,8 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 
+#pragma warning disable CS0618 // UITheme is obsolete
+
 namespace AICAD.UI
 {
     public static class LlmTab
@@ -125,7 +127,7 @@ namespace AICAD.UI
             UITheme.ApplyButtonStyle(host._btnTestApi, false);
             host._btnLoadApiKey.Click += host.BtnLoadApiKey_Click;
             host._btnSaveApiKey.Click += host.BtnSaveApiKey_Click;
-            host._btnTestApi.Click += async (s, e) => { var _ = host.BtnTestApi_Click(s, e); };
+            host._btnTestApi.Click += (s, e) => { var _ = host.BtnTestApi_Click(s, e); };
             actionPanel.Controls.Add(host._btnLoadApiKey);
             actionPanel.Controls.Add(host._btnSaveApiKey);
             actionPanel.Controls.Add(host._btnTestApi);

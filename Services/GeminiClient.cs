@@ -12,11 +12,25 @@ namespace AICAD.Services
         private static readonly HttpClient _sharedHttp = CreateSharedHttpClient();
         private readonly string _apiKey;
         private string _model;
+        private readonly string _systemPrompt;
         private static readonly string[] DefaultFallbackModels = new[] { "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-flash-latest", "gemini-1.5-flash" };
         private const string BaseUrlV1 = "https://generativelanguage.googleapis.com/v1";
         private const string BaseUrl = "https://generativelanguage.googleapis.com/v1beta";
+        // Cache version and invalidation hook so external code can signal clients to refresh cached instances.
+        private static int _cacheVersion = 0;
+        public static int CacheVersion => _cacheVersion;
+        public static void InvalidateCachedClients()
+        {
+            try
+            {
+                System.Threading.Interlocked.Increment(ref _cacheVersion);
+                try { AddinStatusLogger.Log("GeminiClient", "InvalidateCachedClients called"); } catch { }
+            }
+            catch { }
+        }
 
-        public GeminiClient(string apiKey, string model = null)
+        // Added optional systemPrompt. If omitted, prefer AICAD_SYSTEM_PROMPT env var.
+        public GeminiClient(string apiKey, string model = null, string systemPrompt = null)
         {
             var envKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User)
                          ?? Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.Process)
@@ -36,6 +50,10 @@ namespace AICAD.Services
             _model = !string.IsNullOrWhiteSpace(envModel) ? envModel.Trim()
                      : (!string.IsNullOrWhiteSpace(model) ? model.Trim() : "gemini-1.0");
 
+            var envPrompt = Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", EnvironmentVariableTarget.User)
+                            ?? Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", EnvironmentVariableTarget.Process);
+            _systemPrompt = systemPrompt ?? envPrompt;
+
             try { AddinStatusLogger.Log("GeminiClient", $"Ctor model={_model} apiKeySource={(string.IsNullOrEmpty(_apiKey) ? "none" : "env/ctor")}" ); } catch { }
         }
 
@@ -49,6 +67,11 @@ namespace AICAD.Services
         public async Task<string> GenerateAsync(string prompt)
         {
             if (string.IsNullOrWhiteSpace(prompt)) return string.Empty;
+            // If a system prompt is configured, prepend it to the user prompt so Gemini receives it.
+            if (!string.IsNullOrWhiteSpace(_systemPrompt))
+            {
+                prompt = _systemPrompt + "\n\n" + prompt;
+            }
             var oauthConfig = GoogleOAuthConfig.Load();
             string bearer = null;
             try { if (oauthConfig != null) bearer = await TokenManager.GetAccessTokenAsync(oauthConfig).ConfigureAwait(false); } catch { bearer = null; }
@@ -92,6 +115,15 @@ namespace AICAD.Services
             string jsonBody;
             using (var ms = new System.IO.MemoryStream()) { serializer.WriteObject(ms, req); jsonBody = Encoding.UTF8.GetString(ms.ToArray()); }
 
+            try
+            {
+                var prettyReq = FormatJsonForLog(jsonBody, 3000);
+                AddinStatusLogger.Log("GeminiClient", $"\n=== HTTP Request to {url} ===");
+                AddinStatusLogger.Log("GeminiClient", prettyReq);
+                AddinStatusLogger.Log("GeminiClient", "=====================================");
+            }
+            catch { }
+
             const int maxRetries = 3;
             int attempt = 0;
             while (true)
@@ -115,6 +147,14 @@ namespace AICAD.Services
                     }
 
                     var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    try
+                    {
+                        var prettyResp = FormatJsonForLog(respText, 6000);
+                        AddinStatusLogger.Log("GeminiClient", $"\n=== HTTP Response {(int)resp.StatusCode} from {url} ===");
+                        AddinStatusLogger.Log("GeminiClient", prettyResp);
+                        AddinStatusLogger.Log("GeminiClient", "=====================================");
+                    }
+                    catch { }
                     if (resp.IsSuccessStatusCode)
                     {
                         var respSerializer = new DataContractJsonSerializer(typeof(GenerateResponse));
@@ -189,6 +229,31 @@ namespace AICAD.Services
         }
 
         public void Dispose() { /* keep shared HttpClient for process lifetime */ }
+
+        private static string FormatJsonForLog(string json, int maxLength)
+        {
+            if (string.IsNullOrEmpty(json)) return "(empty)";
+            try
+            {
+                var obj = Newtonsoft.Json.JsonConvert.DeserializeObject(json);
+                var formatted = Newtonsoft.Json.JsonConvert.SerializeObject(obj, Newtonsoft.Json.Formatting.Indented);
+                if (formatted.Length > maxLength)
+                {
+                    return formatted.Substring(0, maxLength) + "\n... (truncated)";
+                }
+                return formatted;
+            }
+            catch
+            {
+                // If JSON parsing fails, return compressed version
+                var compressed = json.Replace("\r\n", " ").Replace("\n", " ");
+                if (compressed.Length > maxLength)
+                {
+                    return compressed.Substring(0, maxLength) + "... (truncated)";
+                }
+                return compressed;
+            }
+        }
 
         public async Task<System.Collections.Generic.List<string>> ListAvailableModelsAsync(string bearerToken = null)
         {

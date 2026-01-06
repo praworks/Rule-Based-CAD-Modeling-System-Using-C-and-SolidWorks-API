@@ -55,6 +55,31 @@ namespace AICAD.Services
             return c;
         }
 
+        private static string FormatJsonForLog(string json, int maxLength)
+        {
+            if (string.IsNullOrEmpty(json)) return "(empty)";
+            try
+            {
+                var obj = Newtonsoft.Json.JsonConvert.DeserializeObject(json);
+                var formatted = Newtonsoft.Json.JsonConvert.SerializeObject(obj, Newtonsoft.Json.Formatting.Indented);
+                if (formatted.Length > maxLength)
+                {
+                    return formatted.Substring(0, maxLength) + "\n... (truncated)";
+                }
+                return formatted;
+            }
+            catch
+            {
+                // If JSON parsing fails, return compressed version
+                var compressed = json.Replace("\r\n", " ").Replace("\n", " ");
+                if (compressed.Length > maxLength)
+                {
+                    return compressed.Substring(0, maxLength) + "... (truncated)";
+                }
+                return compressed;
+            }
+        }
+
         public class RateLimitInfo
         {
             public int? RemainingRequests;
@@ -92,6 +117,14 @@ namespace AICAD.Services
             // Build request
             string json = Newtonsoft.Json.JsonConvert.SerializeObject(payload ?? new { });
             var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            try
+            {
+                var prettyReq = FormatJsonForLog(json, 3000);
+                AddinStatusLogger.Log("GroqClient", $"\n=== HTTP Request to {endpoint} ===");
+                AddinStatusLogger.Log("GroqClient", prettyReq);
+                AddinStatusLogger.Log("GroqClient", "=====================================");
+            }
+            catch { }
 
             // Try send with polite retries on 429; do not retry indefinitely
             int attempt = 0;
@@ -118,6 +151,14 @@ namespace AICAD.Services
 
                 res.Body = null;
                 try { res.Body = await httpResp.Content.ReadAsStringAsync().ConfigureAwait(false); } catch { }
+                try
+                {
+                    var prettyResp = FormatJsonForLog(res.Body, 8000);
+                    AddinStatusLogger.Log("GroqClient", $"\n=== HTTP Response {(int)httpResp.StatusCode} from {endpoint} ===");
+                    AddinStatusLogger.Log("GroqClient", prettyResp);
+                    AddinStatusLogger.Log("GroqClient", "=====================================");
+                }
+                catch { }
 
                 if ((int)httpResp.StatusCode == 429)
                 {

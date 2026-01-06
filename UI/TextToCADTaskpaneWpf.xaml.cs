@@ -69,152 +69,113 @@ namespace AICAD.UI
             var anyOk = false;
             try
             {
-                using (var http = new HttpClient())
+                using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) })
                 {
-                    // Respect provider priority: if any configured provider appears usable, mark OK.
-                    try
-                    {
-                        var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                                          ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                                          ?? "local,gemini,groq";
-                        var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
-                        foreach (var prov in priority)
-                        {
-                            try
-                            {
-                                if (prov == "groq")
-                                {
-                                    var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
-                                                  ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
-                                                  ?? string.Empty;
-                                    if (!string.IsNullOrWhiteSpace(groqKey))
-                                    {
-                                        AppendStatusLine("[LLM-STATUS] Groq API key present");
-                                        anyOk = true;
-                                    }
-                                }
-                                else if (prov == "gemini")
-                                {
-                                    var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
-                                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
-                                                 ?? string.Empty;
-                                    if (!string.IsNullOrWhiteSpace(gemKey))
-                                    {
-                                        AppendStatusLine("[LLM-STATUS] Gemini API key present");
-                                        anyOk = true;
-                                    }
-                                }
-                                else if (prov == "local")
-                                {
-                                    // Local will be checked below via HTTP probes; note its presence here for visibility
-                                    var localEndpointPresence = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                                              ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                                              ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                                              ?? string.Empty;
-                                    if (!string.IsNullOrWhiteSpace(localEndpointPresence))
-                                    {
-                                        AppendStatusLine("[LLM-STATUS] Local endpoint configured: " + GetEndpointDisplayName(localEndpointPresence));
-                                        // don't mark anyOk yet; actual HTTP check happens below
-                                    }
-                                }
-                            }
-                            catch { }
-                        }
-                    }
-                    catch { }
-                    var lmStudioEndpoint = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                         ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                         ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine);
-                    if (!string.IsNullOrEmpty(lmStudioEndpoint))
+                    // Check providers sequentially by priority - stop as soon as one is available
+                    var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                                      ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                                      ?? "local,gemini,groq";
+                    var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+                    
+                    foreach (var prov in priority)
                     {
                         try
                         {
-                            // perform LM Studio health-check silently to avoid duplicate status lines
-                            // Try a few common model-list paths
-                            var tried = false;
-                            foreach (var p in new[] { "/v1/models", "/api/models", "/models", "/v1/model/list" })
+                            if (prov == "groq")
                             {
-                                try
+                                var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                              ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                              ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(groqKey))
                                 {
-                                    var u = new UriBuilder(lmStudioEndpoint) { Path = p }.Uri.ToString();
-                                    var r = await http.GetAsync(u).ConfigureAwait(false);
-                                    tried = true;
-                                    if (r.IsSuccessStatusCode)
+                                    AppendStatusLine("[LLM-STATUS] Groq API key present");
+                                    anyOk = true;
+                                    break; // Stop checking - first provider is available
+                                }
+                            }
+                            else if (prov == "gemini")
+                            {
+                                var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                             ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                             ?? string.Empty;
+                                if (!string.IsNullOrWhiteSpace(gemKey))
+                                {
+                                    AppendStatusLine("[LLM-STATUS] Gemini API key present");
+                                    anyOk = true;
+                                    break; // Stop checking - first provider is available
+                                }
+                            }
+                            else if (prov == "local")
+                            {
+                                // Check local LLM endpoints via HTTP
+                                var lmStudioEndpoint = System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                                     ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.Machine);
+                                
+                                var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
+                                                    ?? "http://127.0.0.1:1234";
+                                
+                                // Try LMSTUDIO_ENDPOINT first if set
+                                if (!string.IsNullOrEmpty(lmStudioEndpoint))
+                                {
+                                    try
                                     {
-                                        anyOk = true;
-                                        var txt = await r.Content.ReadAsStringAsync().ConfigureAwait(false);
-                                        AppendStatusLine("[LLM-STATUS] Local LLM OK (" + p + ")");
-                                        break;
+                                        foreach (var p in new[] { "/v1/models", "/api/models", "/models" })
+                                        {
+                                            try
+                                            {
+                                                var u = new UriBuilder(lmStudioEndpoint) { Path = p }.Uri.ToString();
+                                                var r = await http.GetAsync(u).ConfigureAwait(false);
+                                                if (r.IsSuccessStatusCode)
+                                                {
+                                                    AppendStatusLine("[LLM-STATUS] Local LLM OK (LM Studio)");
+                                                    anyOk = true;
+                                                    break;
+                                                }
+                                            }
+                                            catch { }
+                                        }
+                                    }
+                                    catch { }
+                                }
+                                
+                                // Try LOCAL_LLM_ENDPOINT if LM Studio check didn't succeed
+                                if (!anyOk)
+                                {
+                                    try
+                                    {
+                                        AppendStatusLine("[LLM-STATUS] Checking " + GetEndpointDisplayName(localEndpoint) + ": " + localEndpoint);
+                                        var modelsUrl = new UriBuilder(localEndpoint) { Path = "/v1/models" }.Uri.ToString();
+                                        var r2 = await http.GetAsync(modelsUrl).ConfigureAwait(false);
+                                        if (r2.IsSuccessStatusCode)
+                                        {
+                                            var txt2 = await r2.Content.ReadAsStringAsync().ConfigureAwait(false);
+                                            try
+                                            {
+                                                var j2 = JObject.Parse(txt2);
+                                                if (j2["data"] is JArray arr && arr.Count > 0)
+                                                {
+                                                    var names = arr.Children().Select(c => c["id"]?.ToString()).Where(s => !string.IsNullOrWhiteSpace(s)).Take(3);
+                                                    AppendStatusLine("[LLM-STATUS] Local LLM OK — models: " + string.Join(", ", names));
+                                                }
+                                                else AppendStatusLine("[LLM-STATUS] Local LLM OK");
+                                            }
+                                            catch { AppendStatusLine("[LLM-STATUS] Local LLM OK"); }
+                                            anyOk = true;
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        AppendStatusLine("[LLM-STATUS] Local LLM check failed: " + ex.Message);
                                     }
                                 }
-                                catch { }
-                            }
-                            if (!tried)
-                            {
-                                // fallback: try GET to base endpoint
-                                try
-                                {
-                                    var r3 = await http.GetAsync(lmStudioEndpoint).ConfigureAwait(false);
-                                    if (r3.IsSuccessStatusCode) anyOk = true;
-                                    AppendStatusLine($"[LLM-STATUS] Local LLM responded {(int)r3.StatusCode}");
-                                }
-                                catch (Exception ex)
-                                {
-                                    AppendStatusLine("[LLM-STATUS] Local LLM check failed: " + ex.Message);
-                                }
+                                
+                                if (anyOk) break; // Stop checking - local is available
                             }
                         }
-                        catch (Exception ex)
-                        {
-                            AppendStatusLine("[LLM-STATUS] Local LLM check failed: " + ex.Message);
-                        }
-                    }
-
-                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                        ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
-                                        ?? "http://127.0.0.1:1234";
-                    var dispLocal = GetEndpointDisplayName(localEndpoint);
-                    try
-                    {
-                        AppendStatusLine("[LLM-STATUS] Checking " + dispLocal + ": " + localEndpoint);
-                        // Try common OpenAI-style models list first
-                        var modelsUrl = new UriBuilder(localEndpoint) { Path = "/v1/models" }.Uri.ToString();
-                        var r2 = await http.GetAsync(modelsUrl).ConfigureAwait(false);
-                        if (r2.IsSuccessStatusCode)
-                        {
-                            anyOk = true;
-                            var txt2 = await r2.Content.ReadAsStringAsync().ConfigureAwait(false);
-                            try
-                            {
-                                var j2 = JObject.Parse(txt2);
-                                if (j2["data"] is JArray arr && arr.Count > 0)
-                                {
-                                    var names = arr.Children().Select(c => c["id"]?.ToString()).Where(s => !string.IsNullOrWhiteSpace(s)).Take(5);
-                                    AppendStatusLine("[LLM-STATUS] " + dispLocal + " OK — models: " + string.Join(", ", names));
-                                }
-                                else AppendStatusLine("[LLM-STATUS] " + dispLocal + " OK — models endpoint returned no data");
-                            }
-                            catch { AppendStatusLine("[LLM-STATUS] " + dispLocal + " OK — models endpoint returned non-JSON or unexpected shape"); }
-                        }
-                        else
-                        {
-                            // As a fallback, try a simple GET to the base endpoint to check connectivity
-                            try
-                            {
-                                var r3 = await http.GetAsync(localEndpoint).ConfigureAwait(false);
-                                if (r3.IsSuccessStatusCode) anyOk = true;
-                                AppendStatusLine($"[LLM-STATUS] {dispLocal} responded {(int)r3.StatusCode}");
-                            }
-                            catch (Exception ex)
-                            {
-                                AppendStatusLine("[LLM-STATUS] " + dispLocal + " check failed: " + ex.Message);
-                            }
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        AppendStatusLine("[LLM-STATUS] " + dispLocal + " check failed: " + ex.Message);
+                        catch { }
                     }
                 }
             }
@@ -232,10 +193,6 @@ namespace AICAD.UI
         /// </summary>
         public event EventHandler<PromptChangedEventArgs> PromptTextChanged;
 
-        /// <summary>
-        /// Raised when user requests to apply properties to the active model.
-        /// </summary>
-        public event EventHandler ApplyPropertiesRequested;
         private bool _isModified = false;
         private AICAD.Services.ILlmClient _client;
         private FileDbLogger _fileLogger;
@@ -256,6 +213,7 @@ namespace AICAD.UI
         private System.Threading.CancellationTokenSource _buildCts;
         private bool _lastRunCreatedModel = false;
         private string _lastCreatedModelTitle = null;
+        private string _generatedDescription = null; // Description generated at start of build
         private IStepStore _stepStore;
         private SeriesManager _seriesManager;
         private string _selectedSeries;
@@ -480,9 +438,6 @@ namespace AICAD.UI
 
             // Raise PromptTextChanged for external listeners
             prompt.TextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, new PromptChangedEventArgs(prompt.Text)); } catch { } };
-
-            // Live input validation feedback
-            prompt.TextChanged += Prompt_LiveValidation;
 
             // Build click: if building, treat as Stop request; otherwise start build
             build.Click += async (s, e) =>
@@ -1693,159 +1648,6 @@ namespace AICAD.UI
             AppendStatusLine($"[LLM] {text}");
         }
 
-        /// <summary>
-        /// Update the prompt feedback text with live validation messages
-        /// </summary>
-        private void UpdatePromptFeedback(string message, Color color)
-        {
-            try
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    try
-                    {
-                        promptFeedbackText.Text = message;
-                        promptFeedbackText.Foreground = new SolidColorBrush(color);
-                    }
-                    catch { }
-                }));
-            }
-            catch { }
-        }
-
-        /// <summary>
-        /// Live validation handler for prompt text changes - provides instant feedback using LLM
-        /// </summary>
-        private void Prompt_LiveValidation(object sender, TextChangedEventArgs e)
-        {
-            try
-            {
-                var text = (prompt.Text ?? string.Empty).Trim();
-                if (string.IsNullOrEmpty(text) || text == "Enter prompt...")
-                {
-                    UpdatePromptFeedback("\ud83d\udca1 Describe what you want to create (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm height 80mm')", Colors.Gray);
-                    return;
-                }
-
-                var lowerText = text.ToLower();
-                var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "." };
-
-                // Check for meaningless inputs (quick local check)
-                if (meaninglessWords.Contains(lowerText) || text.Length < 3)
-                {
-                    UpdatePromptFeedback("\u26a0 Inputs such as '" + text + "' not accepted! Try: 'box 50x50x100mm' or 'cylinder radius 20 height 50'", Colors.OrangeRed);
-                    return;
-                }
-
-                // Use LLM for smart validation (async, debounced)
-                _ = ValidatePromptWithLLMAsync(text);
-            }
-            catch { }
-        }
-
-        private System.Threading.CancellationTokenSource _validationCts;
-        private string _lastValidatedText = "";
-
-        /// <summary>
-        /// Use LLM to validate prompt and provide smart suggestions
-        /// </summary>
-        private async Task ValidatePromptWithLLMAsync(string text)
-        {
-            try
-            {
-                // Debounce: only validate if user stopped typing for 800ms
-                if (_lastValidatedText == text) return;
-                
-                try { _validationCts?.Cancel(); } catch { }
-                _validationCts = new System.Threading.CancellationTokenSource();
-                var token = _validationCts.Token;
-
-                await Task.Delay(800, token);
-                _lastValidatedText = text;
-
-                // Quick validation prompt for LLM
-                var validationPrompt = $"Analyze this CAD prompt for errors: \"{text}\". Reply with JSON: {{\"valid\":true/false,\"issue\":\"reason if invalid\",\"suggestion\":\"corrected version or tip\"}}. Only JSON, no markdown.";
-
-                string llmResponse = null;
-                try
-                {
-                    // Try local LLM first (fastest)
-                    var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                     ?? "http://localhost:1234";
-                    var localClient = new Services.LocalHttpLlmClient(localEndpoint);
-                    llmResponse = await localClient.SendPromptAsync(validationPrompt, token);
-                }
-                catch
-                {
-                    // Fallback to Groq if local fails (fast API)
-                    try
-                    {
-                        var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User);
-                        if (!string.IsNullOrWhiteSpace(groqKey))
-                        {
-                            var groqClient = new Services.GroqLlmClient(groqKey);
-                            llmResponse = await groqClient.SendPromptAsync(validationPrompt, token);
-                        }
-                    }
-                    catch { }
-                }
-
-                if (string.IsNullOrWhiteSpace(llmResponse)) 
-                {
-                    // LLM unavailable - show basic positive feedback
-                    UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
-                    return;
-                }
-
-                // Parse LLM response
-                try
-                {
-                    var json = Newtonsoft.Json.Linq.JObject.Parse(llmResponse.Trim());
-                    var valid = json["valid"]?.Value<bool>() ?? true;
-                    var issue = json["issue"]?.Value<string>() ?? "";
-                    var suggestion = json["suggestion"]?.Value<string>() ?? "";
-
-                    if (!valid && !string.IsNullOrWhiteSpace(suggestion))
-                    {
-                        // Translate technical suggestion to friendly English
-                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(suggestion);
-                        UpdatePromptFeedback("\u2728 " + friendlyMsg, Colors.Orange);
-                    }
-                    else if (!valid && !string.IsNullOrWhiteSpace(issue))
-                    {
-                        // Translate technical issue to friendly English
-                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(issue);
-                        UpdatePromptFeedback("\u26a0 " + friendlyMsg, Colors.OrangeRed);
-                    }
-                    else if (!string.IsNullOrWhiteSpace(suggestion))
-                    {
-                        string friendlyMsg = Services.FriendlyErrorTranslator.TranslateErrorText(suggestion);
-                        UpdatePromptFeedback("\ud83d\udca1 Tip: " + friendlyMsg, Colors.DodgerBlue);
-                    }
-                    else
-                    {
-                        UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
-                    }
-                }
-                catch
-                {
-                    // JSON parse failed - use raw response as suggestion
-                    if (llmResponse.Length < 200)
-                    {
-                        string friendlyMsg = Services.FriendlyErrorTranslator.SimplifyComplexError(llmResponse);
-                        UpdatePromptFeedback("\ud83d\udca1 " + friendlyMsg, Colors.DodgerBlue);
-                    }
-                    else
-                    {
-                        UpdatePromptFeedback("\u2705 Ready to build! Click 'Build \ud83d\ude80' to generate", Colors.Green);
-                    }
-                }
-            }
-            catch (TaskCanceledException) { }
-            catch { }
-        }
-
         private void SetDbStatus(string text, Color color)
         {
             _lastDbStatus = text;
@@ -1990,6 +1792,7 @@ namespace AICAD.UI
                     "You are a prompt refinement assistant for a CAD system. Your job is to take brief user input and expand it into a clear, detailed CAD specification.\n\n" +
                     "Rules:\n" +
                     "- If dimensions are missing, suggest reasonable defaults (e.g., 50mm for width/height, 100mm for depth)\n" +
+                    "- ALWAYS add explicit auto-dimension instructions (use op:\"auto_dimension\") for any sketch geometry you produce (e.g., horizontal and vertical dimensions for rectangles, with numeric values in mm)\n" +
                     "- Always specify units (millimeters)\n" +
                     "- Clarify shape type (box, cylinder, etc.)\n" +
                     "- Fix grammar and spelling\n" +
@@ -2044,6 +1847,18 @@ namespace AICAD.UI
                         refinedText = await client.GenerateAsync(fullRefinePrompt).ConfigureAwait(false);
                     }
                 }
+                else if (refineProvider.Equals("priority", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Use the global AICAD_LLM_PRIORITY order via ClarificationService
+                    try
+                    {
+                        refinedText = await Task.Run(() => AICAD.Services.ClarificationService.GenerateWithPriority(fullRefinePrompt, 60)).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendStatusLine("[Refine] Priority refinement failed: " + ex.Message);
+                    }
+                }
 
                 if (!string.IsNullOrWhiteSpace(refinedText))
                 {
@@ -2090,7 +1905,7 @@ namespace AICAD.UI
                                                  ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                  ?? "local-model";
                             var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                               ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+                                            ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle.";
                             
                             var dispTry = GetEndpointDisplayName(localEndpoint);
                             AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
@@ -2183,6 +1998,56 @@ namespace AICAD.UI
             throw new InvalidOperationException("No LLM providers configured or all failed.");
         }
 
+        private async Task<string> GenerateSimpleDescriptionAsync(string userPrompt)
+        {
+            try
+            {
+                var descriptionPrompt = $@"Convert this CAD instruction into a simple 2-5 word description.
+Examples:
+- Input: 'create 100mm cube and apply chamfer' → Output: Cube with chamfer
+- Input: 'make rectangular plate 200x150mm with 4 holes' → Output: Plate with holes
+- Input: 'design cylinder diameter 50mm height 100mm' → Output: Cylinder
+
+Now convert this:
+Input: '{userPrompt}'
+Output:";
+
+                var client = _client ?? GetClient();
+                var response = await client.GenerateAsync(descriptionPrompt);
+                
+                // Extract simple description from response
+                var lines = response.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var line in lines)
+                {
+                    var trimmed = line.Trim();
+                    // Skip empty lines and common prefixes
+                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
+                    if (trimmed.StartsWith("Output:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        trimmed = trimmed.Substring("Output:".Length).Trim();
+                    }
+                    if (trimmed.StartsWith("Description:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        trimmed = trimmed.Substring("Description:".Length).Trim();
+                    }
+                    
+                    // Return first non-empty meaningful line
+                    if (!string.IsNullOrWhiteSpace(trimmed) && trimmed.Length <= 100)
+                    {
+                        return trimmed;
+                    }
+                }
+                
+                // Fallback: return first line if no match
+                return lines.FirstOrDefault()?.Trim() ?? string.Empty;
+            }
+            catch (Exception ex)
+            {
+                try { AddinStatusLogger.Error("TaskpaneWpf", "GenerateSimpleDescriptionAsync failed", ex); } catch { }
+                return string.Empty;
+            }
+        }
+
         private void FinishLlmProgress()
         {
             try { _llmProgressTimer?.Stop(); } catch { }
@@ -2202,7 +2067,6 @@ namespace AICAD.UI
             if (string.IsNullOrEmpty(text))
             {
                 AppendStatusLine("Enter a prompt describing a simple box or cylinder in mm.");
-                UpdatePromptFeedback("💡 Describe what you want to create (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm height 80mm')", Colors.Gray);
                 return;
             }
 
@@ -2213,7 +2077,6 @@ namespace AICAD.UI
             {
                 AppendStatusLine("❌ Please enter a meaningful CAD description (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm').");
                 SetRealTimeStatus("Invalid prompt", Colors.OrangeRed);
-                UpdatePromptFeedback("⚠ Inputs such as '" + text + "' not accepted! Try: 'box 50x50x100mm' or 'cylinder radius 20 height 50'", Colors.OrangeRed);
                 return;
             }
 
@@ -2244,7 +2107,6 @@ namespace AICAD.UI
                     if (text != originalText)
                     {
                         AppendStatusLine($"✨ User input refined automatically! to: {text}");
-                        UpdatePromptFeedback("✅ Input refined: " + text, Colors.Green);
                     }
                 }
                 catch (Exception refineEx)
@@ -2388,6 +2250,28 @@ namespace AICAD.UI
                 SetLastError(null);
                 SetTimes(null, null);
 
+                // Generate simple description FIRST and keep in memory
+                _generatedDescription = null;
+                try
+                {
+                    AppendStatusLine("[LLM] Generating description...");
+                    _generatedDescription = await GenerateSimpleDescriptionAsync(text);
+                    if (!string.IsNullOrWhiteSpace(_generatedDescription))
+                    {
+                        AppendStatusLine($"[Description] Generated: {_generatedDescription}");
+                        // Update UI immediately
+                        Dispatcher.Invoke(() =>
+                        {
+                            typeDescriptionTextBox.Text = _generatedDescription;
+                        });
+                    }
+                }
+                catch (Exception descEx)
+                {
+                    try { AddinStatusLogger.Error("TaskpaneWpf", "Description generation failed", descEx); } catch { }
+                    AppendStatusLine("[Description] Generation failed - will use empty description");
+                }
+
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
                 bool useFewShot = true;
                 int maxFewShotCount = 3; // Default: few-shot uses up to 3 examples
@@ -2524,11 +2408,8 @@ namespace AICAD.UI
                     }
                 }
 
-                var sysPrompt =
-                    "You are a CAD planning agent. Convert the user request into a step plan JSON for SOLIDWORKS. " +
-                    "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; " +
-                    "extrude{depth,type?}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
-                    "Units are millimeters; output ONLY raw JSON with a top-level 'steps' array. No markdown or extra text.\n" + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: ";
+                // Build user prompt with optional few-shot examples
+                var userPrompt = (useFewShot ? fewshot.ToString() + "\n\n" : string.Empty) + "User request: ";
                 try { AddinStatusLogger.Log("FewShot", $"Final few-shot prompt length={(fewshot==null?0:fewshot.Length)}"); } catch { }
                 // Notify user when few-shot examples are not being included
                 try
@@ -2544,11 +2425,11 @@ namespace AICAD.UI
                 }
                 catch { }
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                // If forcing local-only, do not include few-shot examples in the prompt.
-                var finalPrompt = sysPrompt + (useFewShot ? fewshot.ToString() : string.Empty) + "\nNow generate plan for: " + text + "\nJSON:";
+                // Build final prompt: user instructions + optional few-shot examples + actual user request
+                var finalPrompt = userPrompt + text + "\nJSON:";
                 if (FORCE_LOCAL_ONLY)
                 {
-                    finalPrompt = sysPrompt + "\nNow generate plan for: " + text + "\nJSON:";
+                    finalPrompt = userPrompt + text + "\nJSON:";
                 }
                 // Start LLM progress estimation timer using a background System.Timers.Timer to ensure ticks fire
                 System.Timers.Timer threadTimer = null;

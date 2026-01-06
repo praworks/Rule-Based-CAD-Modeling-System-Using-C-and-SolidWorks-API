@@ -13,7 +13,7 @@ Write-Host "Loading assemblies..."
 [Reflection.Assembly]::LoadFrom($dll) | Out-Null
 
 # Build a sample missing-dimensions JArray using the exact Newtonsoft assembly loaded above
-$sample = '[ { "op": "dimension", "cx": null, "cy": null, "w": null, "h": null } ]'
+$sample = '[ { "op": "auto_dimension", "cx": null, "cy": null, "w": null, "h": null } ]'
 $loadedNewtonsoft = ([AppDomain]::CurrentDomain.GetAssemblies() | Where-Object { $_.GetName().Name -eq 'Newtonsoft.Json' })[0]
 if (-not $loadedNewtonsoft) { Write-Error "Newtonsoft assembly not loaded"; exit 1 }
 $jarrayType = $loadedNewtonsoft.GetType('Newtonsoft.Json.Linq.JArray')
@@ -25,7 +25,7 @@ $jarr = $parseMethod.Invoke($null, @($sample))
 $svcType = [AICAD.Services.ClarificationService]
 
 # Prefer calling ClarifySingleStep (accepts a JObject) to avoid JArray type mismatches across loaded assemblies.
-$singleSample = '{ "op": "dimension", "cx": null, "cy": null, "w": null, "h": null }'
+$singleSample = '{ "op": "auto_dimension", "cx": null, "cy": null, "w": null, "h": null }'
 $jobjType = $loadedNewtonsoft.GetType('Newtonsoft.Json.Linq.JObject')
 $jobjParse = $jobjType.GetMethod('Parse', [string])
 $jobj = $jobjParse.Invoke($null, @($singleSample))

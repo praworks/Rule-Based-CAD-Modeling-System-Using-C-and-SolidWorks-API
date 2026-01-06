@@ -2,6 +2,8 @@ using System;
 using System.Drawing;
 using System.Windows.Forms;
 
+#pragma warning disable CS0618 // UITheme is obsolete
+
 namespace AICAD.UI
 {
     public static class DatabaseTab

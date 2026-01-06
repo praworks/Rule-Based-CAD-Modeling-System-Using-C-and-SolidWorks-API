@@ -15,18 +15,32 @@ namespace AICAD.Services
                 // Build short, non-sensitive prompt summarizing the error.
                 var summary = BuildSummary(category, message, ex);
 
-                // Only use the local HTTP LLM client for now; endpoint can be customized via env var
-                var endpoint = Environment.GetEnvironmentVariable(EnvEndpoint, EnvironmentVariableTarget.User)
-                               ?? Environment.GetEnvironmentVariable(EnvEndpoint)
-                               ?? "http://localhost:1234/v1/chat/completions";
-
-                using (var client = new LocalHttpLlmClient(endpoint, "gpt-3.5-mini", "You are a helpful assistant for diagnosing CAD add-in errors."))
+                // Use the global provider priority (AICAD_LLM_PRIORITY) to generate the report
+                var prompt = $"Analyze this error and give 2 concise troubleshooting steps (non-sensitive):\n\n{summary}";
+                try
                 {
-                    // Ask the model for a short actionable suggestion
-                    var prompt = $"Analyze this error and give 2 concise troubleshooting steps (non-sensitive):\n\n{summary}";
-                    var resp = await client.GenerateAsync(prompt).ConfigureAwait(false);
-                    // Write the LLM reply to the addin log so humans can review it
+                    var resp = ClarificationService.GenerateWithPriority(prompt, 30);
                     AddinStatusLogger.Log("LLMErrorReport", resp ?? "(empty response)");
+                }
+                catch
+                {
+                    // If generation failed entirely, fall back to local endpoint as a last resort
+                    try
+                    {
+                        var endpoint = Environment.GetEnvironmentVariable(EnvEndpoint, EnvironmentVariableTarget.User)
+                                       ?? Environment.GetEnvironmentVariable(EnvEndpoint)
+                                       ?? "http://localhost:1234/v1/chat/completions";
+                        // Prefer the configured AICAD_SYSTEM_PROMPT (if any) rather than hard-coding a different system prompt here.
+                        using (var client = new LocalHttpLlmClient(endpoint, "gpt-3.5-mini"))
+                        {
+                            var fallbackResp = await client.GenerateAsync(prompt).ConfigureAwait(false);
+                            AddinStatusLogger.Log("LLMErrorReport", fallbackResp ?? "(empty response)");
+                        }
+                    }
+                    catch (Exception fallbackEx)
+                    {
+                        AddinStatusLogger.Error("LlmErrorReporter", "Failed to report error to LLM (priority and fallback)", fallbackEx);
+                    }
                 }
             }
             catch (Exception rptEx)

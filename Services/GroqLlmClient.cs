@@ -13,11 +13,14 @@ namespace AICAD.Services
 
         public string Model => _model;
 
-        public GroqLlmClient(string apiKey = null, string model = "llama3-8b-8192", string systemPrompt = null)
+        public GroqLlmClient(string apiKey = null, string model = "llama-3.3-70b-versatile", string systemPrompt = null)
         {
             _client = new GroqClient(apiKey);
-            _model = !string.IsNullOrWhiteSpace(model) ? model : "llama3-8b-8192";
-            _systemPrompt = systemPrompt ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.";
+            _model = !string.IsNullOrWhiteSpace(model) ? model : "llama-3.3-70b-versatile";
+            // Prefer explicit argument, then AICAD_SYSTEM_PROMPT env var, then hard-coded default
+            var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
+            _systemPrompt = systemPrompt ?? envPrompt ?? ClarificationService.DEFAULT_SYSTEM_PROMPT;
         }
 
         public async Task<string> GenerateAsync(string prompt)

@@ -97,7 +97,9 @@ namespace AICAD.Services
                 GoogleCredential credential;
                 using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
                 {
+#pragma warning disable CS0618
                     credential = GoogleCredential.FromStream(stream);
+#pragma warning restore CS0618
                 }
                 var scoped = credential.CreateScoped(new[] { "https://www.googleapis.com/auth/cloud-platform" });
                 var token = await scoped.UnderlyingCredential.GetAccessTokenForRequestAsync(null, CancellationToken.None).ConfigureAwait(false);

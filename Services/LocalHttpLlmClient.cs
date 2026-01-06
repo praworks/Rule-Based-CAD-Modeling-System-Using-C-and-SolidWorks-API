@@ -19,6 +19,9 @@ namespace AICAD.Services
         private readonly string _endpoint;
         private string _model; // Removed 'readonly' so we can update it from the response
         private readonly string _systemPrompt;
+        // Simple cache-version to help callers know when an invalidate occurred
+        private static int _cacheVersion = 0;
+        public static int CacheVersion => _cacheVersion;
 
         public LocalHttpLlmClient(string endpoint = "http://localhost:1234/v1/chat/completions",
                                   string model = "qwen2.5-coder-3b-instruct",
@@ -34,7 +37,10 @@ namespace AICAD.Services
                     _endpoint += "/v1/chat/completions";
             }
             _model = model ?? throw new ArgumentNullException(nameof(model));
-            _systemPrompt = systemPrompt;
+            // Prefer explicit systemPrompt, then AICAD_SYSTEM_PROMPT env var
+            var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
+            _systemPrompt = systemPrompt ?? envPrompt;
             // Shared HttpClient already configured with a sensible timeout.
         }
 
@@ -43,6 +49,31 @@ namespace AICAD.Services
             var c = new HttpClient();
             c.Timeout = TimeSpan.FromSeconds(180);
             return c;
+        }
+
+        private static string FormatJsonForLog(string json, int maxLength)
+        {
+            if (string.IsNullOrEmpty(json)) return "(empty)";
+            try
+            {
+                var obj = Newtonsoft.Json.JsonConvert.DeserializeObject(json);
+                var formatted = Newtonsoft.Json.JsonConvert.SerializeObject(obj, Newtonsoft.Json.Formatting.Indented);
+                if (formatted.Length > maxLength)
+                {
+                    return formatted.Substring(0, maxLength) + "\n... (truncated)";
+                }
+                return formatted;
+            }
+            catch
+            {
+                // If JSON parsing fails, return compressed version
+                var compressed = json.Replace("\r\n", " ").Replace("\n", " ");
+                if (compressed.Length > maxLength)
+                {
+                    return compressed.Substring(0, maxLength) + "... (truncated)";
+                }
+                return compressed;
+            }
         }
 
         public string Model => _model;
@@ -76,6 +107,15 @@ namespace AICAD.Services
 
             // Use JsonConvert.SerializeObject to avoid depending on JToken.ToString overloads
             string json = Newtonsoft.Json.JsonConvert.SerializeObject(jPayload);
+
+            try
+            {
+                var prettyReq = FormatJsonForLog(json, 2000);
+                AddinStatusLogger.Log("LocalHttpLlmClient", $"\n=== HTTP Request to {_endpoint} ===");
+                AddinStatusLogger.Log("LocalHttpLlmClient", prettyReq);
+                AddinStatusLogger.Log("LocalHttpLlmClient", "=====================================");
+            }
+            catch { }
 
             HttpResponseMessage resp;
             try
@@ -135,6 +175,14 @@ namespace AICAD.Services
             }
 
             var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            try
+            {
+                var prettyResp = FormatJsonForLog(respText, 5000);
+                AddinStatusLogger.Log("LocalHttpLlmClient", $"\n=== HTTP Response {(int)resp.StatusCode} from {_endpoint} ===");
+                AddinStatusLogger.Log("LocalHttpLlmClient", prettyResp);
+                AddinStatusLogger.Log("LocalHttpLlmClient", "=====================================");
+            }
+            catch { }
             if (!resp.IsSuccessStatusCode)
             {
                 AddinStatusLogger.Error("LocalHttpLlmClient", $"HTTP {(int)resp.StatusCode} from {_endpoint}", new Exception(respText));
@@ -195,6 +243,18 @@ namespace AICAD.Services
         public void Dispose()
         {
             // no-op
+        }
+
+        // Allow external code to invalidate caches (e.g. when env vars or settings change).
+        public static void InvalidateCachedClients()
+        {
+            try
+            {
+                _endpointDeadUntil.Clear();
+                System.Threading.Interlocked.Increment(ref _cacheVersion);
+                try { AddinStatusLogger.Log("LocalHttpLlmClient", "InvalidateCachedClients called: cleared endpoint-dead cache"); } catch { }
+            }
+            catch { }
         }
     }
 }

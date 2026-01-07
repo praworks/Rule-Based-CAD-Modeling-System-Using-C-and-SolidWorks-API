@@ -487,6 +487,7 @@ namespace AICAD.UI
                 try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
                 // Build is initiated by external listeners (SwAddin) via BuildRequested.
                 // Avoid calling BuildFromPromptAsync() here to prevent duplicate runs.
+                try { await Task.Yield(); } catch { }
             };
             btnHistory.Click += BtnHistory_Click;
             // Use FindName to avoid field resolution issues during compile

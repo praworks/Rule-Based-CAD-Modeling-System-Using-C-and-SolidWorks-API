@@ -31,7 +31,7 @@ namespace AICAD.Services.Operations.PartFeatures
                     try { model.ClearSelection2(true); } catch { }
 
                     SelectData selData = null;
-                    try { selData = selMgr.CreateSelectData(); selData.Mark = 0; } catch { }
+                    try { selData = selMgr.CreateSelectData(); selData.Mark = 1; } catch { }
 
                     Feature lastSketch = null;
                     try
@@ -94,18 +94,55 @@ namespace AICAD.Services.Operations.PartFeatures
                     return OperationResult.CreateFailure("Extrude cut failed: no sketch selected after auto-select.");
                 }
 
-                double depth = PartFeatureHelpers.ToMeters(step.Value<double?>("depth") ?? 0);
-                // Force cut mode: FeatureExtrusion2 expects `isBoss` (true = boss, false = cut)
-                bool isBoss = false; // false => cut-extrude
+                // Extra diagnostic: attempt to log selected object names where possible
+                try
+                {
+                    for (int i = 1; i <= selCount; i++)
+                    {
+                        try
+                        {
+                            var obj = selMgr.GetSelectedObject6(i, -1);
+                            string name = null;
+                            try { name = ((dynamic)obj).Name; } catch { try { name = obj?.ToString(); } catch { name = "<unknown>"; } }
+                            AddinStatusLogger.Log("ExtrudeCutHandler", $"Selected object[{i}] name={name}");
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
 
-                var feat = featMgr.FeatureExtrusion2(isBoss,
-                    false, false,
-                    (int)swEndConditions_e.swEndCondBlind,
-                    (int)swEndConditions_e.swEndCondBlind,
-                    depth, 0,
-                    false, false, false, false, 0, 0,
-                    false, false, false, false, true, false, false,
-                    (int)swStartConditions_e.swStartSketchPlane, 0, false);
+                double depth = PartFeatureHelpers.ToMeters(step.Value<double?>("depth") ?? 0);
+                
+                // Use FeatureCut4 for robust cut extrusion with proper cut-specific options
+                var feat = featMgr.FeatureCut4(
+                    true,   // Sd: single direction
+                    false,  // Flip
+                    false,  // Dir2
+                    (int)swEndConditions_e.swEndCondBlind,  // T1: end condition
+                    0,      // T2
+                    depth,  // D1: depth
+                    0.0,    // D2
+                    false,  // Draft
+                    false,  // BackDraft
+                    false,  // Draft2
+                    false,  // BackDraft2
+                    0.0,    // DraftAng
+                    0.0,    // DraftAng2
+                    false,  // OffsetReverse1
+                    false,  // OffsetReverse2
+                    false,  // TranslateSurface1
+                    false,  // TranslateSurface2
+                    false,  // NormalCut
+                    true,   // UseFeat (apply feature)
+                    true,   // UseAutoSelect (let SW pick correct bodies/profile)
+                    false,  // AssemblyFeatureScope
+                    true,   // AutoSelect - smarter body/sketch selection
+                    false,  // Rematerialize
+                    0,      // StartOffset
+                    0.0,    // StartOffset2
+                    false,  // reserved boolean
+                    true    // OptimizeGeometry
+                );
 
                 if (feat == null)
                     return OperationResult.CreateFailure("Extrude cut operation failed");

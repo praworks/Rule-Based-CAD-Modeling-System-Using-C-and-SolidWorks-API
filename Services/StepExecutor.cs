@@ -28,9 +28,26 @@ namespace AICAD.Services
         /// <summary>
         /// Execute a plan with multiple steps using the operation handler registry
         /// </summary>
-        public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null, bool continueOnError = false)
+        public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null, bool continueOnError = false, bool preservePartsOnErrorOverride = false)
         {
             var result = new StepExecutionResult();
+            // Preserve newly-created parts on error for interactive diagnostics by default.
+            // Set environment variable AICAD_PRESERVE_PARTS_ON_ERROR=0 (Process or User) to disable,
+            // or =1 to explicitly enable.
+            bool preservePartsOnError = true;
+            try
+            {
+                // honor explicit override first (force enable)
+                if (preservePartsOnErrorOverride) preservePartsOnError = true;
+                var env = System.Environment.GetEnvironmentVariable("AICAD_PRESERVE_PARTS_ON_ERROR", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("AICAD_PRESERVE_PARTS_ON_ERROR", System.EnvironmentVariableTarget.User);
+                if (!string.IsNullOrWhiteSpace(env))
+                {
+                    if (env == "1" || env.Equals("true", StringComparison.OrdinalIgnoreCase)) preservePartsOnError = true;
+                    if (env == "0" || env.Equals("false", StringComparison.OrdinalIgnoreCase)) preservePartsOnError = false;
+                }
+            }
+            catch { }
             try { AddinStatusLogger.Log("StepExecutor", $"Execute: invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
             if (swApp == null)
             {
@@ -389,6 +406,30 @@ namespace AICAD.Services
                         // If continueOnError is enabled, log this failure but process next step
                         if (!continueOnError)
                         {
+                            // If we created a new part for this plan and execution failed,
+                            // close the newly-created document so partial/unsaved models don't persist.
+                            try
+                            {
+                                if (result.CreatedNewPart && model != null)
+                                {
+                                    try
+                                    {
+                                        var title = model.GetTitle();
+                                        if (preservePartsOnError)
+                                        {
+                                            AddinStatusLogger.Log("StepExecutor", $"Preserving newly created part '{title}' due to AICAD_PRESERVE_PARTS_ON_ERROR");
+                                        }
+                                        else
+                                        {
+                                            swApp.CloseDoc(title);
+                                            AddinStatusLogger.Log("StepExecutor", $"Closed newly created part '{title}' due to error");
+                                        }
+                                    }
+                                    catch { }
+                                }
+                            }
+                            catch { }
+
                             return result; // ORIGINAL: stop at first failure
                         }
                         else
@@ -436,6 +477,32 @@ namespace AICAD.Services
                 result.Log.Add(new JObject { ["step"] = -1, ["op"] = "exception", ["success"] = false, ["error"] = ex.Message });
                 result.Success = false;
                 try { AddinStatusLogger.Error("StepExecutor", "Unhandled exception executing plan", ex); } catch { }
+                // If a new part was created during execution and we hit an unhandled exception,
+                // close the new part so the user does not retain a partially-created model.
+                try
+                {
+                    if (result.CreatedNewPart && swApp != null)
+                    {
+                        try
+                        {
+                            if (swApp.ActiveDoc != null)
+                            {
+                                var t = swApp.ActiveDoc.GetTitle();
+                                if (preservePartsOnError)
+                                {
+                                    AddinStatusLogger.Log("StepExecutor", $"Preserving newly created part '{t}' due to AICAD_PRESERVE_PARTS_ON_ERROR (unhandled exception)");
+                                }
+                                else
+                                {
+                                    swApp.CloseDoc(t);
+                                    AddinStatusLogger.Log("StepExecutor", $"Closed newly created part '{t}' due to unhandled exception");
+                                }
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
                 return result;
             }
         }

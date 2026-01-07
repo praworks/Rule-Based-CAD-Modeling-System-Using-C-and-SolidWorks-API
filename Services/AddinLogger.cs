@@ -28,7 +28,7 @@ namespace AICAD.Services
         {
             try
             {
-                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [{component}] {message}";
+                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}] [{component}] {message}";
                 lock (Sync)
                 {
                     File.AppendAllText(LogPath, line + Environment.NewLine);
@@ -44,7 +44,7 @@ namespace AICAD.Services
         {
             try
             {
-                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}] [ERROR] [{component}] {message}\n    Exception: {ex.GetType().Name}: {ex.Message}\n    StackTrace: {ex.StackTrace}";
+                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}] [ERROR] [{component}] {message}\n    Exception: {ex.GetType().Name}: {ex.Message}\n    StackTrace: {ex.StackTrace}";
                 lock (Sync)
                 {
                     File.AppendAllText(LogPath, line + Environment.NewLine);

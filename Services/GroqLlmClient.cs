@@ -25,14 +25,50 @@ namespace AICAD.Services
 
         public async Task<string> GenerateAsync(string prompt)
         {
-            // Check rate limits BEFORE making the request
-            var rateLimitCheck = GroqRateLimiter.CheckRequest();
-            if (!rateLimitCheck.Allowed)
+            // If Groq is busy/anti-burst triggered, wait and retry automatically.
+            // Configurable maximum total wait (seconds) via GROQ_MAX_WAIT_SECONDS (default 120s).
+            var maxWaitSecondsStr = Environment.GetEnvironmentVariable("GROQ_MAX_WAIT_SECONDS", EnvironmentVariableTarget.User)
+                                     ?? Environment.GetEnvironmentVariable("GROQ_MAX_WAIT_SECONDS", EnvironmentVariableTarget.Process);
+            int maxWaitSeconds = 120;
+            if (!string.IsNullOrWhiteSpace(maxWaitSecondsStr) && int.TryParse(maxWaitSecondsStr, out int parsed) && parsed >= 0)
             {
-                var waitMsg = rateLimitCheck.SuggestedWait.HasValue 
-                    ? $" (Wait {rateLimitCheck.SuggestedWait.Value.TotalSeconds:F0}s)" 
-                    : "";
-                throw new Exception($"Groq rate limit: {rateLimitCheck.Reason}{waitMsg}");
+                maxWaitSeconds = parsed;
+            }
+
+            var totalWait = TimeSpan.Zero;
+            var startTime = DateTime.UtcNow;
+
+            while (true)
+            {
+                var rateLimitCheck = GroqRateLimiter.CheckRequest();
+                if (rateLimitCheck.Allowed)
+                {
+                    break; // allowed to proceed
+                }
+
+                // Not allowed: determine suggested wait
+                var suggested = rateLimitCheck.SuggestedWait ?? TimeSpan.FromSeconds(2);
+                var remainingAllowedWait = TimeSpan.FromSeconds(maxWaitSeconds) - totalWait;
+                if (remainingAllowedWait <= TimeSpan.Zero)
+                {
+                    AddinStatusLogger.Log("GroqLlmClient", $"Groq rate limit persists and max wait exceeded. Reason: {rateLimitCheck.Reason}");
+                    throw new Exception($"Groq rate limit: {rateLimitCheck.Reason} (max wait exceeded)");
+                }
+
+                var waitFor = suggested <= remainingAllowedWait ? suggested : remainingAllowedWait;
+                // Log and delay
+                AddinStatusLogger.Log("GroqLlmClient", $"Groq rate limit: {rateLimitCheck.Reason}. Waiting {waitFor.TotalSeconds:F1}s before retrying...");
+                try
+                {
+                    await Task.Delay(waitFor).ConfigureAwait(false);
+                }
+                catch (Exception)
+                {
+                    throw new Exception("Groq generation cancelled during wait");
+                }
+
+                totalWait = DateTime.UtcNow - startTime;
+                // Loop and re-check
             }
 
             var payload = new
@@ -48,8 +84,8 @@ namespace AICAD.Services
                 stream = false
             };
 
-            var response = await _client.SendAsync("https://api.groq.com/openai/v1/chat/completions", payload, CancellationToken.None);
-            
+            var response = await _client.SendAsync("https://api.groq.com/openai/v1/chat/completions", payload, CancellationToken.None).ConfigureAwait(false);
+
             // Record successful request for rate limiting
             if (response.Success)
             {

@@ -69,7 +69,8 @@ namespace AICAD.Services.Operations
             // ===== UTILITIES =====
             registry.Register("new_part", new Utilities.NewPartHandler());
             registry.Register("select_plane", new Utilities.SelectPlaneHandler());
-            registry.Register("select_face", new Utilities.SelectFaceHandler());
+            // Prefer PartFeatures.FaceHandler which implements more robust selection fallbacks
+            registry.Register("select_face", new PartFeatures.FaceHandler());
             registry.Register("set_units", new Utilities.SetUnitsHandler());
             registry.Register("set_document_units", new Utilities.SetUnitsHandler());
             registry.Register("set_unit", new Utilities.SetUnitsHandler());
@@ -92,7 +93,9 @@ namespace AICAD.Services.Operations
             registry.Register("constraint", new Sketching.ConstraintHandler());
 
             // ===== PART FEATURES =====
-            registry.Register("extrude", new PartFeatures.ExtrudeHandler());
+            registry.Register("extrude", new PartFeatures.ExtrudeBossHandler());
+            registry.Register("extrude_cut", new PartFeatures.ExtrudeCutHandler());
+            registry.Register("extrude-cut", new PartFeatures.ExtrudeCutHandler());
             registry.Register("revolve", new PartFeatures.RevolveHandler());
             registry.Register("sweep", new PartFeatures.SweepHandler());
             registry.Register("loft", new PartFeatures.LoftHandler());

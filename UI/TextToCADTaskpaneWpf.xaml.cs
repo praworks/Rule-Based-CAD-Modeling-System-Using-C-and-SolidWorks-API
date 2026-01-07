@@ -1690,7 +1690,7 @@ namespace AICAD.UI
         {
             if (string.IsNullOrWhiteSpace(_lastError)) return null;
             var sb = new StringBuilder();
-            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}");
             sb.AppendLine($"Error: {_lastError}");
             if (_lastLlm != TimeSpan.Zero || _lastTotal != TimeSpan.Zero)
             {
@@ -1705,7 +1705,7 @@ namespace AICAD.UI
         private string BuildRunCopyText()
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}");
             if (!string.IsNullOrWhiteSpace(_lastModel)) sb.AppendLine($"Model: {_lastModel}");
             if (!string.IsNullOrWhiteSpace(_lastPrompt)) sb.AppendLine($"Prompt: {_lastPrompt}");
             if (!string.IsNullOrWhiteSpace(_lastReply)) sb.AppendLine($"Reply: {_lastReply}");
@@ -2012,11 +2012,21 @@ Now convert this:
 Input: '{userPrompt}'
 Output:";
 
-                var client = _client ?? GetClient();
-                var response = await client.GenerateAsync(descriptionPrompt);
-                
+                // Use the global provider-priority generator so we don't instantiate
+                // a provider (e.g. Gemini) without credentials; this mirrors
+                // the same selection logic used elsewhere in the app.
+                string response = null;
+                try
+                {
+                    response = await Task.Run(() => AICAD.Services.ClarificationService.GenerateUserOnlyWithPriority(descriptionPrompt, 30)).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    AppendStatusLine("[Desc] Priority generation failed: " + ex.Message);
+                }
+
                 // Extract simple description from response
-                var lines = response.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                var lines = (response ?? string.Empty).Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
                 foreach (var line in lines)
                 {
                     var trimmed = line.Trim();
@@ -2228,7 +2238,7 @@ Output:";
                 AppendStatusLine("―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――");
                 var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                 _lastRunId = runId;
-                AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss} -----");
+                AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff} -----");
                 
                 // Kick off progress bar animation (realistic phase)
                 StartProgressPhase("communicating");
@@ -2571,6 +2581,9 @@ Output:";
                 var maxAttempts = 2;
                 string planJson = ExtractRawJson(reply);
                 Newtonsoft.Json.Linq.JObject planDoc = null;
+                // Track whether the user explicitly declined the automatic AI retry.
+                // If they declined, do not close the partial model so they can inspect it.
+                bool userDeclinedAutoRetry = false;
                 for (; attempt < maxAttempts; attempt++)
                 {
                     try
@@ -2636,7 +2649,7 @@ Output:";
                                 catch { }
                             }
                             catch { }
-                        }));
+                        }, false, true)); // continueOnError=false, preservePartsOnErrorOverride=true for interactive UI
                     }
                     catch (Exception ex)
                     {
@@ -2658,14 +2671,9 @@ Output:";
                         errDoc.ToString() +
                         "\nRemember: output only JSON with steps; use Front Plane and mm units.";
 
-                    try
-                    {
-                        if (exec != null && exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
-                        {
-                            try { Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle)); } catch { }
-                        }
-                    }
-                    catch { }
+                    // Do NOT close the newly-created part yet; ask the user first so they
+                    // can inspect the partial model for diagnostics. We'll only close if
+                    // the user explicitly allows the AI corrective retry below.
 
                     // Ask the user before attempting an automatic corrective retry via LLM
                     bool allowRetry = false;
@@ -2684,8 +2692,19 @@ Output:";
                     if (!allowRetry)
                     {
                         AppendStatusLine("User declined automatic LLM corrective retry.");
+                        userDeclinedAutoRetry = true;
                         break; // exit retry loop
                     }
+
+                    // User allowed retry — close the partial model before asking the LLM
+                    try
+                    {
+                        if (exec != null && exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
+                        {
+                            try { Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle)); } catch { }
+                        }
+                    }
+                    catch { }
 
                     var llmFixSw = System.Diagnostics.Stopwatch.StartNew();
                     if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
@@ -2843,8 +2862,17 @@ Output:";
                     {
                         if (exec != null && exec.CreatedNewPart && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
                         {
-                            // Close document on UI thread
-                            Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle));
+                            // Only close the partial document if the user did not explicitly decline
+                            // the automatic AI retry. If the user declined, preserve the model
+                            // so they can inspect it.
+                            if (!userDeclinedAutoRetry)
+                            {
+                                Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle));
+                            }
+                            else
+                            {
+                                AppendStatusLine($"Preserving partial model '{exec.ModelTitle}' after user declined AI retry.");
+                            }
                         }
                     }
                     catch { }
@@ -3774,7 +3802,9 @@ Output:";
 
             if (!hasDescription)
             {
-                var desc = (prompt ?? string.Empty).Trim();
+                // Prefer the generated short description (if available) over the full user prompt
+                var descSource = string.IsNullOrWhiteSpace(_generatedDescription) ? (prompt ?? string.Empty) : _generatedDescription;
+                var desc = (descSource ?? string.Empty).Trim();
                 if (desc.Length > 120) desc = desc.Substring(0, 120);
                 if (!string.IsNullOrWhiteSpace(desc))
                 {
@@ -3977,7 +4007,7 @@ Output:";
         {
             try
             {
-                var ts = DateTime.Now.ToString("HH:mm:ss");
+                var ts = DateTime.Now.ToString("HH:mm:ss.ffffff");
                 // Always mirror to temp file for debugging
                 try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
 

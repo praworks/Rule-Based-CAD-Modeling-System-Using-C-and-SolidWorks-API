@@ -735,5 +735,160 @@ namespace AICAD.Services
             }
             return null;
         }
+
+        /// <summary>
+        /// Generate using provider priority but suppress the system prompt (send only a user message).
+        /// Useful for short helper prompts like description generation where global system instructions
+        /// would interfere.
+        /// </summary>
+        public static string GenerateUserOnlyWithPriority(string prompt, int timeoutSeconds = 120)
+        {
+            try
+            {
+                var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                                  ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                                  ?? "local,gemini,groq";
+                var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+
+                Exception lastEx = null;
+                string lastReply = null;
+                var promptText = prompt;
+                foreach (var provider in priority)
+                {
+                    try
+                    {
+                        if (IsProviderMarkedDead(provider))
+                        {
+                            AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
+                            continue;
+                        }
+                        if (provider == "local")
+                        {
+                            var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                                ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                                ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(localEndpoint))
+                            {
+                                var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                                     ?? "local-model";
+                                var systemPrompt = string.Empty;
+
+                                var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
+                                if (localClient != null)
+                                {
+                                    var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
+                                    lastReply = reply;
+                                    try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
+                                    AddinStatusLogger.Log("ClarificationService", "Local LLM reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
+                                    return reply;
+                                }
+                            }
+                        }
+                        else if (provider == "gemini")
+                        {
+                            var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                         ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                         ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(gemKey))
+                            {
+                                var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                               ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                               ?? "gemini-1.5-flash";
+                                var gemSystemPrompt = string.Empty;
+                                var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
+                                if (gemClient != null)
+                                {
+                                    var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini", timeoutSeconds);
+                                    lastReply = reply;
+                                    try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
+                                    AddinStatusLogger.Log("ClarificationService", "Gemini reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
+                                    return reply;
+                                }
+                            }
+                        }
+                        else if (provider == "groq")
+                        {
+                            var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                          ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                          ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(groqKey))
+                            {
+                                var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                                ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
+                                                ?? "llama-3.3-70b-versatile";
+                                var groqSystemPrompt = string.Empty;
+                                var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
+                                if (groqClient != null)
+                                {
+                                    var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(promptText), "groq", timeoutSeconds);
+                                    lastReply = reply;
+                                    try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
+                                    AddinStatusLogger.Log("ClarificationService", "Groq reply length=" + (reply?.Length ?? 0));
+                                    try
+                                    {
+                                        var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
+                                        if (truncated.Length > 1500) truncated = truncated.Substring(0, 1500) + "...";
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Prompt: " + (promptText ?? string.Empty).Replace("\r\n", "\\n"));
+                                        AddinStatusLogger.Log("ClarificationService", "LLM Reply (truncated): " + truncated);
+                                    }
+                                    catch { }
+                                    return reply;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (ex is TimeoutException || IsConnectionRefused(ex))
+                        {
+                            try { AddinStatusLogger.Log("ClarificationService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
+                            try { MarkProviderDead(provider); } catch { }
+                            continue;
+                        }
+
+                        lastEx = ex;
+                        if (provider == "groq" && ex.Message.IndexOf("rate limit", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            AddinStatusLogger.Log("ClarificationService", "⚠️ [GROQ RATE LIMIT] " + ex.Message);
+                        }
+                        else
+                        {
+                            AddinStatusLogger.Log("ClarificationService", provider + " failed: " + ex.Message);
+                        }
+                    }
+                }
+
+                if (lastEx != null)
+                {
+                    try { LastRawReply = lastReply; } catch { }
+                    try { LastPromptUsed = promptText; } catch { }
+                    try { if (!string.IsNullOrEmpty(lastReply)) lastEx.Data["llm_reply"] = lastReply; } catch { }
+                    try { if (!string.IsNullOrEmpty(promptText)) lastEx.Data["llm_prompt"] = promptText; } catch { }
+                    throw lastEx;
+                }
+            }
+            catch (Exception ex)
+            {
+                AddinStatusLogger.Error("ClarificationService", "GenerateWithPriority failed", ex);
+            }
+            return null;
+        }
     }
 }

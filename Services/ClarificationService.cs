@@ -959,19 +959,5 @@ namespace AICAD.Services
             return sb.ToString();
         }
 
-        private static JObject ExtractJsonObject(string txt)
-        {
-            if (string.IsNullOrWhiteSpace(txt)) return null;
-            try
-            {
-                var first = txt.IndexOf('{');
-                if (first < 0) return null;
-                var last = txt.LastIndexOf('}');
-                if (last <= first) return null;
-                var candidate = txt.Substring(first, last - first + 1);
-                return JObject.Parse(candidate);
-            }
-            catch { return null; }
-        }
     }
 }

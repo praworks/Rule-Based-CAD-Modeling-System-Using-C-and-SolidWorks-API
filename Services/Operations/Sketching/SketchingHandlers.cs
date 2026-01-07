@@ -198,7 +198,7 @@ namespace AICAD.Services.Operations.Sketching
                 double ex = cx + r * Math.Cos(endRad);
                 double ey = cy + r * Math.Sin(endRad);
 
-                var arc = sketchMgr.CreateArc(cx, cy, 0, sx, sy, 0, ex, ey, 0);
+                var arc = sketchMgr.CreateArc(cx, cy, 0, sx, sy, 0, ex, ey, 0, 0);
                 if (arc == null)
                     return OperationResult.CreateFailure("Failed to create arc");
 
@@ -209,6 +209,8 @@ namespace AICAD.Services.Operations.Sketching
                 return OperationResult.CreateFailure($"arc failed: {ex.Message}");
             }
         }
+
+        private static double ToMeters(double mm) => mm / 1000.0;
     }
 
     // DimensionHandler extracted to its own file

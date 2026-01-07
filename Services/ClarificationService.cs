@@ -18,8 +18,9 @@ namespace AICAD.Services
         public const string DEFAULT_SYSTEM_PROMPT = 
             "You are a CAD planning agent for SOLIDWORKS. " +
             "Convert user requests into step plan JSON with a top-level 'steps' array. " +
-            "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; extrude{depth,type?}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
-            "ALWAYS use op:'auto_dimension' for ALL sketch dimensions and include numeric fields cx, cy, w, h in mm. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle. " +
+            "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; extrude{depth}; extrude_cut{depth}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
+            "CRITICAL: Use extrude_cut (separate op) for cuts, NOT extrude with type='cut'. Use select_face with id='top'/'front'/'right', NOT numeric IDs. " +
+            "For auto_dimension on circles, use radius or diameter field, NOT w/h. For rectangles, copy cx, cy, w, h values. " +
             "Units are millimeters. Output ONLY raw JSON - no markdown, no extra text.";
 
         // Expose last used prompt and raw reply for callers to log when helpful

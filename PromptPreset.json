@@ -184,6 +184,24 @@
         "depth": { "value": 40, "unit": "mm" }
       }
     }
-  }
-]
-
+  },
+  {
+    "id": "006",
+    "category": "Box with Hole",
+    "description": "Create a box and drill a hole using extrude_cut (NOT extrude with type cut)",
+    "prompt": "Create a 100x100x100mm box on the Top Plane, then create a 20mm radius hole in the center of the top face.",
+    "steps": [
+      {"op": "new_part"},
+      {"op": "select_plane", "name": "Top Plane"},
+      {"op": "sketch_begin"},
+      {"op": "rectangle_center", "cx": 0, "cy": 0, "w": 100, "h": 100},
+      {"op": "auto_dimension", "cx": 0, "cy": 0, "w": 100, "h": 100},
+      {"op": "sketch_end"},
+      {"op": "extrude", "depth": 100},
+      {"op": "select_face", "id": "top"},
+      {"op": "sketch_begin"},
+      {"op": "circle_center", "cx": 0, "cy": 0, "r": 20},
+      {"op": "auto_dimension", "r": 20},
+      {"op": "sketch_end"},
+      {"op": "extrude_cut", "depth": 100}
+    ]

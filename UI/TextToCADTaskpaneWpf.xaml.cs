@@ -485,7 +485,8 @@ namespace AICAD.UI
                 }
                 catch { }
                 try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
-                await BuildFromPromptAsync();
+                // Build is initiated by external listeners (SwAddin) via BuildRequested.
+                // Avoid calling BuildFromPromptAsync() here to prevent duplicate runs.
             };
             btnHistory.Click += BtnHistory_Click;
             // Use FindName to avoid field resolution issues during compile
@@ -1905,7 +1906,15 @@ namespace AICAD.UI
                                                  ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                  ?? "local-model";
                             var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                            ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle.";
+                                            ?? @"You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.
+
+CRITICAL RULES:
+1. **Extrusion cuts**: Use separate op ""extrude_cut"" with ""depth"". NEVER use op ""extrude"" with type ""cut"".
+2. **Face selection**: Use select_face with id=""top"", id=""front"", id=""right"" (NOT numeric IDs like id=1, which are unstable after extrude).
+3. **Circle dimensions**: For circle sketches, use auto_dimension with r or diameter, NOT w and h.
+
+For rectangles: copy cx, cy, w, h from rectangle_center into auto_dimension.
+Example for box with hole: new_part, select_plane, sketch_begin, rectangle_center, auto_dimension (copy values), sketch_end, extrude (solid), select_face (id=""top""), sketch_begin, circle_center, auto_dimension (use r), sketch_end, extrude_cut.";
                             
                             var dispTry = GetEndpointDisplayName(localEndpoint);
                             AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);

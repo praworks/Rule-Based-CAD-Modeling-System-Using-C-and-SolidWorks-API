@@ -891,5 +891,87 @@ namespace AICAD.Services
             }
             return null;
         }
+
+        /// <summary>
+        /// Ask the LLM to generate a plan (steps array) based on user intent and optional model facts.
+        /// Returns a JArray of steps ready for execution.
+        /// </summary>
+        public static JArray PlanFromIntent(string intent, JObject modelFacts = null)
+        {
+            try
+            {
+                var prompt = BuildIntentPrompt(intent, modelFacts);
+                AddinStatusLogger.Log("ClarificationService", $"Requesting LLM plan from intent: {intent}");
+
+                var reply = GenerateWithPriority(prompt);
+                if (string.IsNullOrWhiteSpace(reply))
+                    return null;
+
+                var extracted = ExtractJsonArray(reply);
+                if (extracted != null && extracted.Count > 0)
+                {
+                    AddinStatusLogger.Log("ClarificationService", $"PlanFromIntent returned {extracted.Count} steps");
+                    return extracted;
+                }
+
+                // If no array found, try extracting object with "steps" property
+                try
+                {
+                    var obj = ExtractJsonObject(reply);
+                    if (obj != null && obj["steps"] is JArray arr)
+                        return arr;
+                }
+                catch { }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                AddinStatusLogger.Error("ClarificationService", "PlanFromIntent failed", ex);
+                return null;
+            }
+        }
+
+        private static string BuildIntentPrompt(string intent, JObject facts)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(DEFAULT_SYSTEM_PROMPT + "\n");
+            sb.AppendLine("INSTRUCTIONS:");
+            sb.AppendLine("- The user wants to modify an existing SolidWorks model based on their intent.");
+            sb.AppendLine("- You are provided with the current model state (features, geometry, etc.).");
+            sb.AppendLine("- Generate a JSON ARRAY of steps to fulfill the user's request.");
+            sb.AppendLine("- Output ONLY the JSON array — no markdown, no extra text.");
+            sb.AppendLine("- Use operations that work on the existing model (select faces, sketch, cut, etc.).");
+            sb.AppendLine("- For dice pips: select face by id (top/bottom/left/right/front/back), sketch circles at calculated positions, extrude_cut shallow depth.\n");
+            
+            if (facts != null)
+            {
+                sb.AppendLine("CURRENT MODEL STATE:");
+                sb.AppendLine(facts.ToString());
+                sb.AppendLine();
+            }
+            
+            sb.AppendLine("USER INTENT:");
+            sb.AppendLine(intent);
+            sb.AppendLine();
+            sb.AppendLine("Generate the steps array now:");
+            
+            return sb.ToString();
+        }
+
+        private static JObject ExtractJsonObject(string txt)
+        {
+            if (string.IsNullOrWhiteSpace(txt)) return null;
+            try
+            {
+                var first = txt.IndexOf('{');
+                if (first < 0) return null;
+                var last = txt.LastIndexOf('}');
+                if (last <= first) return null;
+                var candidate = txt.Substring(first, last - first + 1);
+                return JObject.Parse(candidate);
+            }
+            catch { return null; }
+        }
     }
 }

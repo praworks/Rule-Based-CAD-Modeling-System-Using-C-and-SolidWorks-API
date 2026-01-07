@@ -77,6 +77,9 @@ namespace AICAD.Services.Operations
             registry.Register("set_material", new Utilities.SetMaterialHandler());
             registry.Register("description", new Utilities.DescriptionHandler());
             registry.Register("zoom_to_fit", new Utilities.ZoomToFitHandler());
+            // Model-aware planning
+            registry.Register("model_inspect", new Utilities.ModelInspectHandler());
+            registry.Register("plan_from_intent", new Utilities.PlanFromIntentHandler());
 
             // ===== SKETCHING =====
             registry.Register("sketch_begin", new Sketching.SketchBeginHandler());

@@ -178,10 +178,31 @@ namespace AICAD.Services.Operations.Sketching
             {
                 if (!inSketch)
                     return OperationResult.CreateFailure("Must be in sketch mode to draw arc");
+                if (sketchMgr == null)
+                    return OperationResult.CreateFailure("Sketch manager not available");
 
-                // TODO: Implement arc creation based on parameters
-                // Common parameters: center (cx, cy), radius, start_angle, end_angle
-                return OperationResult.CreateFailure("Arc operation not yet implemented");
+                double cx = ToMeters(step.Value<double?>("cx") ?? 0);
+                double cy = ToMeters(step.Value<double?>("cy") ?? 0);
+                double r = ToMeters(step.Value<double?>("r") ?? step.Value<double?>("radius") ?? 0);
+                double startDeg = step.Value<double?>("start_angle") ?? step.Value<double?>("start") ?? 0;
+                double endDeg = step.Value<double?>("end_angle") ?? step.Value<double?>("end") ?? 90;
+
+                if (r <= 0)
+                    return OperationResult.CreateFailure("Arc radius must be > 0");
+
+                double startRad = startDeg * Math.PI / 180.0;
+                double endRad = endDeg * Math.PI / 180.0;
+
+                double sx = cx + r * Math.Cos(startRad);
+                double sy = cy + r * Math.Sin(startRad);
+                double ex = cx + r * Math.Cos(endRad);
+                double ey = cy + r * Math.Sin(endRad);
+
+                var arc = sketchMgr.CreateArc(cx, cy, 0, sx, sy, 0, ex, ey, 0);
+                if (arc == null)
+                    return OperationResult.CreateFailure("Failed to create arc");
+
+                return OperationResult.CreateSuccess(stillInSketch: true);
             }
             catch (Exception ex)
             {

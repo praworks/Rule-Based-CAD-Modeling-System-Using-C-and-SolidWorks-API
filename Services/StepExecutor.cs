@@ -167,6 +167,12 @@ namespace AICAD.Services
                         {
                             // Attempt a one-time clarification with the LLM to correct the op if possible.
                             var rc = retryCounts.ContainsKey(i) ? retryCounts[i] : 0;
+                            try
+                            {
+                                var hint = MissingFeatureAdvisor.AdviseForUnknownOp(op);
+                                if (!string.IsNullOrWhiteSpace(hint)) AddinStatusLogger.Log("FeatureAdvice", hint);
+                            }
+                            catch { }
                             if (rc < 1)
                             {
                                 try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: unknown op '{op}' — requesting LLM correction (retry {rc + 1}/1)"); } catch { }
@@ -285,6 +291,12 @@ namespace AICAD.Services
                                     }
                                 }
                             }
+                            try
+                            {
+                                var hint = MissingFeatureAdvisor.AdviseForFailure(op, opResult.ErrorMessage);
+                                if (!string.IsNullOrWhiteSpace(hint)) AddinStatusLogger.Log("FeatureAdvice", hint);
+                            }
+                            catch { }
                             throw new Exception(opResult.ErrorMessage ?? "Operation failed");
                         }
 
@@ -300,6 +312,28 @@ namespace AICAD.Services
                             }
                         }
                         catch { }
+
+                        // Special handling for plan_from_intent: inject returned steps into execution
+                        if (opLower == "plan_from_intent" && opResult.Data != null)
+                        {
+                            try
+                            {
+                                var dataObj = Newtonsoft.Json.Linq.JToken.FromObject(opResult.Data);
+                                if (dataObj["steps"] is JArray generatedSteps && generatedSteps.Count > 0)
+                                {
+                                    AddinStatusLogger.Log("StepExecutor", $"Splicing {generatedSteps.Count} LLM-generated steps at index {i + 1}");
+                                    // Insert generated steps after the current step
+                                    for (int gi = 0; gi < generatedSteps.Count; gi++)
+                                    {
+                                        steps.Insert(i + 1 + gi, generatedSteps[gi]);
+                                    }
+                                }
+                            }
+                            catch (Exception spliceEx)
+                            {
+                                AddinStatusLogger.Error("StepExecutor", "Failed to splice plan_from_intent steps", spliceEx);
+                            }
+                        }
 
                         // If a dimension handler reports no created/set counts, request clarification and retry (self-heal)
                         try

@@ -50,16 +50,74 @@ namespace AICAD
                 _textToCadTaskpaneView.DisplayWindowFromHandlex64(_textToCadControl.Handle.ToInt64());
 
                 // Subscribe to wrapper events for diagnostics and integration
-                try
-                {
-                    _textToCadControl.BuildRequested += (s, e) =>
+                    try
                     {
-                        // try { AddinStatusLogger.Log("AICadAddin", "Build requested from Taskpane"); } catch { }
-                        try { AICAD.Services.LocalLogger.Log("SwAddin: wrapper BuildRequested received"); } catch { }
-                        try { _ = _textToCadControl.RunBuildFromPromptAsync(); } catch { }
-                    };
-                    _textToCadControl.PromptTextChanged += (s, e) => { /* try { AddinStatusLogger.Log("AICadAddin", $"Prompt changed (len={e.Text?.Length})"); } catch { } */ };
-                }
+                        _textToCadControl.BuildRequested += (s, e) =>
+                        {
+                            try { AICAD.Services.LocalLogger.Log("SwAddin: wrapper BuildRequested received"); } catch { }
+
+                            // Build-start diagnostics: dump model context store and selection summary unconditionally
+                            try
+                            {
+                                var modelDoc = _app.IActiveDoc2 as IModelDoc2;
+                                string title = "<no-doc>";
+                                try { if (modelDoc != null) title = modelDoc.GetTitle(); } catch { }
+
+                                // Attempt to get cached facts from ModelContextStore if available
+                                try
+                                {
+                                    var facts = AICAD.Services.Operations.Utilities.ModelContextStore.GetFacts(title);
+                                    if (facts != null)
+                                    {
+                                        AICAD.Services.LocalLogger.Log($"Build-Diagnostics: ModelFacts for '{title}': {facts.ToString(Newtonsoft.Json.Formatting.None)}");
+                                    }
+                                    else
+                                    {
+                                        AICAD.Services.LocalLogger.Log($"Build-Diagnostics: No cached ModelFacts for '{title}'");
+                                    }
+                                }
+                                catch (System.Exception exFacts)
+                                {
+                                    AICAD.Services.LocalLogger.Log($"Build-Diagnostics: Error retrieving ModelFacts: {exFacts.Message}");
+                                }
+
+                                // Selection summary
+                                try
+                                {
+                                    if (modelDoc != null)
+                                    {
+                                        var selMgr = modelDoc.ISelectionManager as SelectionMgr;
+                                        int selCount = 0;
+                                        try { selCount = selMgr.GetSelectedObjectCount2(-1); } catch { }
+                                        string firstType = "<none>";
+                                        try
+                                        {
+                                            if (selCount > 0)
+                                            {
+                                                int type = selMgr.GetSelectedObjectType3(1, -1);
+                                                firstType = type.ToString();
+                                            }
+                                        }
+                                        catch { }
+
+                                        AICAD.Services.LocalLogger.Log($"Build-Diagnostics: selectionCount={selCount} firstSelectedType={firstType}");
+                                    }
+                                    else
+                                    {
+                                        AICAD.Services.LocalLogger.Log("Build-Diagnostics: no active document to inspect selection");
+                                    }
+                                }
+                                catch (System.Exception exSel)
+                                {
+                                    AICAD.Services.LocalLogger.Log($"Build-Diagnostics: Error reading selection: {exSel.Message}");
+                                }
+                            }
+                            catch { }
+
+                            try { _ = _textToCadControl.RunBuildFromPromptAsync(); } catch { }
+                        };
+                        _textToCadControl.PromptTextChanged += (s, e) => { /* try { AddinStatusLogger.Log("AICadAddin", $"Prompt changed (len={e.Text?.Length})"); } catch { } */ };
+                    }
                 catch { }
 
                 // try { AddinStatusLogger.Log("AICadAddin", "Created AI-CAD-December taskpane with WPF design"); } catch { }

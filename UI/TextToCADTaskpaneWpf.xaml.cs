@@ -200,6 +200,8 @@ namespace AICAD.UI
         private IGoodFeedbackStore _goodStore;
         private DataApiService _dataApiService;
         private StatusWindow _statusWindow;
+        private ApiConsoleWindow _apiConsoleWindow;
+        private ApiEventMonitor _apiEventMonitor;
         private TimeSpan _lastLlm = TimeSpan.Zero;
         private TimeSpan _lastTotal = TimeSpan.Zero;
         private string _lastError;
@@ -490,6 +492,8 @@ namespace AICAD.UI
                 try { await Task.Yield(); } catch { }
             };
             btnHistory.Click += BtnHistory_Click;
+            btnApi.Checked += BtnApi_Checked;
+            btnApi.Unchecked += BtnApi_Unchecked;
             // Use FindName to avoid field resolution issues during compile
             var btnStatusBtn = FindName("btnStatus") as Button;
             if (btnStatusBtn != null)
@@ -1160,6 +1164,40 @@ namespace AICAD.UI
             catch (Exception ex) { MessageBox.Show(ex.Message, "History", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
+        private void BtnApi_Checked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                EnsureApiConsoleWindow();
+                if (_apiEventMonitor == null) _apiEventMonitor = new ApiEventMonitor(_swApp);
+                _apiEventMonitor.OnEventJson -= ApiEventMonitor_OnEventJson;
+                _apiEventMonitor.OnEventJson += ApiEventMonitor_OnEventJson;
+                _apiEventMonitor.Start();
+                _apiConsoleWindow?.Show();
+                _apiConsoleWindow?.Activate();
+                AppendStatusLine("[API] Real-time SolidWorks API console started");
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("API", "Failed to start API console", ex);
+                try { btnApi.IsChecked = false; } catch { }
+            }
+        }
+
+        private void BtnApi_Unchecked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_apiEventMonitor != null)
+                {
+                    _apiEventMonitor.OnEventJson -= ApiEventMonitor_OnEventJson;
+                    _apiEventMonitor.Stop();
+                }
+                AppendStatusLine("[API] Real-time SolidWorks API console stopped");
+            }
+            catch (Exception ex) { AppendDetailedStatus("API", "Failed to stop API console", ex); }
+        }
+
         private void BtnStatus_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1188,6 +1226,34 @@ namespace AICAD.UI
                 wnd.ShowDialog();
             }
             catch (Exception ex) { AppendDetailedStatus("UI", "Settings window error", ex); }
+        }
+
+        private void EnsureApiConsoleWindow()
+        {
+            try
+            {
+                if (_apiConsoleWindow == null || !_apiConsoleWindow.IsLoaded)
+                {
+                    _apiConsoleWindow = new ApiConsoleWindow();
+                    _apiConsoleWindow.Owner = Window.GetWindow(this);
+                    _apiConsoleWindow.Closed += (_, __) =>
+                    {
+                        try { btnApi.IsChecked = false; } catch { }
+                        _apiConsoleWindow = null;
+                    };
+                }
+            }
+            catch { }
+        }
+
+        private void ApiEventMonitor_OnEventJson(string line)
+        {
+            try
+            {
+                EnsureApiConsoleWindow();
+                _apiConsoleWindow?.AddLine(line);
+            }
+            catch { }
         }
 
         private void InitDbAndStores()

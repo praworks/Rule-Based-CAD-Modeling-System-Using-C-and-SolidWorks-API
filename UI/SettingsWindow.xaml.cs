@@ -35,6 +35,8 @@ namespace AICAD.UI
                 // Keep the two checkboxes in sync if both panels are visible
                 ChkEnableExceptionClassifier.Checked += ToggleExceptionClassifierChanged;
                 ChkEnableExceptionClassifier.Unchecked += ToggleExceptionClassifierChanged;
+                ChkRequireSpecClarification.Checked += ChkRequireSpecClarification_Changed;
+                ChkRequireSpecClarification.Unchecked += ChkRequireSpecClarification_Changed;
                 try
                 {
                     ChkStatusWindowTopmost.Checked += (s, e) => { try { SettingsManager.SetBool("StatusWindowTopmost", true); UpdateStatusWindowTopmost(true); } catch { } };
@@ -180,6 +182,10 @@ namespace AICAD.UI
                 try {
                     var enabled = AICAD.Services.SettingsManager.GetBool("EnableExceptionClassifier", false);
                     ChkEnableExceptionClassifier.IsChecked = enabled;
+                } catch { }
+                try {
+                    var req = AICAD.Services.SettingsManager.GetBool("RequireSpecClarification", false);
+                    ChkRequireSpecClarification.IsChecked = req;
                 } catch { }
                 try {
                     var top = AICAD.Services.SettingsManager.GetBool("StatusWindowTopmost", true);
@@ -1240,6 +1246,10 @@ namespace AICAD.UI
                 bool enabled = (ChkEnableExceptionClassifier.IsChecked == true);
                 AICAD.Services.SettingsManager.SetBool("EnableExceptionClassifier", enabled);
             } catch { }
+            try {
+                var requireSpec = (ChkRequireSpecClarification.IsChecked == true);
+                AICAD.Services.SettingsManager.SetBool("RequireSpecClarification", requireSpec);
+            } catch { }
             System.Windows.MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
@@ -1260,6 +1270,17 @@ namespace AICAD.UI
                     AICAD.Services.AddinStatusLogger.Log("Settings", $"EnableExceptionClassifier={(state ? "Enabled" : "Disabled")}");
                 }
                 catch { }
+            }
+            catch { }
+        }
+
+        private void ChkRequireSpecClarification_Changed(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var state = (sender as CheckBox)?.IsChecked == true;
+                try { AICAD.Services.SettingsManager.SetBool("RequireSpecClarification", state); } catch { }
+                try { AICAD.Services.AddinStatusLogger.Log("Settings", $"RequireSpecClarification={(state ? "Enabled" : "Disabled")} "); } catch { }
             }
             catch { }
         }

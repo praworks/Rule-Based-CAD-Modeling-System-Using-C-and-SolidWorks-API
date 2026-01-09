@@ -14,12 +14,18 @@ namespace AICAD.Services
     /// </summary>
     public static class ClarificationService
     {
+        public class CoTPlan
+        {
+            public string Thinking { get; set; }
+            public JArray Steps { get; set; }
+        }
         // Shared default system prompt - DRY principle: define once, use everywhere
         public const string DEFAULT_SYSTEM_PROMPT = 
             "You are a CAD planning agent for SOLIDWORKS. " +
             "Convert user requests into step plan JSON with a top-level 'steps' array. " +
             "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; extrude{depth}; extrude_cut{depth}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
             "CRITICAL: Use extrude_cut (separate op) for cuts, NOT extrude with type='cut'. Use select_face with id='top'/'front'/'right', NOT numeric IDs. " +
+            "For plane selection, use ONLY these exact plane names: 'Top Plane', 'Front Plane', or 'Right Plane'. " +
             "For auto_dimension on circles, use radius or diameter field, NOT w/h. For rectangles, copy cx, cy, w, h values. " +
             "Units are millimeters. Output ONLY raw JSON - no markdown, no extra text.";
 
@@ -896,10 +902,36 @@ namespace AICAD.Services
         /// Ask the LLM to generate a plan (steps array) based on user intent and optional model facts.
         /// Returns a JArray of steps ready for execution.
         /// </summary>
-        public static JArray PlanFromIntent(string intent, JObject modelFacts = null)
+        public static JToken PlanFromIntent(string intent, JObject modelFacts = null)
         {
             try
             {
+                // Prefer CoT-enabled plan when available; fallback to legacy array
+                // If user has enabled require-spec-clarification, do a quick heuristic check
+                try
+                {
+                    var require = SettingsManager.GetBool("RequireSpecClarification", false);
+                    if (require)
+                    {
+                        var missing = CheckForMissingEngineeringSpecs(intent, modelFacts);
+                        if (!string.IsNullOrWhiteSpace(missing))
+                        {
+                            // Return a JSON object indicating what clarification is needed
+                            var clar = new JObject();
+                            clar["clarification_needed"] = missing;
+                            return clar;
+                        }
+                    }
+                }
+                catch { }
+
+                var cot = PlanFromIntentWithThinking(intent, modelFacts);
+                if (cot != null && cot.Steps != null && cot.Steps.Count > 0)
+                {
+                    AddinStatusLogger.Log("ClarificationService", $"PlanFromIntent (CoT) returned {cot.Steps.Count} steps");
+                    return cot.Steps;
+                }
+
                 var prompt = BuildIntentPrompt(intent, modelFacts);
                 AddinStatusLogger.Log("ClarificationService", $"Requesting LLM plan from intent: {intent}");
 
@@ -932,6 +964,105 @@ namespace AICAD.Services
             }
         }
 
+        // Very small heuristic checker to determine if intent lacks engineering-critical specs.
+        // Returns a human-readable message describing missing information, or null/empty if OK.
+        private static string CheckForMissingEngineeringSpecs(string intent, JObject facts)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(intent)) return "User intent is empty; please provide details.";
+                var lower = intent.ToLowerInvariant();
+
+                // Flange: require PN class or standard (e.g., PN10, PN16, ANSI 150)
+                if (lower.Contains("flange") || lower.Contains("flanged"))
+                {
+                    if (!(lower.Contains("pn") || lower.Contains("pn ") || System.Text.RegularExpressions.Regex.IsMatch(lower, "pn\\s*\\d+") || lower.Contains("ansi") || lower.Contains("class")))
+                    {
+                        return "Flange requests require PN class or flange standard (e.g., 'PN16' or 'ANSI 150').";
+                    }
+                }
+
+                // Base/block/plate: require explicit dimensions (LxWxH or numeric values)
+                if (lower.Contains("base") || lower.Contains("plate") || lower.Contains("block") || lower.Contains("box") || lower.Contains("rectan"))
+                {
+                    // look for numeric dimension patterns (e.g., 100x50x20 or 100 x 50 x 20, or '100 mm')
+                    var hasDims = System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+(\\.\\d+)?\\s*(mm|cm|m)?") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+(\\.\\d+)?\\s*[x×]\\s*\\d+(\\.\\d+)?");
+                    if (!hasDims)
+                    {
+                        return "Please provide explicit dimensions for the base/plate (length x width x height) in millimeters.";
+                    }
+                }
+
+                // Cylinder: require radius/diameter and height
+                if (lower.Contains("cylinder"))
+                {
+                    var hasRadius = lower.Contains("radius") || lower.Contains("r=") || lower.Contains("diameter") || lower.Contains("dia") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+\\s*mm");
+                    var hasHeight = lower.Contains("height") || lower.Contains("h=") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+[x×]\\d+");
+                    if (!hasRadius || !hasHeight)
+                    {
+                        return "Cylinder requests require radius/diameter and height values (in mm).";
+                    }
+                }
+
+                // Hole(s): require diameter
+                if (lower.Contains("hole") || lower.Contains("holes"))
+                {
+                    if (!(lower.Contains("diameter") || lower.Contains("dia") || lower.Contains("d=") || lower.Contains("r=")))
+                    {
+                        return "Hole operations require a diameter (e.g., 'diameter 10mm').";
+                    }
+                }
+
+                return null;
+            }
+            catch { return null; }
+        }
+
+        /// <summary>
+        /// Ask the LLM to generate a JSON OBJECT with fields: thinking (string) and steps (array).
+        /// Returns a CoTPlan with both fields populated when possible.
+        /// </summary>
+        public static CoTPlan PlanFromIntentWithThinking(string intent, JObject modelFacts = null)
+        {
+            try
+            {
+                var prompt = BuildIntentPromptWithCoT(intent, modelFacts);
+                AddinStatusLogger.Log("ClarificationService", $"Requesting LLM CoT plan from intent: {intent}");
+
+                var reply = GenerateWithPriority(prompt);
+                if (string.IsNullOrWhiteSpace(reply))
+                    return null;
+
+                // Try to extract a JSON object first
+                var obj = ExtractJsonObject(reply);
+                if (obj != null)
+                {
+                    var thinking = obj["thinking"]?.ToString();
+                    var steps = obj["steps"] as JArray;
+                    if (steps == null)
+                    {
+                        // Fallback if only array is returned
+                        steps = ExtractJsonArray(reply);
+                    }
+                    return new CoTPlan { Thinking = thinking, Steps = steps };
+                }
+
+                // Fallback: if the model ignored instructions and returned an array
+                var arr = ExtractJsonArray(reply);
+                if (arr != null)
+                {
+                    return new CoTPlan { Thinking = null, Steps = arr };
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                AddinStatusLogger.Error("ClarificationService", "PlanFromIntentWithThinking failed", ex);
+                return null;
+            }
+        }
+
         private static string BuildIntentPrompt(string intent, JObject facts)
         {
             var sb = new System.Text.StringBuilder();
@@ -956,6 +1087,38 @@ namespace AICAD.Services
             sb.AppendLine();
             sb.AppendLine("Generate the steps array now:");
             
+            return sb.ToString();
+        }
+
+        private static string BuildIntentPromptWithCoT(string intent, JObject facts)
+        {
+            var sb = new System.Text.StringBuilder();
+            sb.AppendLine(DEFAULT_SYSTEM_PROMPT + "\n");
+            sb.AppendLine("FORMAT:");
+            sb.AppendLine("Return a single JSON OBJECT with:");
+            sb.AppendLine("{\"thinking\": string, \"steps\": [ ... ]}");
+            sb.AppendLine("- 'thinking' must explain geometric reasoning prior to steps: plane selection, coordinate math, constraints, and why dimensions are chosen.");
+            sb.AppendLine("- 'steps' must be executable ops for SolidWorks as per schema.");
+            sb.AppendLine("- Output ONLY the JSON object — no markdown fences, no extra text.\n");
+
+            sb.AppendLine("INSTRUCTIONS:");
+            sb.AppendLine("- The user wants to modify an existing SolidWorks model based on their intent.");
+            sb.AppendLine("- You are provided with the current model state (features, geometry, etc.).");
+            sb.AppendLine("- Ensure 'auto_dimension' is used for sketch dimensions where applicable, copying numeric fields when required.");
+            sb.AppendLine("- Use operations that work on the existing model (select faces, sketch, cut, etc.).\n");
+
+            if (facts != null)
+            {
+                sb.AppendLine("CURRENT MODEL STATE:");
+                sb.AppendLine(facts.ToString());
+                sb.AppendLine();
+            }
+
+            sb.AppendLine("USER INTENT:");
+            sb.AppendLine(intent);
+            sb.AppendLine();
+            sb.AppendLine("Return the JSON object now:");
+
             return sb.ToString();
         }
 

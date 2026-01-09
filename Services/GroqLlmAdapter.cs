@@ -67,5 +67,12 @@ namespace AICAD.Services
             }
             throw new InvalidOperationException("Groq request failed: " + (resp?.ErrorMessage ?? "unknown"));
         }
+
+        public async Task StreamAsync(string prompt, Action<string> onDelta, CancellationToken cancellationToken)
+        {
+            // Groq client doesn't support streaming in this adapter, so invoke callback with full response
+            var response = await GenerateAsync(prompt).ConfigureAwait(false);
+            onDelta?.Invoke(response);
+        }
     }
 }

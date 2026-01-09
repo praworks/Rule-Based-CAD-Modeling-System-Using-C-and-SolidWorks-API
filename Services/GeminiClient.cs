@@ -228,6 +228,13 @@ namespace AICAD.Services
             }
         }
 
+        public async Task StreamAsync(string prompt, System.Action<string> onDelta, System.Threading.CancellationToken cancellationToken)
+        {
+            // Gemini streaming not implemented here; fallback to single-shot
+            var text = await GenerateAsync(prompt).ConfigureAwait(false);
+            onDelta?.Invoke(text ?? string.Empty);
+        }
+
         public void Dispose() { /* keep shared HttpClient for process lifetime */ }
 
         private static string FormatJsonForLog(string json, int maxLength)

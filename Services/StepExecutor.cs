@@ -15,6 +15,9 @@ namespace AICAD.Services
         public List<JObject> Log { get; } = new List<JObject>();
         public bool CreatedNewPart { get; set; }
         public string ModelTitle { get; set; }
+        // If the executor encountered a request for user clarification (from LLM),
+        // this will contain the structured clarification object (e.g. { clarification_needed: "..." }).
+        public JObject Clarification { get; set; }
         /// <summary>Validation results for each step (post-execution geometry checks)</summary>
         public List<ExecutionValidator.ValidationResult> Validations { get; } = new List<ExecutionValidator.ValidationResult>();
         /// <summary>Overall validation report</summary>
@@ -319,6 +322,18 @@ namespace AICAD.Services
                             try
                             {
                                 var dataObj = Newtonsoft.Json.Linq.JToken.FromObject(opResult.Data);
+                                // If the planner returned a clarification request instead of steps,
+                                // surface it to the caller by setting result.Clarification and returning.
+                                if (dataObj["clarification_needed"] != null)
+                                {
+                                    // Attach clarification to the result and log it for UI consumption
+                                    var clar = new JObject { ["step"] = i, ["op"] = op, ["clarification"] = dataObj["clarification_needed"] };
+                                    result.Log.Add(clar);
+                                    result.Clarification = dataObj.Type == JTokenType.Object ? (JObject)dataObj : dataObj as JObject;
+                                    result.Success = false;
+                                    AddinStatusLogger.Log("StepExecutor", $"Plan requested clarification at step {i}");
+                                    return result; // halt execution so UI can surface clarification to user
+                                }
                                 if (dataObj["steps"] is JArray generatedSteps && generatedSteps.Count > 0)
                                 {
                                     AddinStatusLogger.Log("StepExecutor", $"Splicing {generatedSteps.Count} LLM-generated steps at index {i + 1}");

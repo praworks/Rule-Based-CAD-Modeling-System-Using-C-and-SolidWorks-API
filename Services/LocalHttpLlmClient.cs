@@ -233,6 +233,118 @@ namespace AICAD.Services
             return respText;
         }
 
+        public async Task StreamAsync(string prompt, Action<string> onDelta, System.Threading.CancellationToken cancellationToken)
+        {
+            // Fail fast if endpoint marked dead
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_endpoint) && _endpointDeadUntil.TryGetValue(_endpoint, out var until) && DateTime.UtcNow < until)
+                {
+                    AddinStatusLogger.Log("LocalHttpLlmClient", $"Skipping streaming request to {_endpoint} - marked unreachable until {until:u}");
+                    var full = await GenerateAsync(prompt).ConfigureAwait(false);
+                    onDelta?.Invoke(full ?? string.Empty);
+                    return;
+                }
+            }
+            catch { }
+
+            if (string.IsNullOrWhiteSpace(prompt)) { onDelta?.Invoke(string.Empty); return; }
+
+            var messages = new System.Collections.Generic.List<object>();
+            if (!string.IsNullOrWhiteSpace(_systemPrompt)) messages.Add(new { role = "system", content = _systemPrompt });
+            messages.Add(new { role = "user", content = prompt });
+
+            var jPayload = new JObject();
+            if (!string.IsNullOrWhiteSpace(_model)) jPayload["model"] = _model;
+            jPayload["messages"] = JArray.FromObject(messages);
+            jPayload["temperature"] = 0.7;
+            jPayload["stream"] = true;
+            string json = Newtonsoft.Json.JsonConvert.SerializeObject(jPayload);
+
+            try
+            {
+                AddinStatusLogger.Log("LocalHttpLlmClient", $"\n=== HTTP Streaming Request to {_endpoint} ===\n" + FormatJsonForLog(json, 1500));
+            }
+            catch { }
+
+            using (var req = new HttpRequestMessage(HttpMethod.Post, _endpoint))
+            {
+                req.Content = new StringContent(json, Encoding.UTF8, "application/json");
+                req.Headers.Accept.Clear();
+                req.Headers.Accept.ParseAdd("text/event-stream");
+                HttpResponseMessage resp = null;
+                try { resp = await _sharedHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cancellationToken).ConfigureAwait(false); }
+                catch (TaskCanceledException tex)
+                {
+                    AddinStatusLogger.Error("LocalHttpLlmClient", "Streaming request timed out/canceled", tex);
+                    onDelta?.Invoke(string.Empty); return;
+                }
+
+                if (!resp.IsSuccessStatusCode)
+                {
+                    var txt = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    AddinStatusLogger.Error("LocalHttpLlmClient", $"Streaming HTTP {(int)resp.StatusCode}", new Exception(txt));
+                    // Fallback to non-streaming
+                    var full = await GenerateAsync(prompt).ConfigureAwait(false);
+                    onDelta?.Invoke(full ?? string.Empty);
+                    return;
+                }
+
+                // Try to read as an SSE-style stream (lines prefixed with 'data: ')
+                try
+                {
+                    using (var stream = await resp.Content.ReadAsStreamAsync().ConfigureAwait(false))
+                    using (var reader = new System.IO.StreamReader(stream, Encoding.UTF8))
+                    {
+                        string line;
+                        while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+                        {
+                            line = await reader.ReadLineAsync().ConfigureAwait(false);
+                            if (line == null) break;
+                            if (line.Length == 0) continue; // skip keepalives
+                            if (line.StartsWith("data:", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var payload = line.Substring(5).Trim();
+                                if (payload == "[DONE]") break;
+                                try
+                                {
+                                    var j = JObject.Parse(payload);
+                                    // Capture model name if provided
+                                    try { if (j["model"] != null) _model = j["model"].ToString(); } catch { }
+
+                                    string delta = null;
+                                    var choices = j["choices"] as JArray;
+                                    if (choices != null && choices.Count > 0)
+                                    {
+                                        var first = choices[0] as JObject;
+                                        delta = first?["delta"]? ["content"]?.ToString()
+                                                ?? first?["message"]? ["content"]?.ToString()
+                                                ?? first?["text"]?.ToString();
+                                    }
+                                    else if (j["content"] != null)
+                                    {
+                                        delta = j["content"].ToString();
+                                    }
+                                    if (!string.IsNullOrEmpty(delta)) onDelta?.Invoke(delta);
+                                }
+                                catch
+                                {
+                                    // Some servers stream plain text lines instead of JSON chunks
+                                    if (!string.IsNullOrEmpty(payload)) onDelta?.Invoke(payload);
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AddinStatusLogger.Error("LocalHttpLlmClient", "Streaming parse failed; falling back", ex);
+                    var full = await GenerateAsync(prompt).ConfigureAwait(false);
+                    onDelta?.Invoke(full ?? string.Empty);
+                }
+            }
+        }
+
         // Backward-compatible wrapper used by older call sites that passed a CancellationToken.
         public async Task<string> SendPromptAsync(string prompt, System.Threading.CancellationToken cancellationToken)
         {

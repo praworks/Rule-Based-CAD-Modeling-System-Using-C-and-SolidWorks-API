@@ -36,7 +36,21 @@
                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                 <ListBox.ItemTemplate>
                     <DataTemplate>
-                        <TextBlock Text="{Binding}" TextWrapping="Wrap" FontSize="12" />
+                        <StackPanel Margin="2,1">
+                            <RichTextBox BorderThickness="0" 
+                                       Background="Transparent"
+                                       IsReadOnly="True"
+                                       FontFamily="Consolas"
+                                       FontSize="12"
+                                       Loaded="CodeBlock_Loaded"
+                                       Tag="{Binding}">
+                                <RichTextBox.Resources>
+                                    <Style TargetType="Paragraph">
+                                        <Setter Property="Margin" Value="0"/>
+                                    </Style>
+                                </RichTextBox.Resources>
+                            </RichTextBox>
+                        </StackPanel>
                     </DataTemplate>
                 </ListBox.ItemTemplate>
             </ListBox>

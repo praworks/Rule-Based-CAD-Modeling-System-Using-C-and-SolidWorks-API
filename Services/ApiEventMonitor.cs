@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Windows.Threading;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
@@ -7,17 +8,22 @@ using SolidWorks.Interop.swconst;
 
 namespace AICAD.Services
 {
-    /// <summary>
-    /// Subscribes to SolidWorks events and emits JSON lines describing key API activity
-    /// for developer debugging (view changes, selections, and model modifications).
-    /// </summary>
     public sealed class ApiEventMonitor : IDisposable
     {
         private readonly ISldWorks _swApp;
         private readonly SldWorks _swStrong;
         private readonly object _sync = new object();
-
         private bool _running;
+
+        // Debounce timers to prevent flooding
+        private DispatcherTimer _modifyDebounceTimer;
+        private DispatcherTimer _viewDebounceTimer;
+        private const int DEBOUNCE_MS = 500;
+        
+        // Tracking last event times
+        private DateTime _lastModifyTime = DateTime.MinValue;
+        private DateTime _lastViewChangeTime = DateTime.MinValue;
+
         private PartDoc _partDoc;
         private AssemblyDoc _assemblyDoc;
         private DrawingDoc _drawingDoc;
@@ -40,6 +46,10 @@ namespace AICAD.Services
         private DAssemblyDocEvents_ActiveViewChangeNotifyEventHandler _assemblyViewHandler;
         private DModelViewEvents_ViewChangeNotifyEventHandler _modelViewChangeHandler;
 
+        // Configuration flags
+        public bool TrackViewChanges { get; set; } = false;  // DISABLED by default - too noisy
+        public bool DebounceEvents { get; set; } = true;     // ENABLED by default - prevents flooding
+
         public event Action<string> OnEventJson;
 
         public ApiEventMonitor(ISldWorks swApp)
@@ -56,7 +66,7 @@ namespace AICAD.Services
                 AttachApplicationHandlers();
                 AttachModelHandlers();
                 _running = true;
-                Emit("startup", new JObject { ["message"] = "API monitor started" });
+                Emit("startup", new JObject { ["message"] = "API monitor started (ViewChangeNotify disabled, ModifyNotify debounced @500ms)" });
             }
         }
 
@@ -75,12 +85,13 @@ namespace AICAD.Services
         public void Dispose()
         {
             Stop();
+            _modifyDebounceTimer?.Stop();
+            _viewDebounceTimer?.Stop();
         }
 
         private void AttachApplicationHandlers()
         {
             if (_swStrong == null) return;
-
             _docChangeHandler = new DSldWorksEvents_ActiveModelDocChangeNotifyEventHandler(OnActiveModelDocChange);
             _fileOpenHandler = new DSldWorksEvents_FileOpenPostNotifyEventHandler(OnFileOpenPostNotify);
             _fileNewHandler = new DSldWorksEvents_FileNewNotify2EventHandler(OnFileNewNotify2);
@@ -109,7 +120,6 @@ namespace AICAD.Services
         private void AttachModelHandlers()
         {
             DetachModelHandlers();
-
             var model = _swApp?.IActiveDoc2 as ModelDoc2;
             if (model == null) return;
 
@@ -124,7 +134,7 @@ namespace AICAD.Services
                 _partViewHandler = new DPartDocEvents_ActiveViewChangeNotifyEventHandler(OnActiveViewChanged);
                 try { _partDoc.NewSelectionNotify += _partSelectionHandler; } catch { }
                 try { _partDoc.ModifyNotify += _partModifyHandler; } catch { }
-                try { _partDoc.ActiveViewChangeNotify += _partViewHandler; } catch { }
+                if (TrackViewChanges) try { _partDoc.ActiveViewChangeNotify += _partViewHandler; } catch { }
             }
 
             if (_assemblyDoc != null)
@@ -134,7 +144,7 @@ namespace AICAD.Services
                 _assemblyViewHandler = new DAssemblyDocEvents_ActiveViewChangeNotifyEventHandler(OnActiveViewChanged);
                 try { _assemblyDoc.NewSelectionNotify += _assemblySelectionHandler; } catch { }
                 try { _assemblyDoc.ModifyNotify += _assemblyModifyHandler; } catch { }
-                try { _assemblyDoc.ActiveViewChangeNotify += _assemblyViewHandler; } catch { }
+                if (TrackViewChanges) try { _assemblyDoc.ActiveViewChangeNotify += _assemblyViewHandler; } catch { }
             }
 
             if (_drawingDoc != null)
@@ -145,7 +155,7 @@ namespace AICAD.Services
                 try { _drawingDoc.ModifyNotify += _drawingModifyHandler; } catch { }
             }
 
-            AttachViewHandler(model);
+            if (TrackViewChanges) AttachViewHandler(model);
         }
 
         private void AttachViewHandler(ModelDoc2 model)
@@ -154,7 +164,6 @@ namespace AICAD.Services
             {
                 var view = model?.ActiveView as ModelView;
                 if (view == null) return;
-
                 _activeView = view;
                 _modelViewChangeHandler = new DModelViewEvents_ViewChangeNotifyEventHandler(OnViewChangeNotify);
                 try { _activeView.ViewChangeNotify += _modelViewChangeHandler; } catch { }
@@ -204,28 +213,29 @@ namespace AICAD.Services
         private int OnActiveModelDocChange()
         {
             try { AttachModelHandlers(); } catch { }
-            Emit("model_change", new JObject { ["message"] = "Active model changed" });
+            EmitApiCall("swApp.ActiveModelDocChangeNotify", null, null);
             return 0;
         }
 
         private int OnFileOpenPostNotify(string fileName)
         {
             try { AttachModelHandlers(); } catch { }
-            Emit("file_open", new JObject { ["path"] = fileName ?? string.Empty });
+            EmitApiCall("swApp.FileOpenPostNotify", new[] { $"\"{fileName}\"" }, fileName);
             return 0;
         }
 
         private int OnFileNewNotify2(object newDoc, int docType, string templateName)
         {
             try { AttachModelHandlers(); } catch { }
-            Emit("file_new", new JObject { ["docType"] = docType, ["template"] = templateName ?? string.Empty });
+            var docTypeName = ((swDocumentTypes_e)docType).ToString();
+            EmitApiCall("swApp.FileNewNotify2", new[] { "newDoc", docTypeName, $"\"{templateName}\"" }, templateName);
             return 0;
         }
 
         private int OnDocumentLoadNotify2(string docTitle, string docPath)
         {
             try { AttachModelHandlers(); } catch { }
-            Emit("file_load", new JObject { ["title"] = docTitle ?? string.Empty, ["path"] = docPath ?? string.Empty });
+            EmitApiCall("swApp.DocumentLoadNotify2", new[] { $"\"{docTitle}\"", $"\"{docPath}\"" }, docPath);
             return 0;
         }
 
@@ -234,8 +244,36 @@ namespace AICAD.Services
             try
             {
                 var model = _swApp?.IActiveDoc2 as ModelDoc2;
-                var payload = BuildSelectionPayload(model);
-                Emit("selection", payload);
+                if (model == null) return 0;
+
+                var selMgr = model.SelectionManager as ISelectionMgr;
+                var count = selMgr?.GetSelectedObjectCount2(-1) ?? 0;
+
+                if (count > 0)
+                {
+                    var typeId = selMgr.GetSelectedObjectType3(1, -1);
+                    var typeName = Enum.GetName(typeof(swSelectType_e), typeId) ?? typeId.ToString();
+                    
+                    string name = "";
+                    try
+                    {
+                        var obj = selMgr.GetSelectedObject6(1, -1);
+                        if (obj != null)
+                        {
+                            var feature = obj as Feature;
+                            if (feature != null) name = feature.Name;
+                            else
+                            {
+                                var comp = obj as Component2;
+                                if (comp != null) name = comp.Name2;
+                            }
+                        }
+                    }
+                    catch { }
+
+                    var args = new[] { $"\"{name}\"", $"\"{typeName}\"", "0", "0", "0", "false", "0", "null", "0" };
+                    EmitApiCall("swModel.Extension.SelectByID2", args, $"Selected: {typeName}" + (string.IsNullOrEmpty(name) ? "" : $" ({name})"));
+                }
             }
             catch { }
             return 0;
@@ -243,24 +281,46 @@ namespace AICAD.Services
 
         private int OnModify()
         {
-            try
+            if (DebounceEvents)
             {
-                var model = _swApp?.IActiveDoc2 as ModelDoc2;
-                var payload = BuildModifyPayload(model);
-                Emit("modify", payload);
+                _lastModifyTime = DateTime.UtcNow;
+                
+                if (_modifyDebounceTimer == null)
+                {
+                    _modifyDebounceTimer = new DispatcherTimer();
+                    _modifyDebounceTimer.Interval = TimeSpan.FromMilliseconds(DEBOUNCE_MS);
+                    _modifyDebounceTimer.Tick += (s, e) =>
+                    {
+                        if ((DateTime.UtcNow - _lastModifyTime).TotalMilliseconds >= DEBOUNCE_MS)
+                        {
+                            _modifyDebounceTimer.Stop();
+                            EmitApiCall("swModel.ModifyNotify", null, "Model modified");
+                        }
+                    };
+                }
+
+                if (!_modifyDebounceTimer.IsEnabled)
+                {
+                    _modifyDebounceTimer.Start();
+                }
             }
-            catch { }
+            else
+            {
+                EmitApiCall("swModel.ModifyNotify", null, "Model modified");
+            }
+            
             return 0;
         }
 
         private int OnActiveViewChanged()
         {
+            if (!TrackViewChanges) return 0;
+            
             try
             {
                 var model = _swApp?.IActiveDoc2 as ModelDoc2;
                 AttachViewHandler(model);
-                var payload = BuildViewPayload(model);
-                Emit("view_change", payload);
+                EmitApiCall("swModel.ActiveViewChangeNotify", null, "View changed");
             }
             catch { }
             return 0;
@@ -268,279 +328,72 @@ namespace AICAD.Services
 
         private int OnViewChangeNotify(object viewInfo)
         {
-            try
+            if (!TrackViewChanges) return 0;
+
+            if (DebounceEvents)
             {
-                var model = _swApp?.IActiveDoc2 as ModelDoc2;
-                var payload = BuildViewPayload(model);
-                if (viewInfo != null)
+                _lastViewChangeTime = DateTime.UtcNow;
+                
+                if (_viewDebounceTimer == null)
                 {
-                    payload["info"] = viewInfo.ToString();
+                    _viewDebounceTimer = new DispatcherTimer();
+                    _viewDebounceTimer.Interval = TimeSpan.FromMilliseconds(DEBOUNCE_MS);
+                    _viewDebounceTimer.Tick += (s, e) =>
+                    {
+                        if ((DateTime.UtcNow - _lastViewChangeTime).TotalMilliseconds >= DEBOUNCE_MS)
+                        {
+                            _viewDebounceTimer.Stop();
+                            EmitApiCall("swView.ViewChangeNotify", null, "View updated");
+                        }
+                    };
                 }
-                Emit("view_change", payload);
+
+                if (!_viewDebounceTimer.IsEnabled)
+                {
+                    _viewDebounceTimer.Start();
+                }
             }
-            catch { }
+            else
+            {
+                EmitApiCall("swView.ViewChangeNotify", null, "View updated");
+            }
+
             return 0;
         }
 
-        private JObject BuildSelectionPayload(ModelDoc2 model)
+        private void EmitApiCall(string methodSignature, string[] parameters, string description)
         {
-            var payload = new JObject();
             try
             {
-                var selMgr = model?.SelectionManager as ISelectionMgr;
-                var count = selMgr?.GetSelectedObjectCount2(-1) ?? 0;
-                payload["count"] = count;
-                var items = new JArray();
-                for (int i = 1; i <= count; i++)
+                var codeSnippet = methodSignature;
+                
+                if (!methodSignature.Contains("(") && !methodSignature.StartsWith("//"))
                 {
-                    var item = new JObject { ["index"] = i };
-                    try
+                    if (parameters != null && parameters.Length > 0)
                     {
-                        var typeId = selMgr.GetSelectedObjectType3(i, -1);
-                        item["type"] = Enum.GetName(typeof(swSelectType_e), typeId) ?? typeId.ToString();
+                        codeSnippet += "(" + string.Join(", ", parameters) + ")";
                     }
-                    catch { }
-
-                    try
+                    else
                     {
-                        var obj = selMgr.GetSelectedObject6(i, -1);
-                        if (obj != null)
-                        {
-                            item["objectType"] = obj.GetType().Name;
-                            var feat = obj as Feature;
-                            if (feat != null)
-                            {
-                                try { item["featureType"] = feat.GetTypeName2(); } catch { }
-                                try { item["name"] = feat.Name ?? string.Empty; } catch { }
-                            }
-                            var comp = obj as Component2;
-                            if (comp != null)
-                            {
-                                try { item["name"] = comp.Name2 ?? comp.Name; } catch { }
-                            }
-                            var face = obj as Face2;
-                            if (face != null)
-                            {
-                                TrySet(() => item["id"] = face.GetFaceId());
-                                if (!item.ContainsKey("name")) TrySet(() => item["name"] = face.GetFeature()?.Name ?? string.Empty);
-                            }
-                            var edge = obj as Edge;
-                            if (edge != null)
-                            {
-                                TrySet(() => item["id"] = edge.GetID());
-                                if (!item.ContainsKey("name")) TrySet(() => item["name"] = edge.GetTwoAdjacentFaces2()?.OfType<Face2>().FirstOrDefault()?.GetFeature()?.Name ?? string.Empty);
-                            }
-                            AddShapeDescriptors(item, obj);
-                            if (!item.ContainsKey("name")) item["name"] = string.Empty;
-                        }
+                        codeSnippet += "()";
                     }
-                    catch { }
-
-                    items.Add(item);
                 }
-                payload["items"] = items;
-            }
-            catch (Exception ex)
-            {
-                payload["error"] = ex.Message;
-            }
-            return payload;
-        }
-
-        private JObject BuildModifyPayload(ModelDoc2 model)
-        {
-            var payload = new JObject();
-            try
-            {
-                payload["model"] = model?.GetTitle() ?? string.Empty;
-                payload["path"] = model?.GetPathName() ?? string.Empty;
-                payload["stack"] = System.Environment.StackTrace;
-                payload["utc"] = DateTime.UtcNow.ToString("o");
-            }
-            catch (Exception ex)
-            {
-                payload["error"] = ex.Message;
-            }
-            return payload;
-        }
-
-        private JObject BuildViewPayload(ModelDoc2 model)
-        {
-            var payload = new JObject();
-            try
-            {
-                var view = model?.ActiveView as ModelView;
-                if (view != null)
+                
+                if (!codeSnippet.EndsWith(";") && !codeSnippet.StartsWith("//"))
                 {
-                    TrySet(() => payload["scale"] = view.Scale2);
-                    TrySet(() =>
-                    {
-                        var translation = view.Translation2 as object[];
-                        if (translation != null && translation.Length >= 3)
-                        {
-                            payload["translation"] = new JArray(
-                                SafeDouble(translation.ElementAtOrDefault(0)),
-                                SafeDouble(translation.ElementAtOrDefault(1)),
-                                SafeDouble(translation.ElementAtOrDefault(2))
-                            );
-                        }
-                    });
-                    TrySet(() =>
-                    {
-                        var orientationObj = view.Orientation2 as object[];
-                        if (orientationObj != null && orientationObj.Length > 0)
-                        {
-                            payload["orientation"] = new JArray(orientationObj.Select(SafeDouble));
-                        }
-                        else
-                        {
-                            var xform = view.Orientation as MathTransform;
-                            if (xform != null)
-                            {
-                                var data = xform.ArrayData as object[];
-                                if (data != null) payload["orientation"] = new JArray(data.Select(SafeDouble));
-                            }
-                        }
-                    });
+                    codeSnippet += ";";
                 }
-            }
-            catch (Exception ex)
-            {
-                payload["error"] = ex.Message;
-            }
-            return payload;
-        }
 
-        private void AddShapeDescriptors(JObject item, object obj)
-        {
-            try
-            {
-                // Sketch segment details
-                var seg = obj as SketchSegment;
-                if (seg != null)
+                var payload = new JObject
                 {
-                    var segType = (swSketchSegments_e)seg.GetType();
-                    var segObj = new JObject
-                    {
-                        ["type"] = segType.ToString()
-                    };
+                    ["code"] = codeSnippet,
+                    ["method"] = methodSignature.Split('(')[0],
+                    ["description"] = description ?? ""
+                };
 
-                    TrySet(() => segObj["length"] = SafeDouble(seg.GetLength()));
-                    TrySet(() =>
-                    {
-                        if (segType == swSketchSegments_e.swSketchARC)
-                        {
-                            var arc = seg as SketchArc;
-                            if (arc != null)
-                            {
-                                segObj["radius"] = SafeDouble(arc.GetRadius());
-                            }
-                        }
-                    });
-
-                    item["segment"] = segObj;
-                    return;
-                }
-
-                // Sketch summary
-                var sketch = obj as Sketch;
-                if (sketch != null)
-                {
-                    var segs = sketch.GetSketchSegments() as object[];
-                    if (segs != null)
-                    {
-                        var counts = segs
-                            .OfType<SketchSegment>()
-                            .GroupBy(s => (swSketchSegments_e)s.GetType())
-                            .ToDictionary(g => g.Key.ToString(), g => g.Count());
-                        var summary = new JObject();
-                        foreach (var kvp in counts) summary[kvp.Key] = kvp.Value;
-                        summary["total"] = segs.Length;
-                        item["sketch"] = summary;
-                    }
-                    return;
-                }
-
-                // Face geometry
-                var face = obj as Face2;
-                if (face != null)
-                {
-                    var geom = new JObject();
-                    TrySet(() => geom["area"] = SafeDouble(face.GetArea()));
-                    TrySet(() =>
-                    {
-                        var box = face.GetBox();
-                        var bbox = ToBoundingBox(box);
-                        if (bbox != null) geom["bbox"] = bbox;
-                    });
-                    TrySet(() =>
-                    {
-                        var surf = face.GetSurface();
-                        if (surf != null)
-                        {
-                            geom["surfaceType"] = ((swSurfaceTypes_e)surf.Identity()).ToString();
-                        }
-                    });
-                    if (geom.Count > 0) item["geometry"] = geom;
-                    return;
-                }
-
-                // Edge geometry
-                var edge = obj as Edge;
-                if (edge != null)
-                {
-                    var geom = new JObject();
-                    TrySet(() =>
-                    {
-                        var curve = edge.GetCurve();
-                        if (curve != null)
-                        {
-                            var bbox = ToBoundingBox(curve.GetBoundingBox());
-                            if (bbox != null) geom["bbox"] = bbox;
-                        }
-                    });
-                    if (geom.Count > 0) item["geometry"] = geom;
-                    return;
-                }
-
-                // Body geometry
-                var body = obj as Body2;
-                if (body != null)
-                {
-                    var geom = new JObject();
-                    TrySet(() =>
-                    {
-                        var bbox = ToBoundingBox(body.GetBodyBox());
-                        if (bbox != null) geom["bbox"] = bbox;
-                    });
-                    if (geom.Count > 0) item["geometry"] = geom;
-                }
+                Emit("api_call", payload);
             }
             catch { }
-        }
-
-        private static JArray ToBoundingBox(object box)
-        {
-            try
-            {
-                var arr = box as object[];
-                if (arr == null || arr.Length < 6) return null;
-                return new JArray(
-                    SafeDouble(arr[0]), SafeDouble(arr[1]), SafeDouble(arr[2]),
-                    SafeDouble(arr[3]), SafeDouble(arr[4]), SafeDouble(arr[5])
-                );
-            }
-            catch { return null; }
-        }
-
-        private static double SafeDouble(object value)
-        {
-            try { return Convert.ToDouble(value); } catch { return 0; }
-        }
-
-        private static void TrySet(Action action)
-        {
-            try { action(); } catch { }
         }
 
         private void Emit(string type, JObject data)
@@ -553,7 +406,6 @@ namespace AICAD.Services
                     ["type"] = type,
                     ["data"] = data ?? new JObject()
                 };
-                // Use JsonConvert to avoid relying on extension overloads that may differ across Newtonsoft versions
                 var line = JsonConvert.SerializeObject(record, Formatting.None);
                 try { OnEventJson?.Invoke(line); } catch { }
                 try { AddinStatusLogger.Log("API", line); } catch { }

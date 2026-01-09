@@ -54,7 +54,7 @@
                         <ColumnDefinition Width="*"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Material" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="0" IsEditable="True" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Stretch" Background="{x:Null}">
+                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="-1" IsEditable="True" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Stretch" Background="{x:Null}">
                         <ComboBoxItem>Steel, Mild</ComboBoxItem>
                         <ComboBoxItem>Aluminum 1060 Alloy</ComboBoxItem>
                         <ComboBoxItem>Stainless Steel</ComboBoxItem>

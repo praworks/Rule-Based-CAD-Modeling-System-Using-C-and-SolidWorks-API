@@ -3443,10 +3443,7 @@ Output:";
                             materialComboBox.Text = material;
                         }
                     }
-                    else
-                    {
-                        materialComboBox.SelectedIndex = 0; // Default to first material
-                    }
+                    // else: Leave material blank if not provided (no default selection)
 
                     // Load description
                     typeDescriptionTextBox.Text = description ?? string.Empty;

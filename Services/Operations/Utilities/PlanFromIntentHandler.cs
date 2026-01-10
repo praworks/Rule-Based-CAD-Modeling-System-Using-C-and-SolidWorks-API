@@ -147,14 +147,24 @@ namespace AICAD.Services.Operations.Utilities
                 }
                 catch { }
 
-                var steps = ClarificationService.PlanFromIntent(intent, facts);
-                
+                var planResult = ClarificationService.PlanFromIntent(intent, facts);
+
+                if (planResult == null)
+                    return OperationResult.CreateFailure("LLM did not return valid steps for intent");
+
+                // If the planner returned a clarification object, forward it to the caller
+                if (planResult.Type == Newtonsoft.Json.Linq.JTokenType.Object && planResult["clarification_needed"] != null)
+                {
+                    AddinStatusLogger.Log("PlanFromIntent", "Clarification required for intent");
+                    return OperationResult.CreateSuccess(stillInSketch: inSketch, data: new { clarification = planResult, intent });
+                }
+
+                // Expect an array of steps otherwise
+                var steps = planResult as Newtonsoft.Json.Linq.JArray;
                 if (steps == null || steps.Count == 0)
                     return OperationResult.CreateFailure("LLM did not return valid steps for intent");
 
                 AddinStatusLogger.Log("PlanFromIntent", $"Generated {steps.Count} steps from intent: {intent}");
-
-                // Return the steps array so the executor can splice them in
                 return OperationResult.CreateSuccess(stillInSketch: inSketch, data: new { steps, intent });
             }
             catch (Exception ex)

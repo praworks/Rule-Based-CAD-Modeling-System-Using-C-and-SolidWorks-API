@@ -26,6 +26,12 @@
     <!-- Console and status window brushes -->
     <SolidColorBrush x:Key="ConsoleBackground" Color="#000000"/>
     <SolidColorBrush x:Key="ConsoleForeground" Color="#DCDCDC"/>
+    <!-- API monitor row backgrounds -->
+    <SolidColorBrush x:Key="ApiModifyBrush" Color="#FFEDEE"/>
+    <SolidColorBrush x:Key="ApiSelectionBrush" Color="#E8F6EC"/>
+    <SolidColorBrush x:Key="ApiFileLoadBrush" Color="#E9F1FF"/>
+    <SolidColorBrush x:Key="ApiViewChangeBrush" Color="#F4F4F4"/>
+    <SolidColorBrush x:Key="ApiDefaultBrush" Color="#FFFFFF"/>
     <!-- StatusRestBrush removed green; use panel background to avoid green flash -->
     <SolidColorBrush x:Key="StatusRestBrush" Color="#F9F9F9"/>
     <SolidColorBrush x:Key="StatusActiveBrush" Color="#FFF3CD"/>

@@ -87,6 +87,8 @@ namespace AICAD.Services.Operations
             registry.Register("rectangle_center", new Sketching.RectangleCenterHandler());
             registry.Register("circle_center", new Sketching.CircleCenterHandler());
             registry.Register("line", new Sketching.LineHandler());
+            registry.Register("construction_line", new Sketching.ConstructionLineHandler());
+            registry.Register("centerline", new Sketching.ConstructionLineHandler());
             registry.Register("arc", new Sketching.ArcHandler());
             registry.Register("dimension", new Sketching.DimensionHandler());
             // LLMs may emit alternative names — accept common aliases for robustness

@@ -105,6 +105,13 @@ namespace AICAD.Services
             throw new Exception(response.ErrorMessage ?? "Groq generation failed");
         }
 
+        public async Task StreamAsync(string prompt, System.Action<string> onDelta, System.Threading.CancellationToken cancellationToken)
+        {
+            // Current Groq client wrapper does not implement streaming; fallback to single-shot
+            var text = await GenerateAsync(prompt).ConfigureAwait(false);
+            onDelta?.Invoke(text ?? string.Empty);
+        }
+
         public void Dispose()
         {
             _client?.Dispose();

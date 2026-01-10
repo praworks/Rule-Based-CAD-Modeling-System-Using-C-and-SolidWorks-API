@@ -15,6 +15,9 @@ namespace AICAD.Services
         public List<JObject> Log { get; } = new List<JObject>();
         public bool CreatedNewPart { get; set; }
         public string ModelTitle { get; set; }
+        // If the executor encountered a request for user clarification (from LLM),
+        // this will contain the structured clarification object (e.g. { clarification_needed: "..." }).
+        public JObject Clarification { get; set; }
         /// <summary>Validation results for each step (post-execution geometry checks)</summary>
         public List<ExecutionValidator.ValidationResult> Validations { get; } = new List<ExecutionValidator.ValidationResult>();
         /// <summary>Overall validation report</summary>
@@ -60,6 +63,45 @@ namespace AICAD.Services
             {
                 var steps = plan.ContainsKey("steps") && plan["steps"] is JArray ? (JArray)plan["steps"] : new JArray();
                     try { AddinStatusLogger.Log("StepExecutor", $"Execute: resolved {steps.Count} steps"); } catch { }
+
+                // Flatten feature-wrapped steps: some LLMs return an array of feature objects
+                // where each feature contains its own 'steps' array. Convert those into a
+                // flat sequence of executable step objects so the executor sees ops.
+                try
+                {
+                    for (int idx = 0; idx < steps.Count; )
+                    {
+                        var item = steps[idx];
+                        if (item != null && item.Type == JTokenType.Object)
+                        {
+                            var obj = (JObject)item;
+                            if (obj.Property("steps") != null && obj["steps"] is JArray innerArr)
+                            {
+                                // splice inner steps in-place, replacing the wrapper
+                                steps.RemoveAt(idx);
+                                for (int j = innerArr.Count - 1; j >= 0; j--)
+                                {
+                                    steps.Insert(idx, innerArr[j]);
+                                }
+                                // do not advance idx so newly inserted items are processed
+                                continue;
+                            }
+                        }
+                        idx++;
+                    }
+                }
+                catch { }
+                // Per-step canonicalization: if enabled, call the ClarificationService for each step
+                // before execution to ensure the step is normalized/canonical. Controlled by env var
+                // AICAD_PER_STEP_CANONICALIZE (set to '1' or 'true' to enable).
+                bool perStepCanonicalize = false;
+                try
+                {
+                    var envCanon = System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.User);
+                    if (!string.IsNullOrWhiteSpace(envCanon) && (envCanon == "1" || envCanon.Equals("true", StringComparison.OrdinalIgnoreCase))) perStepCanonicalize = true;
+                }
+                catch { }
                 // Pre-validation removed: execute steps as provided and let handlers decide.
                 // Track retries per-step to avoid infinite clarification loops
                 var retryCounts = new Dictionary<int, int>();
@@ -95,6 +137,41 @@ namespace AICAD.Services
                 {
                     var raw = steps[i];
                     var s = NormalizeStep(raw);
+                    // If per-step canonicalization is enabled, ask the ClarificationService to
+                    // canonicalize/repair this single step before execution. This allows LLM
+                    // canonicalization for every step (not just failures). The env var
+                    // AICAD_PER_STEP_CANONICALIZE controls this behaviour.
+                    if (perStepCanonicalize)
+                    {
+                        try
+                        {
+                            var replacement = ClarificationService.ClarifySingleStep(s);
+                            if (replacement != null)
+                            {
+                                if (replacement is JArray arr)
+                                {
+                                    // splice returned array in-place, replacing the current step
+                                    steps.RemoveAt(i);
+                                    for (int ri = arr.Count - 1; ri >= 0; ri--)
+                                    {
+                                        steps.Insert(i, arr[ri]);
+                                    }
+                                    // retry processing at this index (which is now the first inserted item)
+                                    i--;
+                                    continue;
+                                }
+                                else if (replacement is JObject obj)
+                                {
+                                    steps[i] = obj;
+                                    s = NormalizeStep(steps[i]);
+                                }
+                            }
+                        }
+                        catch (Exception exCanon)
+                        {
+                            try { AddinStatusLogger.Log("StepExecutor", $"Per-step canonicalization failed for index {i}: {exCanon.Message}"); } catch { }
+                        }
+                    }
                     string op = s.Value<string>("op") ?? string.Empty;
                     var opLower = (op ?? string.Empty).ToLowerInvariant();
                     var log = new JObject { ["step"] = i, ["op"] = op };
@@ -319,6 +396,18 @@ namespace AICAD.Services
                             try
                             {
                                 var dataObj = Newtonsoft.Json.Linq.JToken.FromObject(opResult.Data);
+                                // If the planner returned a clarification request instead of steps,
+                                // surface it to the caller by setting result.Clarification and returning.
+                                if (dataObj["clarification_needed"] != null)
+                                {
+                                    // Attach clarification to the result and log it for UI consumption
+                                    var clar = new JObject { ["step"] = i, ["op"] = op, ["clarification"] = dataObj["clarification_needed"] };
+                                    result.Log.Add(clar);
+                                    result.Clarification = dataObj.Type == JTokenType.Object ? (JObject)dataObj : dataObj as JObject;
+                                    result.Success = false;
+                                    AddinStatusLogger.Log("StepExecutor", $"Plan requested clarification at step {i}");
+                                    return result; // halt execution so UI can surface clarification to user
+                                }
                                 if (dataObj["steps"] is JArray generatedSteps && generatedSteps.Count > 0)
                                 {
                                     AddinStatusLogger.Log("StepExecutor", $"Splicing {generatedSteps.Count} LLM-generated steps at index {i + 1}");

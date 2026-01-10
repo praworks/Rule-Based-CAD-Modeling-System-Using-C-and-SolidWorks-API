@@ -118,9 +118,35 @@ namespace AICAD.Services.Operations.Sketching
                 if (r <= 0)
                     return OperationResult.CreateFailure("Circle radius or diameter must be > 0");
 
-                var circ = sketchMgr.CreateCircleByRadius(cx, cy, 0, r);
+                object circ = sketchMgr.CreateCircleByRadius(cx, cy, 0, r);
                 if (circ == null)
                     return OperationResult.CreateFailure("Failed to create circle");
+
+                // If caller requested a construction (center) circle, attempt to mark it as construction geometry.
+                try
+                {
+                    var isConstruction = step.Value<bool?>("construction") ?? step.Value<bool?>("construction_circle") ?? false;
+                    if (isConstruction)
+                    {
+                        try
+                        {
+                            // Some interop types expose SetConstruction(bool). Try to call it reflectively.
+                            var mi = circ.GetType().GetMethod("SetConstruction");
+                            if (mi != null)
+                            {
+                                mi.Invoke(circ, new object[] { true });
+                            }
+                            else
+                            {
+                                // Fallback: try to set property 'Construction' if present
+                                var pi = circ.GetType().GetProperty("Construction");
+                                if (pi != null && pi.CanWrite) pi.SetValue(circ, true);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
 
                 return OperationResult.CreateSuccess(stillInSketch: true);
             }
@@ -161,6 +187,41 @@ namespace AICAD.Services.Operations.Sketching
             catch (Exception ex)
             {
                 return OperationResult.CreateFailure($"line failed: {ex.Message}");
+            }
+        }
+
+        private static double ToMeters(double mm) => mm / 1000.0;
+    }
+
+    /// <summary>
+    /// Handler for "construction_line" operation - draws a construction (center) line between two points
+    /// </summary>
+    public class ConstructionLineHandler : IOperationHandler
+    {
+        public OperationResult Execute(JObject step, IModelDoc2 model, ISketchManager sketchMgr, IFeatureManager featMgr, bool inSketch)
+        {
+            try
+            {
+                if (!inSketch)
+                    return OperationResult.CreateFailure("Must be in sketch mode to draw construction line");
+                if (sketchMgr == null)
+                    return OperationResult.CreateFailure("Sketch manager not available");
+
+                double x1 = ToMeters(step.Value<double?>("x1") ?? 0);
+                double y1 = ToMeters(step.Value<double?>("y1") ?? 0);
+                double x2 = ToMeters(step.Value<double?>("x2") ?? 0);
+                double y2 = ToMeters(step.Value<double?>("y2") ?? 0);
+
+                // Create a SOLIDWORKS centerline which is marked as construction geometry by default
+                var line = sketchMgr.CreateCenterLine(x1, y1, 0, x2, y2, 0);
+                if (line == null)
+                    return OperationResult.CreateFailure("Failed to create construction line");
+
+                return OperationResult.CreateSuccess(stillInSketch: true);
+            }
+            catch (Exception ex)
+            {
+                return OperationResult.CreateFailure($"construction_line failed: {ex.Message}");
             }
         }
 

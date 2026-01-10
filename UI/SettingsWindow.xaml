@@ -104,6 +104,7 @@
                                     <CheckBox x:Name="ChkLoadNameEasyOnStartup" Content="Enable NameEasy when SolidWorks starts" ToolTip="Automatically loads the NameEasy feature on startup" Margin="0,4" />
                                     <CheckBox x:Name="ChkAutoExpandTaskPane" Content="Show AI-CAD panel when creating new parts" ToolTip="Auto-expand Task Pane when creating a new part document" Margin="0,4" />
                                     <CheckBox x:Name="ChkCollapseAfterRename" Content="Auto-collapse panel after renaming" ToolTip="Automatically collapse the panel after successful rename operations" Margin="0,4" />
+                                    <CheckBox x:Name="ChkRequireSpecClarification" Content="Require critical engineering specs before planning" ToolTip="When enabled, the planner will request missing engineering specifications instead of generating a plan" Margin="0,4" />
                                 </StackPanel>
                             </GroupBox>
 

@@ -200,6 +200,8 @@ namespace AICAD.UI
         private IGoodFeedbackStore _goodStore;
         private DataApiService _dataApiService;
         private StatusWindow _statusWindow;
+        private ApiConsoleWindow _apiConsoleWindow;
+        private ApiEventMonitor _apiEventMonitor;
         private TimeSpan _lastLlm = TimeSpan.Zero;
         private TimeSpan _lastTotal = TimeSpan.Zero;
         private string _lastError;
@@ -255,11 +257,7 @@ namespace AICAD.UI
             catch { }
 
             // Bind steps collection to the UI ItemsControl
-            try
-            {
-                StepsItemsControl.ItemsSource = _steps;
-            }
-            catch { }
+            // StepsItemsControl removed from XAML
 
             // 'New' button removed
 
@@ -490,6 +488,8 @@ namespace AICAD.UI
                 try { await Task.Yield(); } catch { }
             };
             btnHistory.Click += BtnHistory_Click;
+            btnApi.Checked += BtnApi_Checked;
+            btnApi.Unchecked += BtnApi_Unchecked;
             // Use FindName to avoid field resolution issues during compile
             var btnStatusBtn = FindName("btnStatus") as Button;
             if (btnStatusBtn != null)
@@ -1160,6 +1160,40 @@ namespace AICAD.UI
             catch (Exception ex) { MessageBox.Show(ex.Message, "History", MessageBoxButton.OK, MessageBoxImage.Error); }
         }
 
+        private void BtnApi_Checked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                EnsureApiConsoleWindow();
+                if (_apiEventMonitor == null) _apiEventMonitor = new ApiEventMonitor(_swApp);
+                _apiEventMonitor.OnEventJson -= ApiEventMonitor_OnEventJson;
+                _apiEventMonitor.OnEventJson += ApiEventMonitor_OnEventJson;
+                _apiEventMonitor.Start();
+                _apiConsoleWindow?.Show();
+                _apiConsoleWindow?.Activate();
+                AppendStatusLine("[API] Real-time SolidWorks API console started");
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("API", "Failed to start API console", ex);
+                try { btnApi.IsChecked = false; } catch { }
+            }
+        }
+
+        private void BtnApi_Unchecked(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                if (_apiEventMonitor != null)
+                {
+                    _apiEventMonitor.OnEventJson -= ApiEventMonitor_OnEventJson;
+                    _apiEventMonitor.Stop();
+                }
+                AppendStatusLine("[API] Real-time SolidWorks API console stopped");
+            }
+            catch (Exception ex) { AppendDetailedStatus("API", "Failed to stop API console", ex); }
+        }
+
         private void BtnStatus_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1188,6 +1222,34 @@ namespace AICAD.UI
                 wnd.ShowDialog();
             }
             catch (Exception ex) { AppendDetailedStatus("UI", "Settings window error", ex); }
+        }
+
+        private void EnsureApiConsoleWindow()
+        {
+            try
+            {
+                if (_apiConsoleWindow == null || !_apiConsoleWindow.IsLoaded)
+                {
+                    _apiConsoleWindow = new ApiConsoleWindow();
+                    _apiConsoleWindow.Owner = Window.GetWindow(this);
+                    _apiConsoleWindow.Closed += (_, __) =>
+                    {
+                        try { btnApi.IsChecked = false; } catch { }
+                        _apiConsoleWindow = null;
+                    };
+                }
+            }
+            catch { }
+        }
+
+        private void ApiEventMonitor_OnEventJson(string line)
+        {
+            try
+            {
+                EnsureApiConsoleWindow();
+                _apiConsoleWindow?.AddLine(line);
+            }
+            catch { }
         }
 
         private void InitDbAndStores()
@@ -1315,48 +1377,11 @@ namespace AICAD.UI
 
         private void UpdateKaraokeStatus(string text)
         {
-            try
-            {
-                var t = text ?? string.Empty;
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    try
-                    {
-                        if (KaraokeStatus != null) KaraokeStatus.Text = t;
-                    }
-                    catch { }
-                }), System.Windows.Threading.DispatcherPriority.Background);
-            }
-            catch { }
+            // KaraokeStatus removed from XAML
         }
-
         private void AnimateKaraokeToColor(Color targetColor, int durationMs = 400)
         {
-            try
-            {
-                Dispatcher.BeginInvoke(new Action(() =>
-                {
-                    try
-                    {
-                        if (KaraokeStatus == null) return;
-                        var brush = KaraokeStatus.Foreground as SolidColorBrush;
-                        if (brush == null)
-                        {
-                            brush = new SolidColorBrush(Colors.Transparent);
-                            KaraokeStatus.Foreground = brush;
-                        }
-                        var animation = new ColorAnimation
-                        {
-                            To = targetColor,
-                            Duration = new Duration(TimeSpan.FromMilliseconds(durationMs)),
-                            EasingFunction = new SineEase { EasingMode = EasingMode.EaseInOut }
-                        };
-                        brush.BeginAnimation(SolidColorBrush.ColorProperty, animation);
-                    }
-                    catch { }
-                }), System.Windows.Threading.DispatcherPriority.Background);
-            }
-            catch { }
+            // KaraokeStatus removed from XAML
         }
 
         private CancellationTokenSource _karaokeCts;
@@ -1391,7 +1416,7 @@ namespace AICAD.UI
                         int current = 0;
                         Dispatcher.Invoke(() =>
                         {
-                            try { current = (int)Math.Round(generationProgressBar.Value); } catch { current = 0; }
+                            try { current = 0; /*generationProgressBar removed*/ } catch { current = 0; }
                         });
 
                         // Approach the target with small random steps
@@ -1406,12 +1431,7 @@ namespace AICAD.UI
                             current = Math.Max(0, Math.Min(100, current));
                             Dispatcher.BeginInvoke(new Action(() =>
                             {
-                                try
-                                {
-                                    generationProgressBar.Value = current;
-                                    if (generationProgressText != null) generationProgressText.Text = current + "%";
-                                }
-                                catch { }
+                                /* generationProgressBar and generationProgressText removed from XAML */
                             }));
                             // random small delay to look organic
                             await Task.Delay(60 + _rand.Next(0, 120), token).ConfigureAwait(false);
@@ -1422,12 +1442,7 @@ namespace AICAD.UI
                         {
                             Dispatcher.BeginInvoke(new Action(() =>
                             {
-                                try
-                                {
-                                    generationProgressBar.Value = target;
-                                    if (generationProgressText != null) generationProgressText.Text = target + "%";
-                                }
-                                catch { }
+                                /* generationProgressBar and generationProgressText removed from XAML */
                             }));
                         }
                     }
@@ -1907,15 +1922,17 @@ namespace AICAD.UI
                                                  ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                  ?? "local-model";
                             var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                            ?? @"You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text.
+                                            ?? @"You are a CAD planning agent for SOLIDWORKS.
+
+Return ONLY a single JSON OBJECT with keys 'thinking' (string) and 'steps' (array). 'thinking' must describe geometric reasoning before the plan: plane selection, coordinate math, constraints, and why dimensions are chosen. 'steps' must follow the plan schema.
 
 CRITICAL RULES:
-1. **Extrusion cuts**: Use separate op ""extrude_cut"" with ""depth"". NEVER use op ""extrude"" with type ""cut"".
-2. **Face selection**: Use select_face with id=""top"", id=""front"", id=""right"" (NOT numeric IDs like id=1, which are unstable after extrude).
-3. **Circle dimensions**: For circle sketches, use auto_dimension with r or diameter, NOT w and h.
+1. Extrusion cuts: use separate op 'extrude_cut' with 'depth'. NEVER use op 'extrude' with type='cut'.
+2. Face selection: use select_face with id='top'/'front'/'right' (NOT numeric IDs).
+3. Plane selection: use ONLY these exact plane names: 'Top Plane', 'Front Plane', or 'Right Plane'.
+4. Circle dimensions: for circle sketches, use op 'auto_dimension' with 'r' or 'diameter' (NOT w/h).
 
-For rectangles: copy cx, cy, w, h from rectangle_center into auto_dimension.
-Example for box with hole: new_part, select_plane, sketch_begin, rectangle_center, auto_dimension (copy values), sketch_end, extrude (solid), select_face (id=""top""), sketch_begin, circle_center, auto_dimension (use r), sketch_end, extrude_cut.";
+Rectangles: copy cx, cy, w, h from rectangle_center into auto_dimension. Units are millimeters.";
                             
                             var dispTry = GetEndpointDisplayName(localEndpoint);
                             AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
@@ -2252,6 +2269,13 @@ Output:";
                 
                 // Kick off progress bar animation (realistic phase)
                 StartProgressPhase("communicating");
+                // Show CoT thinking placeholder while communicating with LLM
+                try
+                {
+                    ThinkingContainer.Visibility = Visibility.Visible;
+                    ThinkingText.Text = "Reasoning about planes, coordinates, and constraints…";
+                }
+                catch { }
                 // Run quick LLM provider health-check and report status before showing communicating state
                 bool providersOk1 = false;
                 try { providersOk1 = await CheckLlmProvidersAsync().ConfigureAwait(false); } catch { providersOk1 = false; }
@@ -2446,10 +2470,10 @@ Output:";
                 catch { }
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
                 // Build final prompt: user instructions + optional few-shot examples + actual user request
-                var finalPrompt = userPrompt + text + "\nJSON:";
+                var finalPrompt = userPrompt + text + "\n\nFORMAT:\nReturn a single JSON OBJECT with keys 'thinking' (string) and 'steps' (array).\n- 'thinking' must explain geometric reasoning: plane selection, coordinate math, constraints, and dimension choices.\n- 'steps' must be executable ops as per schema, prefer op:'auto_dimension' for sketch dimensions where applicable.\nOutput ONLY the JSON object (no markdown fences).\n";
                 if (FORCE_LOCAL_ONLY)
                 {
-                    finalPrompt = userPrompt + text + "\nJSON:";
+                    finalPrompt = userPrompt + text + "\n\nFORMAT:\nReturn a single JSON OBJECT with keys 'thinking' and 'steps'. Output ONLY the JSON object.";
                 }
                 // Start LLM progress estimation timer using a background System.Timers.Timer to ensure ticks fire
                 System.Timers.Timer threadTimer = null;
@@ -2514,8 +2538,8 @@ Output:";
                 }
                 catch { }
 
-                // Use Task.Run with async lambda to correctly unwrap Task<string>
-                reply = await Task.Run(async () => await GenerateWithFallbackAsync(finalPrompt));
+                // Prefer streaming when available to update Thinking in real-time
+                reply = await Task.Run(async () => await GenerateWithStreamingAsync(finalPrompt));
 
                 // LLM responded; finalize progress line to Done (100%) and update EMA
                 try
@@ -2578,6 +2602,23 @@ Output:";
                 llmMs = llmSw.Elapsed;
                 _lastReply = reply;
                 AppendStatusLine(reply);
+                // Try to extract CoT 'thinking' from JSON and display it
+                try
+                {
+                    var objForThinking = Newtonsoft.Json.Linq.JObject.Parse(ExtractRawJson(reply));
+                    var thinking = objForThinking?["thinking"]?.ToString();
+                    if (!string.IsNullOrWhiteSpace(thinking))
+                    {
+                        ThinkingText.Text = thinking;
+                        ThinkingContainer.Visibility = Visibility.Visible;
+                    }
+                    else
+                    {
+                        // Hide if no thinking provided
+                        ThinkingContainer.Visibility = Visibility.Collapsed;
+                    }
+                }
+                catch { /* keep UI robust even if reply isn't an object */ }
                 SetRealTimeStatus("Received response from LLM", Colors.DarkGreen);
                 StopKaraoke();
                 ShowKaraokeScenario("awaiting_response");
@@ -2614,12 +2655,23 @@ Output:";
                     {
                         planDoc = AugmentPlanWithProperties(planDoc, text);
 
+                        // If 'thinking' exists in plan, keep showing it during execution
+                        try
+                        {
+                            var thinkingText = planDoc?["thinking"]?.ToString();
+                            if (!string.IsNullOrWhiteSpace(thinkingText))
+                            {
+                                ThinkingText.Text = thinkingText;
+                                ThinkingContainer.Visibility = Visibility.Visible;
+                            }
+                        }
+                        catch { }
+
                         exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
                         {
                             try
                             {
-                                try { generationProgressBar.Value = Math.Max(0, Math.Min(100, pct)); } catch { }
-                                try { generationProgressText.Text = pct.ToString() + "%"; } catch { }
+                                /* generationProgressBar and generationProgressText removed from XAML */
 
                                 if (idx.HasValue && idx.Value >= 0 && idx.Value < _steps.Count)
                                 {
@@ -2660,6 +2712,40 @@ Output:";
                             }
                             catch { }
                         }, false, true)); // continueOnError=false, preservePartsOnErrorOverride=true for interactive UI
+
+                    // If the executor returned a clarification request, surface it prominently and stop.
+                    try
+                    {
+                        if (exec != null && exec.Clarification != null)
+                        {
+                            string clarText = null;
+                            try { clarText = exec.Clarification["clarification_needed"]?.ToString() ?? exec.Clarification.ToString(); } catch { clarText = exec.Clarification.ToString(); }
+                            if (!string.IsNullOrWhiteSpace(clarText))
+                            {
+                                AppendStatusLine("AI requests clarification: " + clarText);
+                                SetRealTimeStatus("AI requests clarification — see status console", Colors.OrangeRed);
+                                SetSwStatus("Clarification", Colors.OrangeRed);
+                                // Offer to copy clarification into the prompt for the user to edit
+                                System.Windows.MessageBoxResult mbRes = System.Windows.MessageBoxResult.None;
+                                Dispatcher.Invoke(() =>
+                                {
+                                    mbRes = System.Windows.MessageBox.Show(
+                                        "AI requests clarification:\n\n" + clarText + "\n\nClick Yes to copy this into the prompt for editing; No to dismiss.",
+                                        "AI Clarification",
+                                        System.Windows.MessageBoxButton.YesNo,
+                                        System.Windows.MessageBoxImage.Information);
+                                });
+                                if (mbRes == System.Windows.MessageBoxResult.Yes)
+                                {
+                                    try { Dispatcher.Invoke(() => { prompt.Text = clarText; FocusPrompt(); }); } catch { }
+                                }
+                                try { _isBuilding = false; } catch { }
+                                try { Dispatcher.Invoke(() => { build.Content = "Build"; build.IsEnabled = true; build.Background = new System.Windows.Media.SolidColorBrush(Colors.DodgerBlue); build.Foreground = new System.Windows.Media.SolidColorBrush(Colors.White); }); } catch { }
+                                return; // stop the build flow so the user can respond
+                            }
+                        }
+                    }
+                    catch { /* robust UI: ignore errors and continue to normal failure handling */ }
                     }
                     catch (Exception ex)
                     {
@@ -3064,6 +3150,146 @@ Output:";
                 }
                 try { _buildCts?.Dispose(); _buildCts = null; } catch { }
             }
+        }
+
+        private async Task<string> GenerateWithStreamingAsync(string prompt)
+        {
+            Exception lastEx = null;
+            var sb = new StringBuilder();
+
+            // Incremental extractor for JSON object's thinking field
+            string TryExtractThinking(string buffer, out bool closed)
+            {
+                closed = false;
+                if (string.IsNullOrEmpty(buffer)) return null;
+                var keyIdx = buffer.IndexOf("\"thinking\"", StringComparison.Ordinal);
+                if (keyIdx < 0) return null;
+                var colonIdx = buffer.IndexOf(':', keyIdx);
+                if (colonIdx < 0) return null;
+                var openIdx = buffer.IndexOf('"', colonIdx + 1);
+                if (openIdx < 0) return null;
+                var i = openIdx + 1;
+                var escaped = false;
+                var endIdx = -1;
+                for (; i < buffer.Length; i++)
+                {
+                    var c = buffer[i];
+                    if (escaped) { escaped = false; continue; }
+                    if (c == '\\') { escaped = true; continue; }
+                    if (c == '"') { endIdx = i; closed = true; break; }
+                }
+                var raw = endIdx >= 0 ? buffer.Substring(openIdx + 1, endIdx - (openIdx + 1)) : buffer.Substring(openIdx + 1);
+                // Minimal unescape for readability
+                try { raw = raw.Replace("\\n", "\n").Replace("\\\"", "\""); } catch { }
+                return raw;
+            }
+
+            // Load priority similar to non-streaming path
+            var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
+                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
+                              ?? "local,gemini,groq";
+            var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+
+            foreach (var provider in priority)
+            {
+                try
+                {
+                    if (provider == "local")
+                    {
+                        var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                            ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                            ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(localEndpoint))
+                        {
+                            var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                                 ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                                 ?? "local-model";
+                            var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                            ?? ClarificationService.DEFAULT_SYSTEM_PROMPT;
+
+                            AppendStatusLine("[LLM] Streaming from Local endpoint");
+                            StartProgressPhase("awaiting_response");
+
+                            using (var local = new LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt))
+                            {
+                                _client = local;
+                                _lastModel = local.Model;
+                                var cts = new CancellationTokenSource();
+                                await local.StreamAsync(prompt, delta =>
+                                {
+                                    if (string.IsNullOrEmpty(delta)) return;
+                                    sb.Append(delta);
+                                    try
+                                    {
+                                        var buf = sb.ToString();
+                                        var thinking = TryExtractThinking(buf, out var closed);
+                                        if (!string.IsNullOrEmpty(thinking))
+                                        {
+                                            Dispatcher.BeginInvoke(new Action(() =>
+                                            {
+                                                ThinkingText.Text = thinking;
+                                                ThinkingContainer.Visibility = Visibility.Visible;
+                                            }));
+                                        }
+                                    }
+                                    catch { }
+                                }, cts.Token).ConfigureAwait(false);
+
+                                FinishLlmProgress();
+                                AppendStatusLine("[LLM] Streaming completed");
+                                return sb.ToString();
+                            }
+                        }
+                    }
+                    else if (provider == "gemini")
+                    {
+                        var gemKey = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                     ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(gemKey))
+                        {
+                            var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                           ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                           ?? "gemini-1.5-flash";
+                            AppendStatusLine("[LLM] Gemini (non-streaming fallback)");
+                            var g = new GeminiClient(gemKey, gemModel);
+                            _client = g;
+                            _lastModel = g.Model;
+                            string full = await g.GenerateAsync(prompt).ConfigureAwait(false);
+                            return full;
+                        }
+                    }
+                    else if (provider == "groq")
+                    {
+                        var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                      ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                      ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(groqKey))
+                        {
+                            var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                            ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
+                                            ?? "llama-3.3-70b-versatile";
+                            AppendStatusLine("[LLM] Groq (non-streaming fallback)");
+                            using (var gc = new GroqLlmClient(groqKey, groqModel))
+                            {
+                                _client = gc;
+                                _lastModel = gc.Model;
+                                var full = await gc.GenerateAsync(prompt).ConfigureAwait(false);
+                                return full;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    lastEx = ex;
+                    AppendStatusLine($"[LLM] {provider} failed: {ex.Message}");
+                    continue;
+                }
+            }
+
+            if (lastEx != null) throw lastEx;
+            return string.Empty;
         }
 
         private void SetModified(bool modified)
@@ -3906,28 +4132,14 @@ Output:";
                     try
                     {
                         if (ProgressStatusPanel == null) return;
+                        
+                        // Preserve ThinkingContainer before clearing
+                        var thinkingContainer = ThinkingContainer;
+                        
                         ProgressStatusPanel.Children.Clear();
 
-                        // Header with task counter
-                        try
-                        {
-                            var headerGrid = new Grid { Margin = new Thickness(0, 0, 0, 6) };
-                            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-                            headerGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(60) });
-                            var heading = new TextBlock { Text = "Task", FontWeight = FontWeights.SemiBold, Foreground = new SolidColorBrush(Colors.DarkSlateGray) };
-                            Grid.SetColumn(heading, 0);
-                            _taskCountText = new TextBlock { Text = $"0/{_steps.Count}", HorizontalAlignment = HorizontalAlignment.Right, Foreground = new SolidColorBrush(Colors.DimGray) };
-                            Grid.SetColumn(_taskCountText, 1);
-                            headerGrid.Children.Add(heading);
-                            headerGrid.Children.Add(_taskCountText);
-                            ProgressStatusPanel.Children.Add(headerGrid);
-                        }
-                        catch { }
-
-                        // Ensure the dynamic steps ItemsControl is present
-                        try { ProgressStatusPanel.Children.Add(StepsItemsControl); } catch { }
-                        // KaraokeStatus text block follows the step list
-                        try { if (KaraokeStatus != null) ProgressStatusPanel.Children.Add(KaraokeStatus); } catch { }
+                        // Restore ThinkingContainer at the beginning
+                        try { if (thinkingContainer != null) ProgressStatusPanel.Children.Add(thinkingContainer); } catch { }
                     }
                     catch { }
                 }), System.Windows.Threading.DispatcherPriority.Background);

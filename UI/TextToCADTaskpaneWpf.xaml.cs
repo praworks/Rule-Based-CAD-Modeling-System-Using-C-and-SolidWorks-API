@@ -2539,7 +2539,33 @@ Output:";
                 catch { }
 
                 // Prefer streaming when available to update Thinking in real-time
-                reply = await Task.Run(async () => await GenerateWithStreamingAsync(finalPrompt));
+                // Use classifier to pick a specialized system prompt for this run (temporary env override)
+                var _prevAicadSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
+                var _prevLocalSystemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
+                try
+                {
+                    try
+                    {
+                        var chosen = AICAD.Services.ClassifierService.GetSystemPromptForInput(text);
+                        if (!string.IsNullOrWhiteSpace(chosen))
+                        {
+                            System.Environment.SetEnvironmentVariable("AICAD_SYSTEM_PROMPT", chosen, System.EnvironmentVariableTarget.Process);
+                            System.Environment.SetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", chosen, System.EnvironmentVariableTarget.Process);
+                            AppendStatusLine("[Classifier] Specialized system prompt applied for this run.");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        AppendStatusLine("[Classifier] Failed to compute specialized prompt: " + ex.Message);
+                    }
+
+                    reply = await Task.Run(async () => await GenerateWithStreamingAsync(finalPrompt));
+                }
+                finally
+                {
+                    try { System.Environment.SetEnvironmentVariable("AICAD_SYSTEM_PROMPT", _prevAicadSystemPrompt, System.EnvironmentVariableTarget.Process); } catch { }
+                    try { System.Environment.SetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", _prevLocalSystemPrompt, System.EnvironmentVariableTarget.Process); } catch { }
+                }
 
                 // LLM responded; finalize progress line to Done (100%) and update EMA
                 try

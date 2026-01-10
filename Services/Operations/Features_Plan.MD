@@ -61,7 +61,7 @@ Capability Matrix
 | 5. Mounting Plates | No |
 | 6. Bushings and Spacers | Yes |
 | 7. Shaft Keys (Parallel/Woodruff) | Yes |
-| 8. U‑Bolts | Yes |
+| 8. U‑Bolts | No |
 | 9. Clevis Pins and Cotter Pins | Yes |
 | 10. Threaded Rods (Studs) | Yes |
 

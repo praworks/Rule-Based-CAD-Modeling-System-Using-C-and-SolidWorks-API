@@ -118,9 +118,35 @@ namespace AICAD.Services.Operations.Sketching
                 if (r <= 0)
                     return OperationResult.CreateFailure("Circle radius or diameter must be > 0");
 
-                var circ = sketchMgr.CreateCircleByRadius(cx, cy, 0, r);
+                object circ = sketchMgr.CreateCircleByRadius(cx, cy, 0, r);
                 if (circ == null)
                     return OperationResult.CreateFailure("Failed to create circle");
+
+                // If caller requested a construction (center) circle, attempt to mark it as construction geometry.
+                try
+                {
+                    var isConstruction = step.Value<bool?>("construction") ?? step.Value<bool?>("construction_circle") ?? false;
+                    if (isConstruction)
+                    {
+                        try
+                        {
+                            // Some interop types expose SetConstruction(bool). Try to call it reflectively.
+                            var mi = circ.GetType().GetMethod("SetConstruction");
+                            if (mi != null)
+                            {
+                                mi.Invoke(circ, new object[] { true });
+                            }
+                            else
+                            {
+                                // Fallback: try to set property 'Construction' if present
+                                var pi = circ.GetType().GetProperty("Construction");
+                                if (pi != null && pi.CanWrite) pi.SetValue(circ, true);
+                            }
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
 
                 return OperationResult.CreateSuccess(stillInSketch: true);
             }

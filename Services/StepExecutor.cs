@@ -63,6 +63,45 @@ namespace AICAD.Services
             {
                 var steps = plan.ContainsKey("steps") && plan["steps"] is JArray ? (JArray)plan["steps"] : new JArray();
                     try { AddinStatusLogger.Log("StepExecutor", $"Execute: resolved {steps.Count} steps"); } catch { }
+
+                // Flatten feature-wrapped steps: some LLMs return an array of feature objects
+                // where each feature contains its own 'steps' array. Convert those into a
+                // flat sequence of executable step objects so the executor sees ops.
+                try
+                {
+                    for (int idx = 0; idx < steps.Count; )
+                    {
+                        var item = steps[idx];
+                        if (item != null && item.Type == JTokenType.Object)
+                        {
+                            var obj = (JObject)item;
+                            if (obj.Property("steps") != null && obj["steps"] is JArray innerArr)
+                            {
+                                // splice inner steps in-place, replacing the wrapper
+                                steps.RemoveAt(idx);
+                                for (int j = innerArr.Count - 1; j >= 0; j--)
+                                {
+                                    steps.Insert(idx, innerArr[j]);
+                                }
+                                // do not advance idx so newly inserted items are processed
+                                continue;
+                            }
+                        }
+                        idx++;
+                    }
+                }
+                catch { }
+                // Per-step canonicalization: if enabled, call the ClarificationService for each step
+                // before execution to ensure the step is normalized/canonical. Controlled by env var
+                // AICAD_PER_STEP_CANONICALIZE (set to '1' or 'true' to enable).
+                bool perStepCanonicalize = false;
+                try
+                {
+                    var envCanon = System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.User);
+                    if (!string.IsNullOrWhiteSpace(envCanon) && (envCanon == "1" || envCanon.Equals("true", StringComparison.OrdinalIgnoreCase))) perStepCanonicalize = true;
+                }
+                catch { }
                 // Pre-validation removed: execute steps as provided and let handlers decide.
                 // Track retries per-step to avoid infinite clarification loops
                 var retryCounts = new Dictionary<int, int>();
@@ -98,6 +137,41 @@ namespace AICAD.Services
                 {
                     var raw = steps[i];
                     var s = NormalizeStep(raw);
+                    // If per-step canonicalization is enabled, ask the ClarificationService to
+                    // canonicalize/repair this single step before execution. This allows LLM
+                    // canonicalization for every step (not just failures). The env var
+                    // AICAD_PER_STEP_CANONICALIZE controls this behaviour.
+                    if (perStepCanonicalize)
+                    {
+                        try
+                        {
+                            var replacement = ClarificationService.ClarifySingleStep(s);
+                            if (replacement != null)
+                            {
+                                if (replacement is JArray arr)
+                                {
+                                    // splice returned array in-place, replacing the current step
+                                    steps.RemoveAt(i);
+                                    for (int ri = arr.Count - 1; ri >= 0; ri--)
+                                    {
+                                        steps.Insert(i, arr[ri]);
+                                    }
+                                    // retry processing at this index (which is now the first inserted item)
+                                    i--;
+                                    continue;
+                                }
+                                else if (replacement is JObject obj)
+                                {
+                                    steps[i] = obj;
+                                    s = NormalizeStep(steps[i]);
+                                }
+                            }
+                        }
+                        catch (Exception exCanon)
+                        {
+                            try { AddinStatusLogger.Log("StepExecutor", $"Per-step canonicalization failed for index {i}: {exCanon.Message}"); } catch { }
+                        }
+                    }
                     string op = s.Value<string>("op") ?? string.Empty;
                     var opLower = (op ?? string.Empty).ToLowerInvariant();
                     var log = new JObject { ["step"] = i, ["op"] = op };

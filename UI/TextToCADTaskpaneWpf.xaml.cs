@@ -2040,22 +2040,11 @@ Now convert this:
 Input: '{userPrompt}'
 Output:";
 
-                // Use direct Groq client with empty system prompt to avoid poisoning the main generation's system prompt
+                // Use central fallback generator so provider choice respects `AICAD_LLM_PRIORITY`.
                 string response = null;
                 try
                 {
-                    var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User);
-                    if (!string.IsNullOrWhiteSpace(groqKey))
-                    {
-                        var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User) ?? "llama-3.3-70b-versatile";
-                        // Create temp client with empty system prompt for description only
-                        var tempClient = new AICAD.Services.GroqLlmClient(groqKey, groqModel, systemPrompt: "");
-                        response = await Task.Run(() => tempClient.GenerateAsync(descriptionPrompt)).ConfigureAwait(false);
-                    }
-                    else
-                    {
-                        AppendStatusLine("[Desc] No Groq API key - skipping description generation");
-                    }
+                    response = await GenerateWithFallbackAsync(descriptionPrompt).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -2775,10 +2764,10 @@ Output:";
                                 });
                                 if (mbRes == System.Windows.MessageBoxResult.Yes)
                                 {
-                                    try { Dispatcher.Invoke(() => { prompt.Text = clarText; FocusPrompt(); }); } catch { }
+                                    try { Dispatcher.BeginInvoke(new Action(() => { prompt.Text = clarText; FocusPrompt(); }), DispatcherPriority.Background); } catch { }
                                 }
                                 try { _isBuilding = false; } catch { }
-                                try { Dispatcher.Invoke(() => { build.Content = "Build"; build.IsEnabled = true; build.Background = new System.Windows.Media.SolidColorBrush(Colors.DodgerBlue); build.Foreground = new System.Windows.Media.SolidColorBrush(Colors.White); }); } catch { }
+                                try { Dispatcher.BeginInvoke(new Action(() => { build.Content = "Build"; build.IsEnabled = true; build.Background = new System.Windows.Media.SolidColorBrush(Colors.DodgerBlue); build.Foreground = new System.Windows.Media.SolidColorBrush(Colors.White); }), DispatcherPriority.Background); } catch { }
                                 return; // stop the build flow so the user can respond
                             }
                         }

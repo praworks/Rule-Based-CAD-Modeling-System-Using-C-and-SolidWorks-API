@@ -29,19 +29,24 @@ namespace AICAD.Services
             // Try to load custom limits from environment
             try
             {
-                var minStr = Environment.GetEnvironmentVariable("GROQ_MAX_PER_MINUTE", EnvironmentVariableTarget.User);
+                // Prefer process-level env vars (useful for temporary overrides), then user-level
+                var minStr = Environment.GetEnvironmentVariable("GROQ_MAX_PER_MINUTE", EnvironmentVariableTarget.Process)
+                             ?? Environment.GetEnvironmentVariable("GROQ_MAX_PER_MINUTE", EnvironmentVariableTarget.User);
                 if (!string.IsNullOrEmpty(minStr) && int.TryParse(minStr, out int minVal) && minVal > 0)
                     MaxRequestsPerMinute = minVal;
 
-                var hourStr = Environment.GetEnvironmentVariable("GROQ_MAX_PER_HOUR", EnvironmentVariableTarget.User);
+                var hourStr = Environment.GetEnvironmentVariable("GROQ_MAX_PER_HOUR", EnvironmentVariableTarget.Process)
+                              ?? Environment.GetEnvironmentVariable("GROQ_MAX_PER_HOUR", EnvironmentVariableTarget.User);
                 if (!string.IsNullOrEmpty(hourStr) && int.TryParse(hourStr, out int hourVal) && hourVal > 0)
                     MaxRequestsPerHour = hourVal;
 
-                var dayStr = Environment.GetEnvironmentVariable("GROQ_MAX_PER_DAY", EnvironmentVariableTarget.User);
+                var dayStr = Environment.GetEnvironmentVariable("GROQ_MAX_PER_DAY", EnvironmentVariableTarget.Process)
+                             ?? Environment.GetEnvironmentVariable("GROQ_MAX_PER_DAY", EnvironmentVariableTarget.User);
                 if (!string.IsNullOrEmpty(dayStr) && int.TryParse(dayStr, out int dayVal) && dayVal > 0)
                     MaxRequestsPerDay = dayVal;
 
-                var delayStr = Environment.GetEnvironmentVariable("GROQ_MIN_DELAY_SECONDS", EnvironmentVariableTarget.User);
+                var delayStr = Environment.GetEnvironmentVariable("GROQ_MIN_DELAY_SECONDS", EnvironmentVariableTarget.Process)
+                               ?? Environment.GetEnvironmentVariable("GROQ_MIN_DELAY_SECONDS", EnvironmentVariableTarget.User);
                 if (!string.IsNullOrEmpty(delayStr) && double.TryParse(delayStr, out double delayVal) && delayVal >= 0)
                     MinDelayBetweenRequests = TimeSpan.FromSeconds(delayVal);
             }

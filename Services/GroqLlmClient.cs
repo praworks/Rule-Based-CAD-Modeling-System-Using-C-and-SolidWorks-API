@@ -27,8 +27,8 @@ namespace AICAD.Services
         {
             // If Groq is busy/anti-burst triggered, wait and retry automatically.
             // Configurable maximum total wait (seconds) via GROQ_MAX_WAIT_SECONDS (default 120s).
-            var maxWaitSecondsStr = Environment.GetEnvironmentVariable("GROQ_MAX_WAIT_SECONDS", EnvironmentVariableTarget.User)
-                                     ?? Environment.GetEnvironmentVariable("GROQ_MAX_WAIT_SECONDS", EnvironmentVariableTarget.Process);
+            var maxWaitSecondsStr = Environment.GetEnvironmentVariable("GROQ_MAX_WAIT_SECONDS", EnvironmentVariableTarget.Process)
+                                     ?? Environment.GetEnvironmentVariable("GROQ_MAX_WAIT_SECONDS", EnvironmentVariableTarget.User);
             int maxWaitSeconds = 120;
             if (!string.IsNullOrWhiteSpace(maxWaitSecondsStr) && int.TryParse(maxWaitSecondsStr, out int parsed) && parsed >= 0)
             {

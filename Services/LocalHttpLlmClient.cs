@@ -13,7 +13,19 @@ namespace AICAD.Services
     public class LocalHttpLlmClient : ILlmClient, IDisposable
     {
         // Shared HttpClient to avoid disposed/connection issues when multiple callers create/dispose instances.
-        private static readonly HttpClient _sharedHttp = CreateSharedHttpClient();
+        private static HttpClient _sharedHttp = CreateSharedHttpClient();
+        private static readonly object _sharedHttpLock = new object();
+        private static HttpClient GetSharedHttp()
+        {
+            lock (_sharedHttpLock)
+            {
+                if (_sharedHttp == null)
+                {
+                    _sharedHttp = CreateSharedHttpClient();
+                }
+                return _sharedHttp;
+            }
+        }
         // Track endpoints marked unreachable so callers can fail fast for a cooldown period
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _endpointDeadUntil = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private readonly string _endpoint;
@@ -37,9 +49,9 @@ namespace AICAD.Services
                     _endpoint += "/v1/chat/completions";
             }
             _model = model ?? throw new ArgumentNullException(nameof(model));
-            // Prefer explicit systemPrompt, then AICAD_SYSTEM_PROMPT env var
-            var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                            ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
+            // Prefer explicit systemPrompt, then process env var, then user env var
+            var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                            ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User);
             _systemPrompt = systemPrompt ?? envPrompt;
             // Shared HttpClient already configured with a sensible timeout.
         }
@@ -121,8 +133,19 @@ namespace AICAD.Services
             try
             {
                 using (var content = new StringContent(json, Encoding.UTF8, "application/json"))
+                using (var req = new HttpRequestMessage(HttpMethod.Post, _endpoint))
                 {
-                    resp = await _sharedHttp.PostAsync(_endpoint, content).ConfigureAwait(false);
+                    req.Content = content;
+                    try
+                    {
+                        resp = await GetSharedHttp().SendAsync(req).ConfigureAwait(false);
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // recreate once and retry
+                        lock (_sharedHttpLock) { _sharedHttp = CreateSharedHttpClient(); }
+                        resp = await GetSharedHttp().SendAsync(req).ConfigureAwait(false);
+                    }
                 }
             }
             catch (TaskCanceledException tex)

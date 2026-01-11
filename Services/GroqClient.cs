@@ -17,9 +17,20 @@ namespace AICAD.Services
     /// </summary>
     public class GroqClient : IDisposable
     {
-        // Shared HttpClient for GroqClient instances
-        private static readonly HttpClient _sharedHttp = CreateSharedHttpClient();
-        private readonly HttpClient _http = _sharedHttp;
+        // Shared HttpClient for GroqClient instances (re-creatable if disposed)
+        private static HttpClient _sharedHttp = CreateSharedHttpClient();
+        private static readonly object _sharedHttpLock = new object();
+        private HttpClient GetSharedHttp()
+        {
+            lock (_sharedHttpLock)
+            {
+                if (_sharedHttp == null)
+                {
+                    _sharedHttp = CreateSharedHttpClient();
+                }
+                return _sharedHttp;
+            }
+        }
         private readonly string _apiKey;
 
         // Safety thresholds (tunable)
@@ -29,13 +40,11 @@ namespace AICAD.Services
         public GroqClient(string apiKey = null)
         {
             _apiKey = !string.IsNullOrWhiteSpace(apiKey) ? apiKey :
-                     (Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? "");
+                     (Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.Process)
+                      ?? Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User)
+                      ?? "");
 
-            // Using shared HttpClient; apply default header if API key present
-            if (!string.IsNullOrWhiteSpace(_apiKey))
-            {
-                try { _sharedHttp.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey); } catch { }
-            }
+            // Do not mutate shared client's default headers per-instance. We'll set Authorization per-request.
 
             // conservative defaults
             MinRemainingRequestsThreshold = 2;
@@ -137,7 +146,25 @@ namespace AICAD.Services
                 HttpResponseMessage httpResp = null;
                 try
                 {
-                    httpResp = await _http.PostAsync(endpoint, content, ct).ConfigureAwait(false);
+                    // Create HttpRequestMessage so we can set per-request Authorization header safely
+                    using (var req = new HttpRequestMessage(HttpMethod.Post, endpoint))
+                    {
+                        req.Content = content;
+                        if (!string.IsNullOrWhiteSpace(_apiKey))
+                        {
+                            req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _apiKey);
+                        }
+                        try
+                        {
+                            httpResp = await GetSharedHttp().SendAsync(req, ct).ConfigureAwait(false);
+                        }
+                        catch (ObjectDisposedException) when (attempt == 1)
+                        {
+                            // recreate shared client once and retry
+                            lock (_sharedHttpLock) { _sharedHttp = CreateSharedHttpClient(); }
+                            httpResp = await GetSharedHttp().SendAsync(req, ct).ConfigureAwait(false);
+                        }
+                    }
                 }
                 catch (Exception ex)
                 {

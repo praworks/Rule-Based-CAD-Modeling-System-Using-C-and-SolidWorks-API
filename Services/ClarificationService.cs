@@ -43,6 +43,7 @@ namespace AICAD.Services
         private static GroqLlmClient _groqClient;
         private static string _groqKey;
         private static string _groqModel;
+        private static string _groqSystemPrompt;
         // Track providers that recently failed so we can skip them for a cooldown period
         private static readonly ConcurrentDictionary<string, DateTime> _providerDeadUntil = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         public class ClarificationResult<T>
@@ -175,6 +176,7 @@ namespace AICAD.Services
                                     catch { }
                                     var extracted = ExtractJsonArray(reply);
                                     if (extracted != null) return extracted;
+                                    AddinStatusLogger.Log("ClarificationService", "⚠️ Groq reply did not contain valid JSON array. Reply was: " + (reply ?? "<null>"));
                                 }
                             }
                         }
@@ -211,12 +213,20 @@ namespace AICAD.Services
                     try { if (!string.IsNullOrEmpty(promptText)) lastEx.Data["llm_prompt"] = promptText; } catch { }
                     throw lastEx;
                 }
+                else
+                {
+                    AddinStatusLogger.Log("ClarificationService", "⚠️ All providers exhausted but no valid JSON array was extracted. Last reply: " + (lastReply ?? "<none>"));
+                    var ex = new InvalidOperationException("All LLM providers returned responses, but none contained valid JSON. The LLM may have returned plain text instead of structured data.");
+                    try { if (!string.IsNullOrEmpty(lastReply)) ex.Data["llm_reply"] = lastReply; } catch { }
+                    try { if (!string.IsNullOrEmpty(promptText)) ex.Data["llm_prompt"] = promptText; } catch { }
+                    throw ex;
+                }
             }
             catch (Exception ex)
             {
                 AddinStatusLogger.Error("ClarificationService", "ClarifyMissingDimensionSteps failed", ex);
+                throw;
             }
-            return null;
         }
 
         public static ClarificationResult<JArray> ClarifyMissingDimensionStepsWithDebug(JArray missing)
@@ -422,9 +432,17 @@ namespace AICAD.Services
             try
             {
                 var first = txt.IndexOf('[');
-                if (first < 0) return null;
+                if (first < 0)
+                {
+                    AddinStatusLogger.Log("ClarificationService", "⚠️ ExtractJsonArray: No '[' found in reply. Reply was plain text or malformed.");
+                    return null;
+                }
                 var last = txt.LastIndexOf(']');
-                if (last <= first) return null;
+                if (last <= first)
+                {
+                    AddinStatusLogger.Log("ClarificationService", "⚠️ ExtractJsonArray: No matching ']' found.");
+                    return null;
+                }
                 var json = txt.Substring(first, last - first + 1);
                 return JArray.Parse(json);
             }
@@ -555,14 +573,16 @@ namespace AICAD.Services
             if (string.IsNullOrWhiteSpace(key)) return null;
             lock (_clientLock)
             {
+                var normalizedPrompt = systemPrompt ?? string.Empty;
                 var same = _groqClient != null
                            && string.Equals(_groqKey, key, StringComparison.Ordinal)
-                           && string.Equals(_groqModel, model, StringComparison.OrdinalIgnoreCase);
+                           && string.Equals(_groqModel, model, StringComparison.OrdinalIgnoreCase)
+                           && string.Equals(_groqSystemPrompt, normalizedPrompt, StringComparison.Ordinal);
                 if (!same)
                 {
                     try { (_groqClient as IDisposable)?.Dispose(); } catch { }
                     _groqClient = new GroqLlmClient(key, model, systemPrompt);
-                    _groqKey = key; _groqModel = model;
+                    _groqKey = key; _groqModel = model; _groqSystemPrompt = normalizedPrompt;
                 }
                 return _groqClient;
             }

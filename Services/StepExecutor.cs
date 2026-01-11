@@ -644,58 +644,84 @@ namespace AICAD.Services
         private static JObject NormalizeStep(JToken step)
         {
             if (step == null) return new JObject();
+
+            JObject jo = null;
+
             if (step.Type == JTokenType.Object)
             {
-                // Normalize common alternate field names produced by some LLMs
-                var jo = (JObject)step;
-                // map 'operation' -> 'op' if present
+                try { jo = (JObject)step.DeepClone(); } catch { jo = (JObject)step; }
+                // map 'operation'/'command' variants -> 'op'
                 try
                 {
                     if (jo.Property("op") == null)
                     {
-                        var opProp = jo.Property("operation") ?? jo.Property("Operation");
-                        if (opProp != null)
-                        {
-                            jo["op"] = opProp.Value;
-                        }
+                        var opProp = jo.Property("operation") ?? jo.Property("Operation") ?? jo.Property("command") ?? jo.Property("Command");
+                        if (opProp != null) jo["op"] = opProp.Value;
                     }
                 }
                 catch { }
-                return jo;
             }
-            if (step.Type == JTokenType.String || step.Type == JTokenType.Integer || step.Type == JTokenType.Float)
+            else if (step.Type == JTokenType.String || step.Type == JTokenType.Integer || step.Type == JTokenType.Float)
             {
-                var s = step.ToString();
-                s = s.Trim();
+                var s = step.ToString().Trim();
                 if (string.IsNullOrEmpty(s)) return new JObject();
-                var jo = new JObject();
+                jo = new JObject();
                 var braceIndex = s.IndexOf('{');
                 if (braceIndex < 0)
                 {
                     jo["op"] = s;
-                    return jo;
                 }
-                var op = s.Substring(0, braceIndex).Trim();
-                jo["op"] = op;
-                var end = s.LastIndexOf('}');
-                if (end <= braceIndex) return jo;
-                var inner = s.Substring(braceIndex + 1, end - braceIndex - 1).Trim();
-                // split by commas not inside quotes (simple approach)
-                var parts = inner.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var p in parts)
+                else
                 {
-                    var kv = p.Split(new[] { '=' }, 2);
-                    if (kv.Length != 2) continue;
-                    var key = kv[0].Trim();
-                    var val = kv[1].Trim().Trim('"').Trim('\'');
-                    // try parse number
-                    if (double.TryParse(val, out var num)) jo[key] = num;
-                    else jo[key] = val;
+                    var op = s.Substring(0, braceIndex).Trim();
+                    jo["op"] = op;
+                    var end = s.LastIndexOf('}');
+                    if (end > braceIndex)
+                    {
+                        var inner = s.Substring(braceIndex + 1, end - braceIndex - 1).Trim();
+                        var parts = inner.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var p in parts)
+                        {
+                            var kv = p.Split(new[] { '=' }, 2);
+                            if (kv.Length != 2) continue;
+                            var key = kv[0].Trim();
+                            var val = kv[1].Trim().Trim('"').Trim('\'');
+                            if (double.TryParse(val, out var num)) jo[key] = num;
+                            else jo[key] = val;
+                        }
+                    }
                 }
-                return jo;
             }
-            // fallback
-            return new JObject();
+            else
+            {
+                return new JObject();
+            }
+
+            // Normalize op name to canonical snake_case and map common aliases
+            try
+            {
+                var opToken = jo.Property("op")?.Value;
+                if (opToken != null)
+                {
+                    var rawOp = opToken.ToString().Trim();
+                    if (!string.IsNullOrEmpty(rawOp))
+                    {
+                        var snake = System.Text.RegularExpressions.Regex.Replace(rawOp, "([a-z0-9])([A-Z])", "$1_$2");
+                        snake = snake.Replace("-", "_").Replace(" ", "_").ToLowerInvariant();
+
+                        if (snake == "create_new_part" || snake == "createpart" || snake == "createnewpart" || snake == "create_part") snake = "new_part";
+                        if (snake == "rectangle") snake = "rectangle_center";
+                        if (snake == "rectanglecenter" || snake == "rectangle-center") snake = "rectangle_center";
+                        if (snake == "sketch") snake = "sketch_begin";
+                        if (snake == "circlecenter") snake = "circle_center";
+
+                        jo["op"] = snake;
+                    }
+                }
+            }
+            catch { }
+
+            return jo;
         }
 
         private static void RequireModel(IModelDoc2 model)

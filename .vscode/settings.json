@@ -5,5 +5,8 @@
             "name": "Preset Connection",
             "connectionString": "mongodb://localhost:27017"
         }
-    ]
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "tasklist": true
+    }
 }

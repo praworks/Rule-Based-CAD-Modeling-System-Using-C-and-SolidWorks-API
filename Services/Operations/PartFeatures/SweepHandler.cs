@@ -59,31 +59,23 @@ namespace AICAD.Services.Operations.PartFeatures
 
         private OperationResult CreateCircularSweep(IModelDoc2 model, IFeatureManager featMgr, double diameterMm)
         {
-            // Note: The Path must be selected with Mark 4 for a Sweep operation.
-            // If the user just finished a sketch, it remains selected, but we clear and re-select for safety.
-            model.ClearSelection2(true);
-
-            // Diagnostic: log current selection state
+            // Ensure we are not inside a sketch edit before selecting path entities.
             try
             {
-                var sel = model.SelectionManager;
-                int selCount = 0;
-                try { selCount = sel.GetSelectedObjectCount2(-1); } catch { selCount = 0; }
-                AddinStatusLogger.Log("SweepHandler", $"Current selection count: {selCount}");
-                for (int i = 1; i <= selCount; i++)
+                var sm = model?.SketchManager;
+                if (sm?.ActiveSketch != null)
                 {
-                    try
-                    {
-                        int type = sel.GetSelectedObjectType3(i, -1);
-                        AddinStatusLogger.Log("SweepHandler", $"Selected index {i}: type={type}");
-                    }
-                    catch { }
+                    sm.InsertSketch(true);
                 }
             }
             catch { }
 
-            // Attempt to ensure a valid Path sketch (Mark 4) is selected. Prefer a sketch named with 'path', otherwise pick the most recent sketch.
-            bool pathSelected = false;
+            // Note: The Path must be selected with Mark 4 for a Sweep operation.
+            // If the user just finished a sketch, it remains selected, but we clear and re-select for safety.
+            model.ClearSelection2(true);
+
+            // Enumerate features to find the most recent sketch-like feature (ProfileFeature / 3DProfileFeature / Sketch).
+            IFeature pathSketch = null;
             try
             {
                 var feat = model.FirstFeature();
@@ -95,108 +87,163 @@ namespace AICAD.Services.Operations.PartFeatures
                     try { tname = feat.GetTypeName2() ?? string.Empty; } catch { tname = string.Empty; }
                     try { fname = feat.Name ?? string.Empty; } catch { fname = string.Empty; }
 
-                    if (string.Equals(tname, "Sketch", StringComparison.OrdinalIgnoreCase))
+                    bool isSketchFeat =
+                        tname.Equals("ProfileFeature", StringComparison.OrdinalIgnoreCase) ||
+                        tname.Equals("3DProfileFeature", StringComparison.OrdinalIgnoreCase) ||
+                        tname.Equals("Sketch", StringComparison.OrdinalIgnoreCase);
+
+                    if (isSketchFeat)
                     {
+                        // Prefer the most recently encountered sketch; break early if name contains "path".
+                        candidate = feat;
                         if (fname.IndexOf("path", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             candidate = feat;
                             break;
                         }
-                        if (candidate == null)
-                            candidate = feat; // keep first sketch as fallback
                     }
                     feat = feat.GetNextFeature();
                 }
 
-                if (candidate != null)
+                // If none found by name, attempt explicit common-name lookup (Sketch1)
+                if (candidate == null)
                 {
                     try
                     {
-                        AddinStatusLogger.Log("SweepHandler", $"Auto-selecting sketch '{candidate.Name}' as path.");
-                        pathSelected = model.Extension.SelectByID2(candidate.Name, "SKETCH", 0, 0, 0, false, 4, null, 0);
-                        AddinStatusLogger.Log("SweepHandler", $"SelectByID2 returned {pathSelected}");
+                        var f = model.FirstFeature();
+                        while (f != null)
+                        {
+                            string n = string.Empty;
+                            try { n = f.Name ?? string.Empty; } catch { n = string.Empty; }
+                            if (string.Equals(n, "Sketch1", StringComparison.OrdinalIgnoreCase))
+                            {
+                                candidate = f; break;
+                            }
+                            f = f.GetNextFeature();
+                        }
                     }
-                    catch (Exception ex)
-                    {
-                        AddinStatusLogger.Log("SweepHandler", $"Auto-select attempt failed: {ex.Message}");
-                        pathSelected = false;
-                    }
+                    catch { }
                 }
+
+                pathSketch = candidate;
             }
             catch (Exception ex)
             {
                 AddinStatusLogger.Log("SweepHandler", $"Selection enumeration failed: {ex.Message}");
-                pathSelected = false;
             }
 
-            // API: InsertSweep variants differ across SW versions; use reflection to call if available.
-            IFeature swFeat = null;
+            if (pathSketch == null)
+            {
+                return OperationResult.CreateFailure("No path sketch feature found. Create/select a path sketch and retry.");
+            }
+
+            bool pathSelected = SelectPathSketchMark4(model, pathSketch);
+            LogSelectionTypes(model, "After path selection");
+
+            if (!pathSelected)
+            {
+                return OperationResult.CreateFailure("Could not select path sketch entities with Mark 4.");
+            }
+
+            // Create circular profile sweep. Prefer ISweepFeatureData2 properties when present.
             try
             {
-                var fmType = featMgr.GetType();
-                var miSweep = fmType.GetMethod("InsertSweep", BindingFlags.Public | BindingFlags.Instance);
-                if (miSweep != null)
+                var defObj = featMgr.CreateDefinition((int)swFeatureNameID_e.swFmSweep);
+                var sweepData = defObj as ISweepFeatureData;
+                if (sweepData == null)
+                    return OperationResult.CreateFailure("Sweep feature data interface not available in this SolidWorks build.");
+
+                try
                 {
-                    // many InsertSweep overloads exist; try a common signature with many parameters and ProfileProp = 1
+                    // Ensure sketch edit is closed and selection is valid before invoking AccessSelections
                     try
                     {
-                        swFeat = miSweep.Invoke(featMgr, new object[] { true, false, 0, 0, 0, false, false, false, 0, 0, 0, false, false, false, 1 }) as IFeature;
-                    }
-                    catch { }
-                }
-                // fallback: try older/protrusion swept API (may already be supported elsewhere)
-                if (swFeat == null)
-                {
-                    var miAlt = fmType.GetMethod("InsertProtrusionSwept4", BindingFlags.Public | BindingFlags.Instance);
-                    if (miAlt != null)
-                    {
-                        try
+                        var sm2 = model?.SketchManager;
+                        if (sm2?.ActiveSketch != null)
                         {
-                            swFeat = miAlt.Invoke(featMgr, new object[] { true, false, false, false, 0, true, 0.0, 0.0, 0.0, true, 0, true, 0, 0, 0.0, false, 0.0, 0.0 }) as IFeature;
+                            AddinStatusLogger.Log("SweepHandler", "Sketch still active before AccessSelections; attempting to exit sketch");
+                            sm2.InsertSketch(true);
                         }
-                        catch { }
                     }
+                    catch (Exception exSm)
+                    {
+                        AddinStatusLogger.Log("SweepHandler", "Failed to exit sketch before AccessSelections: " + exSm.Message);
+                        return OperationResult.CreateFailure("Could not exit sketch edit before creating sweep.");
+                    }
+
+                    // Validate selection manager contents
+                    try
+                    {
+                        var selMgr = model?.SelectionManager;
+                        int selCount = selMgr?.GetSelectedObjectCount2(-1) ?? 0;
+                        AddinStatusLogger.Log("SweepHandler", $"Before AccessSelections: selCount={selCount}");
+                        if (selCount == 0)
+                        {
+                            return OperationResult.CreateFailure("No path entities selected for sweep.");
+                        }
+                    }
+                    catch (Exception exSel)
+                    {
+                        AddinStatusLogger.Log("SweepHandler", "SelectionManager check failed before AccessSelections: " + exSel.Message);
+                        return OperationResult.CreateFailure("Selection state invalid before creating sweep.");
+                    }
+
+                    // Use reflection helper to call the correct AccessSelections overload for this build
+                    TryInvokeAccessSelections(defObj, model);
+
+                    var sweepType = sweepData.GetType();
+                    var profileProp = sweepType.GetProperty("ProfileType") ?? sweepType.GetProperty("ProfileType2");
+                    var diameterProp = sweepType.GetProperty("CircularProfileDiameter");
+
+                    if (profileProp != null && diameterProp != null)
+                    {
+                        dynamic sweepDyn = sweepData;
+                        sweepDyn.ProfileType = 1;
+                        sweepDyn.CircularProfileDiameter = diameterMm / 1000.0;
+
+                        var feat = featMgr.CreateFeature(sweepDyn);
+                        if (feat == null)
+                            return OperationResult.CreateFailure("CreateFeature failed for circular sweep. Path selection may not be valid sweep path entities.");
+
+                        model.ForceRebuild3(false);
+                        return OperationResult.CreateSuccess(stillInSketch: false, data: new { diameter = diameterMm, method = "ISweepFeatureData2" });
+                    }
+
+                    // Fallback: ISweepFeatureData2 not available, try legacy approach
+                    AddinStatusLogger.Log("SweepHandler", "ISweepFeatureData2 properties not available; attempting legacy profile+sweep fallback");
                 }
-            }
-            catch { }
-
-            if (swFeat == null)
-            {
-                if (!pathSelected)
-                    return OperationResult.CreateFailure("InsertSweep failed. No valid Path sketch was selected. Select a single sketch on the Front Plane (Mark 4) and retry.");
-                return OperationResult.CreateFailure("InsertSweep failed. Verify that a valid Path sketch is selected with Mark 4.");
-            }
-
-            // Get the feature definition to set the numeric diameter via reflection (avoid depending on specific COM type)
-            try
-            {
-                var def = swFeat.GetDefinition();
-                if (def == null)
-                    return OperationResult.CreateFailure("Could not retrieve sweep feature definition.");
-
-                var defType = def.GetType();
-                var prop = defType.GetProperty("CircularProfileDiameter");
-                if (prop != null && prop.CanWrite)
+                finally
                 {
-                    // API expects meters
-                    prop.SetValue(def, diameterMm / 1000.0);
+                    try { sweepData.ReleaseSelectionAccess(); } catch { }
                 }
-                else
-                {
-                    // property not found — still attempt to modify definition unchanged
-                }
-
-                bool modifyStatus = swFeat.ModifyDefinition(def, model, null);
-                if (modifyStatus)
-                {
-                    return OperationResult.CreateSuccess(stillInSketch: false, data: new { diameter = diameterMm, method = "CircularProfile" });
-                }
-                return OperationResult.CreateFailure("Could not apply circular diameter to sweep definition.");
             }
             catch (Exception ex)
             {
-                return OperationResult.CreateFailure($"Circular sweep setup failed: {ex.Message}");
+                AddinStatusLogger.Log("SweepHandler", $"ISweepFeatureData2 attempt failed: {ex.Message}");
             }
+
+            // Legacy fallback: create a circular profile sketch and use standard sweep
+            try
+            {
+                AddinStatusLogger.Log("SweepHandler", "Attempting to create temporary circular profile sketch for legacy sweep");
+                bool profOk = TryCreateAndSelectCircularProfile(model, diameterMm);
+                if (profOk)
+                {
+                    AddinStatusLogger.Log("SweepHandler", "Temporary circular profile created; attempting legacy swept insert");
+                    var legacyFeat = TryInvokeStandardSweep(featMgr, true, 0.0);
+                    if (legacyFeat != null)
+                    {
+                        model.ForceRebuild3(false);
+                        return OperationResult.CreateSuccess(stillInSketch: false, data: new { diameter = diameterMm, method = "LegacyProfile+Sweep" });
+                    }
+                }
+            }
+            catch (Exception exLast)
+            {
+                AddinStatusLogger.Log("SweepHandler", "Legacy profile fallback failed: " + exLast.Message);
+            }
+
+            return OperationResult.CreateFailure("Circular sweep not supported in this SolidWorks build. Try creating profile and path sketches manually.");
         }
 
         private IFeature TryInvokeStandardSweep(IFeatureManager featMgr, bool merge, double twistRad)
@@ -210,6 +257,175 @@ namespace AICAD.Services.Operations.PartFeatures
                 return mi.Invoke(featMgr, new object[] { true, false, false, false, 0, true, 0.0, 0.0, 0.0, true, 0, merge, 0, 0, twistRad, false, 0.0, 0.0 }) as IFeature;
             }
             return null;
+        }
+
+        private static bool SelectPathSketchMark4(IModelDoc2 model, IFeature pathFeat)
+        {
+            if (model == null || pathFeat == null) return false;
+
+            try { model.ClearSelection2(true); } catch { }
+
+            try
+            {
+                var sketchObj = pathFeat.GetSpecificFeature2();
+                if (sketchObj is ISketch sk)
+                {
+                    // Select all segments with Mark 4
+                    try
+                    {
+                        var segs = sk.GetSketchSegments() as object[];
+                        if (segs != null && segs.Length > 0)
+                        {
+                            bool any = false;
+                            foreach (var s in segs)
+                            {
+                                if (s is ISketchSegment seg)
+                                {
+                                    try { any |= ((IEntity)seg).Select2(true, 4); } catch { }
+                                }
+                            }
+                            if (any) return true;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            // Fallback to name-based selection
+            try
+            {
+                return model.Extension.SelectByID2(pathFeat.Name, "SKETCH", 0, 0, 0, false, 4, null, 0);
+            }
+            catch { return false; }
+        }
+
+        private static void LogSelectionTypes(IModelDoc2 model, string label)
+        {
+            try
+            {
+                var sel = model.SelectionManager;
+                int selCount = sel?.GetSelectedObjectCount2(-1) ?? 0;
+                AddinStatusLogger.Log("SweepHandler", $"Before AccessSelections: selCount={selCount}");
+                if (selCount == 0)
+                    return;
+                try { selCount = sel.GetSelectedObjectCount2(-1); } catch { selCount = 0; }
+                AddinStatusLogger.Log("SweepHandler", $"{label}: count={selCount}");
+                for (int i = 1; i <= selCount; i++)
+                {
+                    try
+                    {
+                        int type = sel.GetSelectedObjectType3(i, -1);
+                        AddinStatusLogger.Log("SweepHandler", $"{label}: index={i} type={type}");
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static void TryInvokeSetSelections(object def, IModelDoc2 model)
+        {
+            try
+            {
+                var selMgr = model.SelectionManager;
+                var m = def.GetType().GetMethod("SetSelections", BindingFlags.Public | BindingFlags.Instance);
+                if (m != null)
+                {
+                    var parms = m.GetParameters();
+                    if (parms.Length == 2)
+                        m.Invoke(def, new object[] { selMgr, model });
+                    else if (parms.Length == 3)
+                        m.Invoke(def, new object[] { selMgr, model, null });
+                }
+            }
+            catch { }
+        }
+
+        private static void TryInvokeAccessSelections(object def, IModelDoc2 model)
+        {
+            try
+            {
+                var m = def.GetType().GetMethod("AccessSelections", BindingFlags.Public | BindingFlags.Instance);
+                if (m != null)
+                {
+                    var parms = m.GetParameters();
+                    if (parms.Length == 2)
+                        m.Invoke(def, new object[] { model, null });
+                    else if (parms.Length == 1)
+                        m.Invoke(def, new object[] { model });
+                }
+            }
+            catch { }
+        }
+
+        private static void TryAssignPath(object def, IFeature pathSketch)
+        {
+            if (def == null || pathSketch == null) return;
+            try
+            {
+                var t = def.GetType();
+                var prop = t.GetProperty("Path") ?? t.GetProperty("PathFeature") ?? t.GetProperty("PathSketch");
+                if (prop != null && prop.CanWrite)
+                {
+                    var pType = prop.PropertyType;
+                    if (pType.IsArray)
+                    {
+                        var arr = Array.CreateInstance(pType.GetElementType(), 1);
+                        arr.SetValue(pathSketch, 0);
+                        prop.SetValue(def, arr);
+                    }
+                    else
+                    {
+                        prop.SetValue(def, pathSketch);
+                    }
+                }
+            }
+            catch { }
+        }
+
+        private static bool TryCreateAndSelectCircularProfile(IModelDoc2 model, double diameterMm)
+        {
+            if (model == null) return false;
+            try
+            {
+                // Select Front Plane and create sketch
+                try { model.ClearSelection2(true); } catch { }
+                if (!model.Extension.SelectByID2("Front Plane", "PLANE", 0, 0, 0, false, 0, null, 0))
+                    return false;
+
+                var skMgr = model.SketchManager;
+                if (skMgr == null) return false;
+
+                skMgr.InsertSketch(true);
+                double r = (diameterMm / 2.0) / 1000.0; // convert mm to meters
+                skMgr.CreateCircleByRadius(0.0, 0.0, 0.0, r);
+                skMgr.InsertSketch(true);
+
+                // Find and select the newly created sketch as Mark1 (profile)
+                try { model.ClearSelection2(true); } catch { }
+                var f = model.FirstFeature();
+                IFeature lastSketch = null;
+                while (f != null)
+                {
+                    string tn = string.Empty;
+                    try { tn = f.GetTypeName2() ?? string.Empty; } catch { }
+                    if (tn.Equals("Sketch", StringComparison.OrdinalIgnoreCase) ||
+                        tn.Equals("ProfileFeature", StringComparison.OrdinalIgnoreCase) ||
+                        tn.Equals("3DProfileFeature", StringComparison.OrdinalIgnoreCase))
+                    {
+                        lastSketch = f;
+                    }
+                    f = f.GetNextFeature();
+                }
+
+                if (lastSketch != null)
+                {
+                    return model.Extension.SelectByID2(lastSketch.Name, "SKETCH", 0, 0, 0, false, 1, null, 0);
+                }
+            }
+            catch { }
+            return false;
         }
     }
 }

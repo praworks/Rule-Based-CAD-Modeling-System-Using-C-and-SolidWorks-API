@@ -91,6 +91,12 @@ namespace AICAD.Services
                     }
                 }
                 catch { }
+                // Expand compact "sketch" steps that bundle entities into proper ops.
+                try
+                {
+                    ExpandSketchSteps(steps);
+                }
+                catch { }
                 // Per-step canonicalization: if enabled, call the ClarificationService for each step
                 // before execution to ensure the step is normalized/canonical. Controlled by env var
                 // AICAD_PER_STEP_CANONICALIZE (set to '1' or 'true' to enable).
@@ -727,6 +733,168 @@ namespace AICAD.Services
         private static void RequireModel(IModelDoc2 model)
         {
             if (model == null) throw new Exception("Model not initialized (call new_part first)");
+        }
+
+        private static void ExpandSketchSteps(JArray steps)
+        {
+            for (int idx = 0; idx < steps.Count; idx++)
+            {
+                if (!(steps[idx] is JObject obj)) continue;
+
+                string op = obj.Value<string>("op") ??
+                            obj.Value<string>("operation") ??
+                            obj.Value<string>("Operation") ??
+                            obj.Value<string>("command") ??
+                            obj.Value<string>("Command") ??
+                            string.Empty;
+
+                if (string.IsNullOrWhiteSpace(op)) continue;
+                var opLower = op.Trim().ToLowerInvariant().Replace("-", "_").Replace(" ", "_");
+                if (opLower != "sketch" && opLower != "sketch_begin") continue;
+
+                if (!(obj["entities"] is JArray entities) || entities.Count == 0) continue;
+
+                var replacement = new List<JToken>();
+                var plane = obj.Value<string>("plane") ?? obj.Value<string>("name");
+                if (!string.IsNullOrWhiteSpace(plane))
+                {
+                    replacement.Add(new JObject
+                    {
+                        ["op"] = "select_plane",
+                        ["name"] = plane
+                    });
+                }
+
+                replacement.Add(new JObject { ["op"] = "sketch_begin" });
+
+                foreach (var ent in entities)
+                {
+                    if (!(ent is JObject entObj)) continue;
+                    var converted = ConvertSketchEntity(entObj);
+                    if (converted != null) replacement.Add(converted);
+                }
+
+                replacement.Add(new JObject { ["op"] = "sketch_end" });
+
+                steps.RemoveAt(idx);
+                for (int j = replacement.Count - 1; j >= 0; j--)
+                {
+                    steps.Insert(idx, replacement[j]);
+                }
+                idx += replacement.Count - 1;
+            }
+        }
+
+        private static JObject ConvertSketchEntity(JObject entity)
+        {
+            JObject ent;
+            try { ent = (JObject)entity.DeepClone(); } catch { ent = entity; }
+
+            string op = ent.Value<string>("op") ?? ent.Value<string>("type") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(op)) return null;
+
+            var opLower = op.Trim().ToLowerInvariant().Replace("-", "_").Replace(" ", "_");
+            if (opLower == "circle") opLower = "circle_center";
+            ent["op"] = opLower;
+
+            if (opLower == "line")
+            {
+                if (ent["x1"] == null && ent["y1"] == null && ent["x2"] == null && ent["y2"] == null)
+                {
+                    if (ent["points"] is JArray pts && pts.Count >= 2)
+                    {
+                        if (TryGetPoint(pts[0], out var x1, out var y1) &&
+                            TryGetPoint(pts[1], out var x2, out var y2))
+                        {
+                            ent["x1"] = x1;
+                            ent["y1"] = y1;
+                            ent["x2"] = x2;
+                            ent["y2"] = y2;
+                        }
+                    }
+                }
+            }
+
+            // Support arc entities expressed with point arrays: { center:[x,y], radius: r, start:[x,y], end:[x,y] }
+            if (opLower == "arc" || opLower == "tangent_arc")
+            {
+                try
+                {
+                    // center -> cx,cy
+                    if ((ent["cx"] == null || ent["cy"] == null) && ent["center"] is JArray cent && cent.Count >= 2)
+                    {
+                        if (TryGetPoint(cent, out var ccx, out var ccy))
+                        {
+                            ent["cx"] = ccx;
+                            ent["cy"] = ccy;
+                        }
+                    }
+
+                    // radius / r
+                    if (ent["r"] == null)
+                    {
+                        if (ent["radius"] != null) ent["r"] = ent["radius"];
+                        else if (ent["diameter"] != null)
+                        {
+                            try { ent["r"] = ent.Value<double>("diameter") / 2.0; } catch { }
+                        }
+                    }
+
+                    // start/end points -> start_angle/end_angle (degrees) if center is known
+                    if (ent["cx"] != null && ent["cy"] != null)
+                    {
+                        double ccx = ent.Value<double>("cx");
+                        double ccy = ent.Value<double>("cy");
+
+                        if (ent["start"] is JArray sarr && sarr.Count >= 2)
+                        {
+                            if (TryGetPoint(sarr, out var sx, out var sy))
+                            {
+                                var ang = Math.Atan2(sy - ccy, sx - ccx) * 180.0 / Math.PI;
+                                ent["start_angle"] = ang;
+                            }
+                        }
+                        if (ent["end"] is JArray earr && earr.Count >= 2)
+                        {
+                            if (TryGetPoint(earr, out var ex, out var ey))
+                            {
+                                var ang = Math.Atan2(ey - ccy, ex - ccx) * 180.0 / Math.PI;
+                                ent["end_angle"] = ang;
+                            }
+                        }
+                    }
+                }
+                catch { }
+            }
+
+            return ent;
+        }
+
+        private static bool TryGetPoint(JToken token, out double x, out double y)
+        {
+            x = 0; y = 0;
+            try
+            {
+                if (token is JArray arr && arr.Count >= 2)
+                {
+                    x = arr[0].Value<double>();
+                    y = arr[1].Value<double>();
+                    return true;
+                }
+                if (token is JObject obj)
+                {
+                    var xo = obj.Value<double?>("x") ?? obj.Value<double?>("cx") ?? obj.Value<double?>("X");
+                    var yo = obj.Value<double?>("y") ?? obj.Value<double?>("cy") ?? obj.Value<double?>("Y");
+                    if (xo.HasValue && yo.HasValue)
+                    {
+                        x = xo.Value;
+                        y = yo.Value;
+                        return true;
+                    }
+                }
+            }
+            catch { }
+            return false;
         }
 
         private static double ToM(double mm) => mm / 1000.0;

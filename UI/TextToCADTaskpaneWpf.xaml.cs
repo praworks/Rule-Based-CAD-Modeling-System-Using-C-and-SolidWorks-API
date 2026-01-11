@@ -16,6 +16,7 @@ using System.Threading;
 using System.Net.Http;
 using System.Runtime.InteropServices;
 using System.Windows.Interop;
+using System.Windows.Threading;
 using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swconst;
 using SolidWorks.Interop.swcommands;
@@ -2039,17 +2040,26 @@ Now convert this:
 Input: '{userPrompt}'
 Output:";
 
-                // Use the global provider-priority generator so we don't instantiate
-                // a provider (e.g. Gemini) without credentials; this mirrors
-                // the same selection logic used elsewhere in the app.
+                // Use direct Groq client with empty system prompt to avoid poisoning the main generation's system prompt
                 string response = null;
                 try
                 {
-                    response = await Task.Run(() => AICAD.Services.ClarificationService.GenerateUserOnlyWithPriority(descriptionPrompt, 30)).ConfigureAwait(false);
+                    var groqKey = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User);
+                    if (!string.IsNullOrWhiteSpace(groqKey))
+                    {
+                        var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User) ?? "llama-3.3-70b-versatile";
+                        // Create temp client with empty system prompt for description only
+                        var tempClient = new AICAD.Services.GroqLlmClient(groqKey, groqModel, systemPrompt: "");
+                        response = await Task.Run(() => tempClient.GenerateAsync(descriptionPrompt)).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        AppendStatusLine("[Desc] No Groq API key - skipping description generation");
+                    }
                 }
                 catch (Exception ex)
                 {
-                    AppendStatusLine("[Desc] Priority generation failed: " + ex.Message);
+                    AppendStatusLine("[Desc] Generation failed: " + ex.Message);
                 }
 
                 // Extract simple description from response
@@ -2670,6 +2680,8 @@ Output:";
                     catch (Exception ex)
                     {
                         errText = "plan-parse: " + ex.Message;
+                        AppendStatusLine("⚠️ Failed to parse LLM response as JSON: " + ex.Message);
+                        AppendStatusLine("LLM returned: " + (planJson?.Length > 500 ? planJson.Substring(0, 500) + "..." : planJson));
                         break;
                     }
 
@@ -4311,7 +4323,7 @@ Output:";
 
                     try
                     {
-                        if (!_statusWindow.Dispatcher.CheckAccess()) _statusWindow.Dispatcher.Invoke((Action)write);
+                        if (!_statusWindow.Dispatcher.CheckAccess()) _statusWindow.Dispatcher.BeginInvoke((Action)write, DispatcherPriority.Background);
                         else write();
                     }
                     catch { }

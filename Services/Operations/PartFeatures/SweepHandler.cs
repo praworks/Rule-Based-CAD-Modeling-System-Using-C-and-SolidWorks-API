@@ -148,78 +148,53 @@ namespace AICAD.Services.Operations.PartFeatures
             // Create circular profile sweep. Prefer ISweepFeatureData2 properties when present.
             try
             {
+                // Create simple circular-profile sweep as in Prototype Testing/Program.cs
                 var defObj = featMgr.CreateDefinition((int)swFeatureNameID_e.swFmSweep);
                 var sweepData = defObj as ISweepFeatureData;
                 if (sweepData == null)
-                    return OperationResult.CreateFailure("Sweep feature data interface not available in this SolidWorks build.");
-
-                try
                 {
-                    // Ensure sketch edit is closed and selection is valid before invoking AccessSelections
-                    try
-                    {
-                        var sm2 = model?.SketchManager;
-                        if (sm2?.ActiveSketch != null)
-                        {
-                            AddinStatusLogger.Log("SweepHandler", "Sketch still active before AccessSelections; attempting to exit sketch");
-                            sm2.InsertSketch(true);
-                        }
-                    }
-                    catch (Exception exSm)
-                    {
-                        AddinStatusLogger.Log("SweepHandler", "Failed to exit sketch before AccessSelections: " + exSm.Message);
-                        return OperationResult.CreateFailure("Could not exit sketch edit before creating sweep.");
-                    }
-
-                    // Validate selection manager contents
-                    try
-                    {
-                        var selMgr = model?.SelectionManager;
-                        int selCount = selMgr?.GetSelectedObjectCount2(-1) ?? 0;
-                        AddinStatusLogger.Log("SweepHandler", $"Before AccessSelections: selCount={selCount}");
-                        if (selCount == 0)
-                        {
-                            return OperationResult.CreateFailure("No path entities selected for sweep.");
-                        }
-                    }
-                    catch (Exception exSel)
-                    {
-                        AddinStatusLogger.Log("SweepHandler", "SelectionManager check failed before AccessSelections: " + exSel.Message);
-                        return OperationResult.CreateFailure("Selection state invalid before creating sweep.");
-                    }
-
-                    // Use reflection helper to call the correct AccessSelections overload for this build
-                    TryInvokeAccessSelections(defObj, model);
-
-                    var sweepType = sweepData.GetType();
-                    var profileProp = sweepType.GetProperty("ProfileType") ?? sweepType.GetProperty("ProfileType2");
-                    var diameterProp = sweepType.GetProperty("CircularProfileDiameter");
-
-                    if (profileProp != null && diameterProp != null)
-                    {
-                        dynamic sweepDyn = sweepData;
-                        sweepDyn.ProfileType = 1;
-                        sweepDyn.CircularProfileDiameter = diameterMm / 1000.0;
-
-                        var feat = featMgr.CreateFeature(sweepDyn);
-                        if (feat == null)
-                            return OperationResult.CreateFailure("CreateFeature failed for circular sweep. Path selection may not be valid sweep path entities.");
-
-                        model.ForceRebuild3(false);
-                        return OperationResult.CreateSuccess(stillInSketch: false, data: new { diameter = diameterMm, method = "ISweepFeatureData2" });
-                    }
-
-                    // Fallback: ISweepFeatureData2 not available, try legacy approach
-                    AddinStatusLogger.Log("SweepHandler", "ISweepFeatureData2 properties not available; attempting legacy profile+sweep fallback");
+                    AddinStatusLogger.Log("SweepHandler", "CreateDefinition did not return ISweepFeatureData.");
                 }
-                finally
+                else
                 {
-                    try { sweepData.ReleaseSelectionAccess(); } catch { }
+                    // Ensure we exited any sketch edit
+                    try { model.SketchManager?.InsertSketch(true); } catch { }
+
+                    // Set circular-profile mode and diameter (meters)
+                    try
+                    {
+                        sweepData.CircularProfile = true;
+                        sweepData.CircularProfileDiameter = diameterMm / 1000.0;
+                    }
+                    catch (Exception exSet)
+                    {
+                        AddinStatusLogger.Log("SweepHandler", "Failed to set circular profile properties: " + exSet.Message);
+                    }
+
+                    // Create feature
+                    try
+                    {
+                        var feat = featMgr.CreateFeature(sweepData);
+                        if (feat != null)
+                        {
+                            model.ForceRebuild3(false);
+                            return OperationResult.CreateSuccess(stillInSketch: false, data: new { diameter = diameterMm, method = "CircularProfileCreateFeature" });
+                        }
+                        AddinStatusLogger.Log("SweepHandler", "CreateFeature returned null for circular-profile sweep.");
+                    }
+                    catch (Exception exCreate)
+                    {
+                        AddinStatusLogger.Log("SweepHandler", "CreateFeature threw: " + exCreate.Message);
+                    }
+                    finally
+                    {
+                        try { /* if interface has ReleaseSelectionAccess */ sweepData.ReleaseSelectionAccess(); } catch { }
+                    }
                 }
             }
             catch (Exception ex)
             {
-                AddinStatusLogger.Log("SweepHandler", $"ISweepFeatureData2 attempt failed: {ex.Message}");
+                AddinStatusLogger.Log("SweepHandler", $"Circular-profile CreateDefinition/CreateFeature attempt failed: {ex.Message}");
             }
 
             // Legacy fallback: create a circular profile sketch and use standard sweep

@@ -1,0 +1,7 @@
+[
+  {
+    "key": "enter",
+    "command": "workbench.action.tasks.build",
+    "when": "explorerViewletVisible && explorerViewletFocus"
+  }
+]

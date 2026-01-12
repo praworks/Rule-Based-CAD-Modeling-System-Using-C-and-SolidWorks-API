@@ -138,7 +138,7 @@ namespace AICAD.Services.Operations.Utilities
                 {
                     if (facts != null)
                     {
-                        try { AddinStatusLogger.Log("LLM-Facts", facts.ToString(Newtonsoft.Json.Formatting.None)); } catch { }
+                        try { AddinStatusLogger.Log("LLM-Facts", Newtonsoft.Json.JsonConvert.SerializeObject(facts, Newtonsoft.Json.Formatting.None)); } catch { }
                     }
                     else
                     {

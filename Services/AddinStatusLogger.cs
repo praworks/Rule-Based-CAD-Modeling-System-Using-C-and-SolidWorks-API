@@ -10,6 +10,9 @@ namespace AICAD.Services
         public static event Action<string> OnLog;
 
     private static readonly object _sync = new object();
+        // Keep a short in-memory buffer so logs emitted before UI is ready can be shown
+        private static readonly System.Collections.Generic.List<string> _buffer = new System.Collections.Generic.List<string>();
+        private const int BufferSize = 500;
 
         public static void Log(string category, string message)
         {
@@ -54,11 +57,29 @@ namespace AICAD.Services
             {
                 lock (_sync)
                 {
+                    // mirror to file
                     var txt = DateTime.Now.ToString("o") + " " + line + System.Environment.NewLine;
                     TempFileWriter.AppendAllText("AI_CAD_Addin.log", txt);
+
+                    // store in buffer for UI windows opened later
+                    try
+                    {
+                        _buffer.Add(DateTime.Now.ToString("HH:mm:ss.ffffff") + " " + line);
+                        if (_buffer.Count > BufferSize) _buffer.RemoveAt(0);
+                    }
+                    catch { }
                 }
             }
             catch { }
+        }
+
+        // Return a snapshot of buffered log lines (most-recent last)
+        public static string[] GetBufferedLines()
+        {
+            lock (_sync)
+            {
+                return _buffer.ToArray();
+            }
         }
     }
 }

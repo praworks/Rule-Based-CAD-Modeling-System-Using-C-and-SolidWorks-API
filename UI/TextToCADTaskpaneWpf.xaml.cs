@@ -480,9 +480,23 @@ namespace AICAD.UI
                     try { AICAD.Services.LocalLogger.Log("WPF: build.Click invoked"); } catch { }
                 }
                 catch { }
-                try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
+                try
+                {
+                    BuildRequested?.Invoke(this, EventArgs.Empty);
+                    try { AddinStatusLogger.Log("TaskpaneWpf", "BuildRequested invoked"); } catch { }
+                }
+                catch { }
                 // Build is initiated by external listeners (SwAddin) via BuildRequested.
                 // Avoid calling BuildFromPromptAsync() here to prevent duplicate runs.
+                if (BuildRequested == null)
+                {
+                    try
+                    {
+                        AddinStatusLogger.Log("TaskpaneWpf", "No BuildRequested listeners; running build directly");
+                        _ = BuildFromPromptAsync();
+                    }
+                    catch { }
+                }
                 try { await Task.Yield(); } catch { }
             };
             btnHistory.Click += BtnHistory_Click;
@@ -956,7 +970,11 @@ namespace AICAD.UI
         /// <summary>
         /// Public wrapper so external code can trigger a build request programmatically.
         /// </summary>
-        public Task RunBuildFromPromptAsync() => BuildFromPromptAsync();
+        public Task RunBuildFromPromptAsync()
+        {
+            try { AddinStatusLogger.Log("TaskpaneWpf", "RunBuildFromPromptAsync invoked"); } catch { }
+            return BuildFromPromptAsync();
+        }
 
         // Public helpers to ensure focus can be moved into WPF textboxes from the WinForms host
         public void FocusPrompt()
@@ -1203,6 +1221,19 @@ namespace AICAD.UI
                     _statusWindow.CopyErrorClicked += StatusWindow_CopyErrorClicked;
                     _statusWindow.CopyRunClicked += StatusWindow_CopyRunClicked;
                     _statusWindow.Owner = Window.GetWindow(this);
+                    // Flush any buffered log lines emitted before the window was created
+                    try
+                    {
+                        var buf = Services.AddinStatusLogger.GetBufferedLines();
+                        if (buf != null && buf.Length > 0)
+                        {
+                            foreach (var ln in buf)
+                            {
+                                try { _statusWindow.AppendStatus(ln); } catch { }
+                            }
+                        }
+                    }
+                    catch { }
                 }
                 _statusWindow.Show();
                 _statusWindow.Activate();
@@ -2091,9 +2122,11 @@ namespace AICAD.UI
 
         private async Task BuildFromPromptAsync()
         {
+            try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync entered"); } catch { }
             var text = (PromptText ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(text))
             {
+                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: empty prompt"); } catch { }
                 AppendStatusLine("Enter a prompt describing a simple box or cylinder in mm.");
                 return;
             }
@@ -2103,6 +2136,7 @@ namespace AICAD.UI
             var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "enter prompt", "enter prompt...", "...", ".", "," };
             if (meaninglessWords.Contains(lowerText) || text.Length < 2)
             {
+                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: meaningless prompt"); } catch { }
                 AppendStatusLine("❌ Please enter a meaningful CAD description (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm').");
                 SetRealTimeStatus("Invalid prompt", Colors.OrangeRed);
                 return;
@@ -2111,6 +2145,7 @@ namespace AICAD.UI
             // Prevent re-entry if a build is already running
             if (_isBuilding)
             {
+                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: already building"); } catch { }
                 // Silently prevent re-entry (defensive code path)
                 return;
             }
@@ -2743,7 +2778,7 @@ namespace AICAD.UI
                                 AppendStatusLine($"[Decompose] Feature tasks count={tasks.Count}");
                                 var firstTask = tasks.OfType<JObject>().FirstOrDefault();
                                 if (firstTask != null)
-                                    AppendStatusLine("[Decompose] First task=" + firstTask.ToString(Newtonsoft.Json.Formatting.None));
+                                    AppendStatusLine("[Decompose] First task=" + Newtonsoft.Json.JsonConvert.SerializeObject(firstTask, Newtonsoft.Json.Formatting.None));
                             }
                             catch { }
                             foreach (var t in tasks.OfType<JObject>())

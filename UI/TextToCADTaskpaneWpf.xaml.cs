@@ -72,9 +72,7 @@ namespace AICAD.UI
                 using (var http = new HttpClient { Timeout = TimeSpan.FromSeconds(3) })
                 {
                     // Check providers sequentially by priority - stop as soon as one is available
-                    var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                                      ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                                      ?? "local,gemini,groq";
+                    var priorityStr = AICAD.Services.LlmPriorityManager.GetPriority();
                     var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
                     
                     foreach (var prov in priority)
@@ -1386,7 +1384,7 @@ namespace AICAD.UI
 
         private CancellationTokenSource _karaokeCts;
         private CancellationTokenSource _progressCts;
-        private TextBlock _taskCountText;
+        private System.Windows.Controls.TextBlock _taskCountText = new System.Windows.Controls.TextBlock();
         private readonly Random _rand = new Random();
         private readonly System.Windows.Media.Color[] _karaokeColors = new[] { Colors.Gray, Colors.DarkOrange, Colors.DodgerBlue, Colors.DarkGreen };
 
@@ -1741,37 +1739,81 @@ namespace AICAD.UI
         {
             if (_client == null)
             {
-                // If a local LLM endpoint is configured, prefer it.
-                var llmMode = System.Environment.GetEnvironmentVariable("AICAD_LLM_MODE", System.EnvironmentVariableTarget.User)
-                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_MODE", System.EnvironmentVariableTarget.Process)
-                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_MODE", System.EnvironmentVariableTarget.Machine)
-                              ?? string.Empty;
+                // Select provider according to global priority `AICAD_LLM_PRIORITY` (no hardcoded local-first)
+                var priorityStr = AICAD.Services.LlmPriorityManager.GetPriority();
+                var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
-                var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
-                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
-                                    ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine);
+                // Default fallback model name if none found
+                var fallbackModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                    ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                    ?? "google/functiongemma-270m";
 
-                var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
-                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
-                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Machine)
-                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
-                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
-                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Machine)
-                                     ?? "google/functiongemma-270m";
-
-                if (!string.IsNullOrWhiteSpace(localEndpoint))
+                foreach (var provider in priority)
                 {
-                    var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                       ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                       ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Machine)
-                                       ?? "Always answer in rhymes. Today is Thursday";
-                    _client = new LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt);
-                    var dispName = GetEndpointDisplayName(localEndpoint);
-                    AppendStatusLine("[LLM] " + dispName + " client constructed; endpoint=" + localEndpoint + " model=" + preferredModel);
+                    try
+                    {
+                        if (provider == "local")
+                        {
+                            var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                                                ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                                                ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Machine)
+                                                ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(localEndpoint))
+                            {
+                                var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
+                                                     ?? fallbackModel;
+                                var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                                   ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
+                                                   ?? "";
+                                _client = new LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt);
+                                var dispName = GetEndpointDisplayName(localEndpoint);
+                                AppendStatusLine("[LLM] " + dispName + " client constructed; endpoint=" + localEndpoint + " model=" + preferredModel);
+                                break;
+                            }
+                        }
+                        else if (provider == "gemini")
+                        {
+                            var key = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
+                                      ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
+                                      ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(key))
+                            {
+                                var preferredModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
+                                                     ?? fallbackModel;
+                                _client = new GeminiClient(key, preferredModel);
+                                AppendStatusLine("[LLM] Gemini client constructed; apiKeySource=env");
+                                break;
+                            }
+                        }
+                        else if (provider == "groq")
+                        {
+                            var key = System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                                      ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process)
+                                      ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Machine)
+                                      ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(key))
+                            {
+                                var preferredModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
+                                                     ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
+                                                     ?? "llama-3.3-70b-versatile";
+                                _client = new GroqLlmClient(key, preferredModel);
+                                AppendStatusLine("[LLM] Groq client constructed; apiKeySource=env");
+                                break;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        try { AppendStatusLine("[LLM] Provider " + provider + " selection failed: " + ex.Message); } catch { }
+                    }
                 }
-                else
+
+                // If still null, fall back to Gemini client (as previous behavior)
+                if (_client == null)
                 {
-                    // Prefer API keys from environment; do not hardcode keys in source.
                     var key = System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
                               ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)
                               ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Machine)
@@ -1780,8 +1822,8 @@ namespace AICAD.UI
                               ?? System.Environment.GetEnvironmentVariable("OPENAI_API_KEY", System.EnvironmentVariableTarget.Machine)
                               ?? null;
 
-                    _client = new GeminiClient(key, preferredModel);
-                    AppendStatusLine("[LLM] Gemini client constructed; apiKeySource=" + (string.IsNullOrEmpty(key) ? "none" : "env"));
+                    _client = new GeminiClient(key, fallbackModel);
+                    AppendStatusLine("[LLM] Gemini client constructed (fallback); apiKeySource=" + (string.IsNullOrEmpty(key) ? "none" : "env"));
                 }
             }
             return _client;
@@ -1805,24 +1847,9 @@ namespace AICAD.UI
                 AppendStatusLine($"[Refine] Improving prompt using {refineProvider}...");
 
                 // System prompt for refinement LLM
-                var refineSystemPrompt =
-                    "You are a prompt refinement assistant for a CAD system. Your job is to take brief user input and expand it into a clear, detailed CAD specification.\n\n" +
-                    "Rules:\n" +
-                    "- If dimensions are missing, suggest reasonable defaults (e.g., 50mm for width/height, 100mm for depth)\n" +
-                    "- ALWAYS add explicit auto-dimension instructions (use op:\"auto_dimension\") for any sketch geometry you produce (e.g., horizontal and vertical dimensions for rectangles, with numeric values in mm)\n" +
-                    "- Always specify units (millimeters)\n" +
-                    "- Clarify shape type (box, cylinder, etc.)\n" +
-                    "- Fix grammar and spelling\n" +
-                    "- Expand abbreviations\n" +
-                    "- Keep it concise but complete\n\n" +
-                    "Example:\n" +
-                    "Input: 'box'\n" +
-                    "Output: 'Create a rectangular box with width 50mm, height 50mm, and depth 100mm'\n\n" +
-                    "Input: 'cyl r=20'\n" +
-                    "Output: 'Create a cylinder with radius 20mm and height 100mm'\n\n" +
-                    "Now refine this user input:";
+                var refineSystemPrompt = AICAD.Services.PromptHandler.BuildRefineSystemPrompt();
 
-                var fullRefinePrompt = refineSystemPrompt + "\n\nUser input: " + rawPrompt + "\n\nRefined prompt:";
+                var fullRefinePrompt = AICAD.Services.PromptHandler.BuildRefinePrompt(refineSystemPrompt, rawPrompt);
 
                 string refinedText = null;
                 
@@ -1897,14 +1924,47 @@ namespace AICAD.UI
             }
         }
 
+        private async Task<(string category, string description)> ClassifyAndDescribeAsync(
+            string userPrompt,
+            IReadOnlyCollection<string> categories)
+        {
+            if (string.IsNullOrWhiteSpace(userPrompt) || categories == null || categories.Count == 0)
+                return ("Unknown", string.Empty);
+
+            try
+            {
+                var prompt = AICAD.Services.PromptHandler.BuildClassificationAndDescriptionPrompt(userPrompt, categories);
+                var response = await Task.Run(() => AICAD.Services.ClarificationService.GenerateUserOnlyWithPriority(prompt, 25)).ConfigureAwait(false);
+                if (string.IsNullOrWhiteSpace(response))
+                    return ("Unknown", string.Empty);
+
+                try
+                {
+                    var obj = Newtonsoft.Json.Linq.JObject.Parse(response);
+                    var cat = obj["category"]?.ToString();
+                    var desc = obj["description"]?.ToString();
+                    cat = AICAD.Services.PromptHandler.NormalizeCategory(cat, categories);
+                    return (cat, desc ?? string.Empty);
+                }
+                catch
+                {
+                    var cat = AICAD.Services.PromptHandler.NormalizeCategory(response, categories);
+                    return (cat, string.Empty);
+                }
+            }
+            catch (Exception ex)
+            {
+                AppendStatusLine("[Classify] Failed: " + ex.Message);
+                return ("Unknown", string.Empty);
+            }
+        }
+
         private async Task<string> GenerateWithFallbackAsync(string prompt)
         {
             Exception lastEx = null;
 
             // Load priority order from environment
-            var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                              ?? "local,gemini,groq";
+            var priorityStr = AICAD.Services.LlmPriorityManager.GetPriority();
             var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
             foreach (var provider in priority)
@@ -1922,17 +1982,7 @@ namespace AICAD.UI
                                                  ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                  ?? "local-model";
                             var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                            ?? @"You are a CAD planning agent for SOLIDWORKS.
-
-Return ONLY a single JSON OBJECT with keys 'thinking' (string) and 'steps' (array). 'thinking' must describe geometric reasoning before the plan: plane selection, coordinate math, constraints, and why dimensions are chosen. 'steps' must follow the plan schema.
-
-CRITICAL RULES:
-1. Extrusion cuts: use separate op 'extrude_cut' with 'depth'. NEVER use op 'extrude' with type='cut'.
-2. Face selection: use select_face with id='top'/'front'/'right' (NOT numeric IDs).
-3. Plane selection: use ONLY these exact plane names: 'Top Plane', 'Front Plane', or 'Right Plane'.
-4. Circle dimensions: for circle sketches, use op 'auto_dimension' with 'r' or 'diameter' (NOT w/h).
-
-Rectangles: copy cx, cy, w, h from rectangle_center into auto_dimension. Units are millimeters.";
+                                            ?? AICAD.Services.PromptHandler.BuildTaskpaneLocalSystemPrompt();
                             
                             var dispTry = GetEndpointDisplayName(localEndpoint);
                             AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
@@ -2025,65 +2075,6 @@ Rectangles: copy cx, cy, w, h from rectangle_center into auto_dimension. Units a
             throw new InvalidOperationException("No LLM providers configured or all failed.");
         }
 
-        private async Task<string> GenerateSimpleDescriptionAsync(string userPrompt)
-        {
-            try
-            {
-                var descriptionPrompt = $@"Convert this CAD instruction into a simple 2-5 word description.
-Examples:
-- Input: 'create 100mm cube and apply chamfer' → Output: Cube with chamfer
-- Input: 'make rectangular plate 200x150mm with 4 holes' → Output: Plate with holes
-- Input: 'design cylinder diameter 50mm height 100mm' → Output: Cylinder
-
-Now convert this:
-Input: '{userPrompt}'
-Output:";
-
-                // Use the global provider-priority generator so we don't instantiate
-                // a provider (e.g. Gemini) without credentials; this mirrors
-                // the same selection logic used elsewhere in the app.
-                string response = null;
-                try
-                {
-                    response = await Task.Run(() => AICAD.Services.ClarificationService.GenerateUserOnlyWithPriority(descriptionPrompt, 30)).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    AppendStatusLine("[Desc] Priority generation failed: " + ex.Message);
-                }
-
-                // Extract simple description from response
-                var lines = (response ?? string.Empty).Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var line in lines)
-                {
-                    var trimmed = line.Trim();
-                    // Skip empty lines and common prefixes
-                    if (string.IsNullOrWhiteSpace(trimmed)) continue;
-                    if (trimmed.StartsWith("Output:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        trimmed = trimmed.Substring("Output:".Length).Trim();
-                    }
-                    if (trimmed.StartsWith("Description:", StringComparison.OrdinalIgnoreCase))
-                    {
-                        trimmed = trimmed.Substring("Description:".Length).Trim();
-                    }
-                    
-                    // Return first non-empty meaningful line
-                    if (!string.IsNullOrWhiteSpace(trimmed) && trimmed.Length <= 100)
-                    {
-                        return trimmed;
-                    }
-                }
-                
-                // Fallback: return first line if no match
-                return lines.FirstOrDefault()?.Trim() ?? string.Empty;
-            }
-            catch (Exception ex)
-            {
-                try { AddinStatusLogger.Error("TaskpaneWpf", "GenerateSimpleDescriptionAsync failed", ex); } catch { }
-                return string.Empty;
-            }
-        }
 
         private void FinishLlmProgress()
         {
@@ -2157,9 +2148,7 @@ Output:";
                 // Log current settings first
                 try
                 {
-                    var llmPriority = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                                   ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                                   ?? "local,gemini,groq";
+                    var llmPriority = AICAD.Services.LlmPriorityManager.GetPriority();
                     var sampleMode = System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.User)
                                    ?? System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.Process)
                                    ?? "few";
@@ -2294,31 +2283,51 @@ Output:";
                 SetLastError(null);
                 SetTimes(null, null);
 
-                // Generate simple description FIRST and keep in memory
+                // Generate classification + description FIRST and keep in memory
                 _generatedDescription = null;
+                string classifiedCategory = null;
+                string curatedTemplate = null;
+                AICAD.Services.PromptTemplateConfig templateConfig = null;
+                bool isThreadbar = false;
                 try
                 {
-                    AppendStatusLine("[LLM] Generating description...");
-                    _generatedDescription = await GenerateSimpleDescriptionAsync(text);
-                    if (!string.IsNullOrWhiteSpace(_generatedDescription))
+                    templateConfig = AICAD.Services.PromptHandler.LoadTemplateConfig();
+                    if (templateConfig != null && templateConfig.Categories.Count > 0)
                     {
-                        AppendStatusLine($"[Description] Generated: {_generatedDescription}");
-                        // Update UI immediately
-                        Dispatcher.Invoke(() =>
+                        AppendStatusLine("[LLM] Generating description & category...");
+                        var cats = templateConfig.Categories.Keys.ToList();
+                        var result = await ClassifyAndDescribeAsync(text, cats).ConfigureAwait(false);
+                        classifiedCategory = result.category;
+                        _generatedDescription = result.description;
+                        AppendStatusLine($"[Classify] Category: {classifiedCategory}");
+                        if (!string.IsNullOrWhiteSpace(_generatedDescription))
                         {
-                            typeDescriptionTextBox.Text = _generatedDescription;
-                        });
+                            AppendStatusLine($"[Description] Generated: {_generatedDescription}");
+                            Dispatcher.Invoke(() => { typeDescriptionTextBox.Text = _generatedDescription; });
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(classifiedCategory) &&
+                            templateConfig.Categories.TryGetValue(classifiedCategory, out var tpl))
+                        {
+                            curatedTemplate = tpl;
+                        }
+                        else if (!string.IsNullOrWhiteSpace(templateConfig.UnknownTemplate))
+                        {
+                            curatedTemplate = templateConfig.UnknownTemplate;
+                        }
+                        isThreadbar = string.Equals(classifiedCategory, "Threadbar", StringComparison.OrdinalIgnoreCase);
                     }
                 }
                 catch (Exception descEx)
                 {
-                    try { AddinStatusLogger.Error("TaskpaneWpf", "Description generation failed", descEx); } catch { }
+                    try { AddinStatusLogger.Error("TaskpaneWpf", "Description/classification failed", descEx); } catch { }
                     AppendStatusLine("[Description] Generation failed - will use empty description");
                 }
 
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
                 bool useFewShot = true;
                 int maxFewShotCount = 3; // Default: few-shot uses up to 3 examples
+                // classifiedCategory/curatedTemplate are set during classify+describe step above
                 
                 try
                 {
@@ -2378,9 +2387,12 @@ Output:";
                 catch { }
 
                 StringBuilder fewshot = null;
-                if (useFewShot)
+                StringBuilder threadFewshot = null;
+                // classification and template selection are already done above when templates are available
+
+                if (useFewShot && string.IsNullOrWhiteSpace(curatedTemplate))
                 {
-                    // NOTE: hard-coded static examples removed — rely on DB-provided examples when available.
+                    // NOTE: hard-coded static examples removed – rely on DB-provided examples when available.
                     fewshot = new StringBuilder();
 
                     // Signal we're attempting to apply examples so the status console can group them underneath
@@ -2452,8 +2464,33 @@ Output:";
                     }
                 }
 
+                if (useFewShot && isThreadbar)
+                {
+                    threadFewshot = new StringBuilder();
+                    try
+                    {
+                        if (_goodStore != null)
+                        {
+                            var extras = _goodStore.GetRecentFewShots(maxFewShotCount);
+                            foreach (var s in extras)
+                                threadFewshot.Append(s);
+                        }
+                        if (!_forceUseOnlyGoodFeedback && _stepStore != null)
+                        {
+                            var threadSeed = "thread " + text;
+                            var more = _stepStore.GetRelevantFewShots(threadSeed, maxFewShotCount);
+                            foreach (var s in more)
+                                threadFewshot.Append(s);
+                        }
+                        if (threadFewshot.Length == 0)
+                            threadFewshot = null;
+                    }
+                    catch { threadFewshot = null; }
+                }
+
                 // Build user prompt with optional few-shot examples
-                var userPrompt = (useFewShot ? fewshot.ToString() + "\n\n" : string.Empty) + "User request: ";
+                var fewshotText = (fewshot == null ? string.Empty : fewshot.ToString());
+                var userPrompt = (useFewShot && fewshotText.Length > 0 ? fewshotText + "\n\n" : string.Empty) + "User request: ";
                 try { AddinStatusLogger.Log("FewShot", $"Final few-shot prompt length={(fewshot==null?0:fewshot.Length)}"); } catch { }
                 // Notify user when few-shot examples are not being included
                 try
@@ -2469,11 +2506,42 @@ Output:";
                 }
                 catch { }
                 var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                // Build final prompt: user instructions + optional few-shot examples + actual user request
-                var finalPrompt = userPrompt + text + "\n\nFORMAT:\nReturn a single JSON OBJECT with keys 'thinking' (string) and 'steps' (array).\n- 'thinking' must explain geometric reasoning: plane selection, coordinate math, constraints, and dimension choices.\n- 'steps' must be executable ops as per schema, prefer op:'auto_dimension' for sketch dimensions where applicable.\nOutput ONLY the JSON object (no markdown fences).\n";
-                if (FORCE_LOCAL_ONLY)
+                bool decomposeOnly = false;
+                try
                 {
-                    finalPrompt = userPrompt + text + "\n\nFORMAT:\nReturn a single JSON OBJECT with keys 'thinking' and 'steps'. Output ONLY the JSON object.";
+                    var envDecompose = System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.Process)
+                                        ?? System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.User);
+                    if (!string.IsNullOrWhiteSpace(envDecompose) &&
+                        (envDecompose == "1" || envDecompose.Equals("true", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        decomposeOnly = true;
+                    }
+                }
+                catch { }
+
+                string finalPrompt;
+                string threadPrompt = null;
+                if (decomposeOnly)
+                {
+                    finalPrompt = AICAD.Services.PromptHandler.BuildFeatureDecomposePrompt(
+                        AICAD.Services.PromptHandler.DEFAULT_SYSTEM_PROMPT, text);
+                }
+                else if (isThreadbar)
+                {
+                    finalPrompt = AICAD.Services.PromptHandler.BuildThreadbarShaftPrompt(text, templateConfig?.CommonPreamble);
+                    var threadBasePrompt = AICAD.Services.PromptHandler.BuildThreadSubtaskPromptFromRequest(
+                        AICAD.Services.PromptHandler.DEFAULT_SYSTEM_PROMPT, text, null);
+                    if (useFewShot && threadFewshot != null && threadFewshot.Length > 0)
+                        threadPrompt = threadFewshot.ToString() + "\n\n" + threadBasePrompt;
+                    else
+                        threadPrompt = threadBasePrompt;
+                }
+                else
+                {
+                    // Build final prompt: user instructions + optional few-shot examples + actual user request
+                    finalPrompt = string.IsNullOrWhiteSpace(curatedTemplate)
+                        ? AICAD.Services.PromptHandler.BuildFinalPlanPrompt(text, useFewShot ? fewshot?.ToString() : null, FORCE_LOCAL_ONLY)
+                        : AICAD.Services.PromptHandler.BuildTemplatePrompt(curatedTemplate, text, templateConfig?.CommonPreamble);
                 }
                 // Start LLM progress estimation timer using a background System.Timers.Timer to ensure ticks fire
                 System.Timers.Timer threadTimer = null;
@@ -2540,6 +2608,19 @@ Output:";
 
                 // Prefer streaming when available to update Thinking in real-time
                 reply = await Task.Run(async () => await GenerateWithStreamingAsync(finalPrompt));
+                string threadReply = null;
+                if (!string.IsNullOrWhiteSpace(threadPrompt))
+                {
+                    try
+                    {
+                        AppendStatusLine("[LLM] Requesting thread subtask...");
+                        threadReply = await Task.Run(async () => await GenerateWithStreamingAsync(threadPrompt));
+                    }
+                    catch (Exception exThread)
+                    {
+                        try { AddinStatusLogger.Log("TaskpaneWpf", "Thread subtask LLM call failed: " + exThread.Message); } catch { }
+                    }
+                }
 
                 // LLM responded; finalize progress line to Done (100%) and update EMA
                 try
@@ -2639,7 +2720,51 @@ Output:";
                 {
                     try
                     {
-                        planDoc = Newtonsoft.Json.Linq.JObject.Parse(planJson);
+                        if (decomposeOnly)
+                        {
+                            var token = Newtonsoft.Json.Linq.JToken.Parse(planJson);
+                            JArray tasks = null;
+                            if (token is JArray arr)
+                            {
+                                tasks = arr;
+                            }
+                            else if (token is JObject obj)
+                            {
+                                if (obj["tasks"] is JArray t1) tasks = t1;
+                                else if (obj["steps"] is JArray t2) tasks = t2;
+                                else if (obj["feature_tasks"] is JArray t3) tasks = t3;
+                            }
+                            if (tasks == null)
+                                throw new Exception("plan-parse: feature decomposition did not return an array");
+
+                            var wrapperSteps = new JArray();
+                            try
+                            {
+                                AppendStatusLine($"[Decompose] Feature tasks count={tasks.Count}");
+                                var firstTask = tasks.OfType<JObject>().FirstOrDefault();
+                                if (firstTask != null)
+                                    AppendStatusLine("[Decompose] First task=" + firstTask.ToString(Newtonsoft.Json.Formatting.None));
+                            }
+                            catch { }
+                            foreach (var t in tasks.OfType<JObject>())
+                            {
+                                var wrapper = new JObject
+                                {
+                                    ["op"] = "feature_task",
+                                    ["task"] = t
+                                };
+                                wrapperSteps.Add(wrapper);
+                            }
+                            planDoc = new JObject
+                            {
+                                ["steps"] = wrapperSteps,
+                                ["__feature_decomposed"] = true
+                            };
+                        }
+                        else
+                        {
+                            planDoc = Newtonsoft.Json.Linq.JObject.Parse(planJson);
+                        }
                     }
                     catch (Exception ex)
                     {
@@ -2654,6 +2779,36 @@ Output:";
                     try
                     {
                         planDoc = AugmentPlanWithProperties(planDoc, text);
+                        if (isThreadbar)
+                        {
+                            try
+                            {
+                                if (planDoc["steps"] is JArray baseSteps)
+                                {
+                                    var filtered = new JArray();
+                                    foreach (var s in baseSteps)
+                                    {
+                                        var op = s?["op"]?.ToString() ?? string.Empty;
+                                        if (!string.Equals(op, "thread", StringComparison.OrdinalIgnoreCase))
+                                            filtered.Add(s);
+                                    }
+                                    planDoc["steps"] = filtered;
+                                }
+                            }
+                            catch { }
+                        }
+                        try
+                        {
+                            planDoc["__llm_raw"] = reply ?? string.Empty;
+                            planDoc["__llm_prompt"] = finalPrompt ?? string.Empty;
+                            planDoc["__user_prompt"] = text ?? string.Empty;
+                            if (!string.IsNullOrWhiteSpace(threadReply))
+                            {
+                                planDoc["__llm_thread_raw"] = threadReply;
+                                planDoc["__llm_thread_prompt"] = threadPrompt ?? string.Empty;
+                            }
+                        }
+                        catch { }
 
                         // If 'thinking' exists in plan, keep showing it during execution
                         try
@@ -2666,6 +2821,37 @@ Output:";
                             }
                         }
                         catch { }
+
+                        if (!string.IsNullOrWhiteSpace(threadReply))
+                        {
+                            try
+                            {
+                                var raw = ExtractRawJson(threadReply);
+                                JArray threadSteps = null;
+                                try { threadSteps = JArray.Parse(raw); } catch { }
+                                if (threadSteps == null)
+                                {
+                                    try
+                                    {
+                                        var obj = JObject.Parse(raw);
+                                        if (obj["steps"] is JArray arr) threadSteps = arr;
+                                    }
+                                    catch { }
+                                }
+                                if (threadSteps != null && threadSteps.Count > 0)
+                                {
+                                    if (planDoc["steps"] is JArray baseSteps)
+                                    {
+                                        foreach (var s in threadSteps)
+                                        {
+                                            if (s is JObject obj) obj["_subtask_generated"] = true;
+                                            baseSteps.Add(s);
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
 
                         exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
                         {
@@ -3185,9 +3371,7 @@ Output:";
             }
 
             // Load priority similar to non-streaming path
-            var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                              ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                              ?? "local,gemini,groq";
+            var priorityStr = AICAD.Services.LlmPriorityManager.GetPriority();
             var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
             foreach (var provider in priority)
@@ -3205,7 +3389,7 @@ Output:";
                                                  ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                  ?? "local-model";
                             var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                            ?? ClarificationService.DEFAULT_SYSTEM_PROMPT;
+                                            ?? AICAD.Services.PromptHandler.DEFAULT_SYSTEM_PROMPT;
 
                             AppendStatusLine("[LLM] Streaming from Local endpoint");
                             StartProgressPhase("awaiting_response");
@@ -3549,10 +3733,26 @@ Output:";
                         }
                     }
 
-                    if (!string.IsNullOrEmpty(description))
+                    try
                     {
-                        custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        // Only auto-update Description when the NameEasy setting is enabled
+                        bool allowAutoDescription = false;
+                        try
+                        {
+                            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\\AI-CAD\\NameEasy"))
+                            {
+                                var val = key?.GetValue("AutoUpdateDescription")?.ToString() ?? "0";
+                                allowAutoDescription = (val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase));
+                            }
+                        }
+                        catch { allowAutoDescription = false; }
+
+                        if (!string.IsNullOrEmpty(description) && allowAutoDescription)
+                        {
+                            custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        }
                     }
+                    catch { }
 
                     filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName());
                     if (string.IsNullOrWhiteSpace(filename))

@@ -16,7 +16,7 @@ namespace AICAD.Services
                 var summary = BuildSummary(category, message, ex);
 
                 // Use the global provider priority (AICAD_LLM_PRIORITY) to generate the report
-                var prompt = $"Analyze this error and give 2 concise troubleshooting steps (non-sensitive):\n\n{summary}";
+                var prompt = PromptHandler.BuildErrorAnalysisPrompt(summary);
                 try
                 {
                     var resp = ClarificationService.GenerateWithPriority(prompt, 30);

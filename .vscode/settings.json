@@ -5,5 +5,11 @@
             "name": "Preset Connection",
             "connectionString": "mongodb://localhost:27017"
         }
-    ]
+    ],
+    "chat.tools.terminal.autoApprove": {
+        "/^& \"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild\\.exe\" \"AI-CAD-December\\.sln\" /t:Build /p:Configuration=Debug /p:Platform=\"Any CPU\"$/": {
+            "approve": true,
+            "matchCommandLine": true
+        }
+    }
 }

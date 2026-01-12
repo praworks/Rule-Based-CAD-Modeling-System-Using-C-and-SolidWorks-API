@@ -73,8 +73,7 @@ namespace AICAD.UI
             _providers = new System.Collections.ObjectModel.ObservableCollection<ProviderItem>();
             
             // Load order from env or use default
-            var order = Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", EnvironmentVariableTarget.User);
-            if (string.IsNullOrWhiteSpace(order)) order = "local,gemini,groq";
+            var order = AICAD.Services.LlmPriorityManager.GetPriority();
 
             var parts = order.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries);
             foreach (var p in parts)
@@ -477,7 +476,8 @@ namespace AICAD.UI
                 
                 // Save Priority
                 var priority = string.Join(",", _providers.Select(p => p.Id));
-                Environment.SetEnvironmentVariable("AICAD_LLM_PRIORITY", priority, EnvironmentVariableTarget.User);
+                // Persist provider priority globally when possible; fall back to user-level if not permitted.
+                AICAD.Services.LlmPriorityManager.SetPriority(priority);
 
                 // Save Prompt Refinement Provider
                 var selectedRefineItem = PromptRefineProviderComboBox.SelectedItem as ComboBoxItem;

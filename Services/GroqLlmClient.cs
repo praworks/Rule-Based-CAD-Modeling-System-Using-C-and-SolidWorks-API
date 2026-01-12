@@ -20,7 +20,7 @@ namespace AICAD.Services
             // Prefer explicit argument, then AICAD_SYSTEM_PROMPT env var, then hard-coded default
             var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                             ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
-            _systemPrompt = systemPrompt ?? envPrompt ?? ClarificationService.DEFAULT_SYSTEM_PROMPT;
+            _systemPrompt = systemPrompt ?? envPrompt ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
         }
 
         public async Task<string> GenerateAsync(string prompt)

@@ -1,0 +1,62 @@
+{
+  "common_preamble": "You are a CAD planning agent for SOLIDWORKS. Return ONLY a JSON OBJECT with keys 'thinking' and 'steps'.",
+  "categories": [
+    {
+      "name": "Threadbar",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a threaded bar/rod.\n- The main task is the shaft: create a cylindrical shaft (sketch + extrude) first.\n- Treat threading as a sub-task that must occur after the shaft is created.\n- Require length, diameter, and pitch; assume mm.\n- If pitch missing, use 1.5mm for M10 unless specified.\n- Apply modeled thread using op:'thread' with diameter/pitch/length.\n- Use 'auto_dimension' for all sketch dimensions, including cx/cy/w/h.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Stud",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a threaded stud (fully threaded unless specified otherwise).\n- Require major diameter and overall length; assume mm.\n- Model as plain cylinder unless thread ops exist.\n- Use 'extrude' from a circle sketch.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Shaft",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a smooth shaft.\n- Require diameter and length; assume mm.\n- If shoulders/steps requested, prefer 'revolve'. Otherwise 'extrude'.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "U-Bolt",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a U-bolt (U-shaped rod with two parallel legs).\n- Require rod diameter, inside bend radius, leg length, and spacing; assume mm.\n- If any are missing, select reasonable defaults and proceed.\n- Prefer sketch path + 'sweep' with circular profile.\n- If threaded legs are requested, create the U-bolt body first, then apply thread as a sub-task on the leg ends.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Washer",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a flat washer.\n- Require ID, OD, thickness; assume mm.\n- If missing, infer OD from ID using a conservative default.\n- Use two concentric circles + 'extrude'.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Spacer",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a cylindrical spacer/bushing.\n- Require OD, ID, length; assume mm.\n- Use two concentric circles + 'extrude'.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Mounting plate",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a rectangular mounting plate.\n- Require length, width, thickness, and any hole pattern; assume mm.\n- If hole size/count/spacing missing, select sensible defaults and proceed.\n- Use sketch + 'extrude'.\n- Holes must be made with 'hole' or 'extrude_cut' (not extrude type='cut').\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Flange",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a circular flange.\n- Require OD, thickness, bore diameter; assume mm.\n- If bolt holes requested but missing, default to 4 equally spaced.\n- Use circle sketch + 'extrude'; use 'extrude_cut' for bore/holes.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "L-Bracket",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as an L-shaped bracket.\n- Require leg lengths (A,B), width, thickness; assume mm.\n- If holes requested but missing, default to 2 holes.\n- Use sketch profile + 'extrude'.\n- Use 'extrude_cut' for holes/slots.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Block",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a prismatic rectangular block.\n- Require length, width, height; assume mm.\n- Use rectangle sketch + 'extrude'.\n- Use 'auto_dimension' for all sketch dimensions, including cx/cy/w/h.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Tube",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a straight tube/pipe.\n- Require OD and length; assume mm.\n- If wall thickness missing, default to 2mm.\n- Use two concentric circles + 'extrude'.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Fasteners",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a generic fastener (bolt/screw/nut) if type not specified.\n- Require major diameter and length; assume mm.\n- If head type not specified, assume hex head bolt.\n- Prefer 'revolve' for axisymmetric bodies.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Nut",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a hex nut.\n- Require thread diameter and thickness; assume mm.\n- If across-flats missing, infer a conservative default.\n- Create hex body then cut a central hole (extrude_cut) sized to diameter.\n- Use 'dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+    },
+    {
+      "name": "Unknown",
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Assume mm units if unspecified.\n- Use 'dimension' for sketch dimensions where applicable.\n- If critical dimensions are missing, choose conservative defaults and proceed.\n\nOutput ONLY the JSON object."
+    }
+  ],
+  "unknown_template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Assume mm units if unspecified.\n- Use 'dimension' for sketch dimensions where applicable.\n- If critical dimensions are missing, choose conservative defaults and proceed.\n\nOutput ONLY the JSON object."
+}

@@ -181,6 +181,7 @@ namespace AICAD.UI
 
                 StatusConsole.AppendText(line + Environment.NewLine);
                 SetActiveState();
+                try { Application.DoEvents(); } catch { }
             }
             catch { }
         }
@@ -200,6 +201,7 @@ namespace AICAD.UI
 
                 StatusConsole.Text = text ?? string.Empty;
                 SetActiveState();
+                try { Application.DoEvents(); } catch { }
             }
             catch { }
         }

@@ -27,6 +27,42 @@ namespace AICAD.Services
     internal static class StepExecutor
     {
         private static readonly OperationRegistry _operationRegistry = OperationRegistry.CreateDefault();
+        private const string SubtaskGeneratedFlag = "_subtask_generated";
+        private const string FeatureDecomposedFlag = "__feature_decomposed";
+        private const string FeatureTaskOp = "feature_task";
+
+        private static JObject BuildLlmRepairContext(JObject plan, int stepIndex, string op, string error, object data)
+        {
+            var ctx = new JObject
+            {
+                ["error"] = error ?? string.Empty,
+                ["message"] = error ?? string.Empty,
+                ["step_index"] = stepIndex,
+                ["op"] = op ?? string.Empty
+            };
+
+            try
+            {
+                if (data != null)
+                    ctx["data"] = JToken.FromObject(data);
+            }
+            catch { }
+
+            try
+            {
+                var llmRaw = plan?["__llm_raw"]?.ToString();
+                var llmPrompt = plan?["__llm_prompt"]?.ToString();
+                var userPrompt = plan?["__user_prompt"]?.ToString();
+                var thinking = plan?["thinking"]?.ToString();
+                if (!string.IsNullOrWhiteSpace(llmRaw)) ctx["llm_raw"] = llmRaw;
+                if (!string.IsNullOrWhiteSpace(llmPrompt)) ctx["llm_prompt"] = llmPrompt;
+                if (!string.IsNullOrWhiteSpace(userPrompt)) ctx["user_prompt"] = userPrompt;
+                if (!string.IsNullOrWhiteSpace(thinking)) ctx["thinking"] = thinking;
+            }
+            catch { }
+
+            return ctx;
+        }
 
         /// <summary>
         /// Execute a plan with multiple steps using the operation handler registry
@@ -91,24 +127,82 @@ namespace AICAD.Services
                     }
                 }
                 catch { }
-                // Per-step canonicalization: if enabled, call the ClarificationService for each step
-                // before execution to ensure the step is normalized/canonical. Controlled by env var
-                // AICAD_PER_STEP_CANONICALIZE (set to '1' or 'true' to enable).
-                bool perStepCanonicalize = false;
+                // Control LLM repair via env var: AICAD_ENABLE_LLM_REPAIR (default on).
+                bool enableLlmRepair = true;
                 try
                 {
-                    var envCanon = System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.Process)
-                                    ?? System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.User);
-                    if (!string.IsNullOrWhiteSpace(envCanon) && (envCanon == "1" || envCanon.Equals("true", StringComparison.OrdinalIgnoreCase))) perStepCanonicalize = true;
+                    var envRepair = System.Environment.GetEnvironmentVariable("AICAD_ENABLE_LLM_REPAIR", System.EnvironmentVariableTarget.Process)
+                                    ?? System.Environment.GetEnvironmentVariable("AICAD_ENABLE_LLM_REPAIR", System.EnvironmentVariableTarget.User);
+                    if (!string.IsNullOrWhiteSpace(envRepair) &&
+                        (envRepair == "0" || envRepair.Equals("false", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        enableLlmRepair = false;
+                    }
                 }
                 catch { }
-                // Pre-validation removed: execute steps as provided and let handlers decide.
-                // Track retries per-step to avoid infinite clarification loops
-                var retryCounts = new Dictionary<int, int>();
+
+                // Declare document/context variables early so they can be referenced
+                // by pre-execution logic such as feature decomposition.
                 IModelDoc2 model = null;
                 ISketchManager sketchMgr = null;
                 IFeatureManager featMgr = null;
                 bool inSketch = false;
+
+                // Optional: decompose by feature type and plan each feature as a subtask.
+                try
+                {
+                    bool enableFeatureDecompose = true;
+                    var envDecompose = System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.Process)
+                                        ?? System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.User);
+                    if (!string.IsNullOrWhiteSpace(envDecompose) &&
+                        (envDecompose == "0" || envDecompose.Equals("false", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        enableFeatureDecompose = false;
+                    }
+
+                    if (enableFeatureDecompose && plan[FeatureDecomposedFlag] == null)
+                    {
+                        var userPrompt = plan?["__user_prompt"]?.ToString();
+                        if (!string.IsNullOrWhiteSpace(userPrompt))
+                        {
+                            var featureTasks = LlmPlanService.DecomposeByFeature(userPrompt);
+                            if (featureTasks != null && featureTasks.Count > 0)
+                            {
+                                var newSteps = new JArray();
+                                foreach (var task in featureTasks.OfType<JObject>())
+                                {
+                                    var wrapper = new JObject
+                                    {
+                                        ["op"] = FeatureTaskOp,
+                                        ["task"] = task
+                                    };
+                                    newSteps.Add(wrapper);
+                                }
+                                steps = newSteps;
+                                plan[FeatureDecomposedFlag] = true;
+                                try { AddinStatusLogger.Log("StepExecutor", $"Feature decomposition produced {steps.Count} feature tasks"); } catch { }
+                            }
+                        }
+                    }
+                }
+                catch (Exception exDecompose)
+                {
+                    try { AddinStatusLogger.Log("StepExecutor", $"Feature decomposition skipped: {exDecompose.Message}"); } catch { }
+                }
+                bool perStepCanonicalize = false;
+                if (enableLlmRepair)
+                {
+                    try
+                    {
+                        var envCanon = System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.Process)
+                                        ?? System.Environment.GetEnvironmentVariable("AICAD_PER_STEP_CANONICALIZE", System.EnvironmentVariableTarget.User);
+                        if (!string.IsNullOrWhiteSpace(envCanon) && (envCanon == "1" || envCanon.Equals("true", StringComparison.OrdinalIgnoreCase))) perStepCanonicalize = true;
+                    }
+                    catch { }
+                }
+                // Pre-validation removed: execute steps as provided and let handlers decide.
+                // Track retries per-step to avoid infinite clarification loops
+                var retryCounts = new Dictionary<int, int>();
 
                 // Auto create part if first op isn't explicit new_part
                 if (steps.Count == 0 || !HasNewPart(steps))
@@ -202,6 +296,43 @@ namespace AICAD.Services
                     try
                     {
 
+                        // Expand feature task into executable steps, then continue
+                        if (opLower == FeatureTaskOp)
+                        {
+                            try
+                            {
+                                JObject facts = null;
+                                try { if (model != null) facts = ModelInspector.InspectModel(model, emitLogs: false); } catch { }
+                                var task = s["task"] as JObject ?? new JObject();
+                                var featureResult = LlmPlanService.PlanFeatureSubtask(task, facts);
+                                var featureSteps = featureResult?.Steps;
+                                if (!string.IsNullOrWhiteSpace(featureResult?.Thinking))
+                                {
+                                    AddinStatusLogger.Log("StepExecutor", $"Feature thinking: {featureResult.Thinking}");
+                                }
+                                if (featureSteps != null && featureSteps.Count > 0)
+                                {
+                                    AddinStatusLogger.Log("StepExecutor", $"Feature task expanded to {featureSteps.Count} steps at index {i}");
+                                    steps.RemoveAt(i);
+                                    for (int fi = featureSteps.Count - 1; fi >= 0; fi--)
+                                    {
+                                        steps.Insert(i, featureSteps[fi]);
+                                    }
+                                    i--; // reprocess at this index
+                                    continue;
+                                }
+                            }
+                            catch (Exception ftEx)
+                            {
+                                AddinStatusLogger.Log("StepExecutor", $"Feature task planning failed: {ftEx.Message}");
+                            }
+                            log["success"] = false;
+                            log["error"] = "Feature task expansion failed";
+                            result.Log.Add(log);
+                            result.Success = false;
+                            return result;
+                        }
+
                         // Handle new_part inline to ensure model exists before other handlers
                         if (string.Equals(op, "new_part", StringComparison.OrdinalIgnoreCase))
                         {
@@ -238,6 +369,35 @@ namespace AICAD.Services
                             sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
                         }
 
+                        // Orchestrate a second LLM call for thread operations as a subtask.
+                        if (opLower == "thread" && s.Value<bool?>(SubtaskGeneratedFlag) != true)
+                        {
+                            try
+                            {
+                                JObject facts = null;
+                                try { facts = ModelInspector.InspectModel(model, emitLogs: false); } catch { }
+                                var subtaskSteps = LlmPlanService.PlanThreadSubtask(s, facts);
+                                if (subtaskSteps != null && subtaskSteps.Count > 0)
+                                {
+                                    AddinStatusLogger.Log("StepExecutor", $"Thread subtask generated {subtaskSteps.Count} steps; splicing at index {i}");
+                                    steps.RemoveAt(i);
+                                    for (int si = subtaskSteps.Count - 1; si >= 0; si--)
+                                    {
+                                        if (subtaskSteps[si] is JObject obj)
+                                            obj[SubtaskGeneratedFlag] = true;
+                                        steps.Insert(i, subtaskSteps[si]);
+                                    }
+                                    i--; // reprocess the newly inserted first subtask step
+                                    continue;
+                                }
+                            }
+                            catch (Exception subtaskEx)
+                            {
+                                try { AddinStatusLogger.Log("StepExecutor", $"Thread subtask planning failed: {subtaskEx.Message}"); } catch { }
+                                // Fall through to direct thread execution if subtask fails.
+                            }
+                        }
+
                         // Look up handler in registry
                         var handler = _operationRegistry.Get(op);
                         if (handler == null)
@@ -250,12 +410,14 @@ namespace AICAD.Services
                                 if (!string.IsNullOrWhiteSpace(hint)) AddinStatusLogger.Log("FeatureAdvice", hint);
                             }
                             catch { }
-                            if (rc < 1)
+                            if (enableLlmRepair && rc < 1)
                             {
                                 try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: unknown op '{op}' — requesting LLM correction (retry {rc + 1}/1)"); } catch { }
                                 try
                                 {
-                                    var clarified = ClarificationService.ClarifySingleStep(s, new { error = "unknown_op", message = $"Unknown op '{op}'" });
+                                    var clarified = ClarificationService.ClarifySingleStep(
+                                        s,
+                                        BuildLlmRepairContext(plan, i, op, $"Unknown op '{op}'", null));
                                     if (clarified != null)
                                     {
                                         steps[i] = clarified;
@@ -287,13 +449,15 @@ namespace AICAD.Services
                         catch (Exception handlerEx)
                         {
                             // Self-heal on handler exception for dimension-like ops
-                            if (opLower == "dimension" || opLower.StartsWith("dimension"))
+                            if (enableLlmRepair && (opLower == "dimension" || opLower.StartsWith("dimension")))
                             {
                                 var rc = retryCounts.ContainsKey(i) ? retryCounts[i] : 0;
                                 if (rc < 1)
                                 {
                                     try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: handler threw '{handlerEx.Message}' — requesting LLM repair (attempt {rc + 1}/1)"); } catch { }
-                                    var clarified = ClarificationService.ClarifySingleStep(s, new { error = "handler_exception", message = handlerEx.Message });
+                                    var clarified = ClarificationService.ClarifySingleStep(
+                                        s,
+                                        BuildLlmRepairContext(plan, i, op, handlerEx.Message, null));
                                     if (clarified != null)
                                     {
                                         if (clarified is JArray arr)
@@ -336,7 +500,9 @@ namespace AICAD.Services
                                 if (rc < 1)
                                 {
                                     try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: dimension handler reported failure '{opResult.ErrorMessage}' — requesting LLM repair (attempt {rc + 1}/1)"); } catch { }
-                                    var clarified = ClarificationService.ClarifySingleStep(s, new { error = "handler_failure", message = opResult.ErrorMessage, data = opResult.Data });
+                                    var clarified = ClarificationService.ClarifySingleStep(
+                                        s,
+                                        BuildLlmRepairContext(plan, i, op, opResult.ErrorMessage, opResult.Data));
                                     if (clarified != null)
                                     {
                                         // If LLM returned an array, splice it; if object, replace.
@@ -438,13 +604,15 @@ namespace AICAD.Services
                                 }
                                 catch { }
                             }
-                            if ((opLower == "dimension" || opLower.StartsWith("dimension")) && createdCount == 0 && setCount == 0)
+                            if (enableLlmRepair && (opLower == "dimension" || opLower.StartsWith("dimension")) && createdCount == 0 && setCount == 0)
                             {
                                 var rc = retryCounts.ContainsKey(i) ? retryCounts[i] : 0;
                                 if (rc < 1)
                                 {
                                     try { AddinStatusLogger.Log("StepExecutor", $"[SelfHeal] Step {i}: dimension handler made no changes — requesting LLM repair (attempt {rc + 1}/1)"); } catch { }
-                                    var clarified = ClarificationService.ClarifySingleStep(s, opResult.Data);
+                                    var clarified = ClarificationService.ClarifySingleStep(
+                                        s,
+                                        BuildLlmRepairContext(plan, i, op, "No dimensions were created or value-set by the handler", opResult.Data));
                                     if (clarified != null)
                                     {
                                         // If LLM returned an array, splice it; if object, replace.
@@ -658,6 +826,19 @@ namespace AICAD.Services
                         {
                             jo["op"] = opProp.Value;
                         }
+                    }
+                }
+                catch { }
+                try
+                {
+                    var op = (jo.Value<string>("op") ?? string.Empty).Trim();
+                    if (op.Equals("dimension", StringComparison.OrdinalIgnoreCase))
+                    {
+                        jo["op"] = "auto_dimension";
+                        if (jo["cx"] == null) jo["cx"] = 0;
+                        if (jo["cy"] == null) jo["cy"] = 0;
+                        if (jo["w"] == null) jo["w"] = 10;
+                        if (jo["h"] == null) jo["h"] = 10;
                     }
                 }
                 catch { }

@@ -19,15 +19,6 @@ namespace AICAD.Services
             public string Thinking { get; set; }
             public JArray Steps { get; set; }
         }
-        // Shared default system prompt - DRY principle: define once, use everywhere
-        public const string DEFAULT_SYSTEM_PROMPT = 
-            "You are a CAD planning agent for SOLIDWORKS. " +
-            "Convert user requests into step plan JSON with a top-level 'steps' array. " +
-            "Supported ops: new_part; select_plane{name}; select_face{id}; sketch_begin; rectangle_center{cx,cy,w,h}; circle_center{cx,cy,r|diameter}; line; arc; dimension; constraint; sketch_end; extrude{depth}; extrude_cut{depth}; revolve; sweep; loft; fillet; chamfer; hole; pocket; set_material{material}; description{text}; zoom_to_fit. " +
-            "CRITICAL: Use extrude_cut (separate op) for cuts, NOT extrude with type='cut'. Use select_face with id='top'/'front'/'right', NOT numeric IDs. " +
-            "For plane selection, use ONLY these exact plane names: 'Top Plane', 'Front Plane', or 'Right Plane'. " +
-            "For auto_dimension on circles, use radius or diameter field, NOT w/h. For rectangles, copy cx, cy, w, h values. " +
-            "Units are millimeters. Output ONLY raw JSON - no markdown, no extra text.";
 
         // Expose last used prompt and raw reply for callers to log when helpful
         public static string LastPromptUsed { get; private set; }
@@ -60,18 +51,16 @@ namespace AICAD.Services
         {
             try
             {
-                var prompt = BuildMissingPrompt(missing);
+                var prompt = PromptHandler.BuildMissingPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, missing);
                 AddinStatusLogger.Log("ClarificationService", "Requesting LLM clarification for missing dimension params");
 
                 // Respect provider priority like the UI: AICAD_LLM_PRIORITY (e.g. "local,gemini,groq")
-                var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                                  ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                                  ?? "local,gemini,groq";
+                var priorityStr = LlmPriorityManager.GetPriority();
                 var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
                 Exception lastEx = null;
                 string lastReply = null;
-                var promptText = BuildMissingPrompt(missing);
+                var promptText = PromptHandler.BuildMissingPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, missing);
                 foreach (var provider in priority)
                 {
                     // Skip providers currently marked dead
@@ -93,7 +82,7 @@ namespace AICAD.Services
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
                                 var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle.";
+                                                   ?? PromptHandler.BuildClarificationLocalSystemPrompt();
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -127,7 +116,7 @@ namespace AICAD.Services
                                                ?? "gemini-1.5-flash";
                                 var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                     ?? DEFAULT_SYSTEM_PROMPT;
+                                                     ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -221,7 +210,7 @@ namespace AICAD.Services
 
         public static ClarificationResult<JArray> ClarifyMissingDimensionStepsWithDebug(JArray missing)
         {
-            var res = new ClarificationResult<JArray> { Parsed = null, Prompt = BuildMissingPrompt(missing), RawReply = null };
+            var res = new ClarificationResult<JArray> { Parsed = null, Prompt = PromptHandler.BuildMissingPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, missing), RawReply = null };
             try
             {
                 var parsed = ClarifyMissingDimensionSteps(missing);
@@ -243,12 +232,10 @@ namespace AICAD.Services
         {
             try
             {
-                var prompt = BuildSingleStepPrompt(step, handlerData);
+                var prompt = PromptHandler.BuildSingleStepPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, step, handlerData);
                 AddinStatusLogger.Log("ClarificationService", "Requesting LLM clarification for single step");
 
-                var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                                  ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                                  ?? "local,gemini,groq";
+                var priorityStr = LlmPriorityManager.GetPriority();
                 var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
                 Exception lastEx = null;
@@ -275,7 +262,7 @@ namespace AICAD.Services
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
                                 var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? "You are a CAD planning agent. Output only raw JSON with a top-level 'steps' array for SolidWorks. No extra text. For dimension operations, you MUST copy the cx, cy, w, h values from the rectangle.";
+                                                   ?? PromptHandler.BuildClarificationLocalSystemPrompt();
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -301,7 +288,7 @@ namespace AICAD.Services
                                                ?? "gemini-1.5-flash";
                                 var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                     ?? DEFAULT_SYSTEM_PROMPT;
+                                                     ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -326,7 +313,7 @@ namespace AICAD.Services
                                                 ?? "llama-3.3-70b-versatile";
                                 var groqSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                                                       ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                      ?? DEFAULT_SYSTEM_PROMPT;
+                                                      ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)
                                 {
@@ -378,42 +365,6 @@ namespace AICAD.Services
                 AddinStatusLogger.Error("ClarificationService", "ClarifySingleStep failed", ex);
             }
             return null;
-        }
-
-        private static string BuildMissingPrompt(JArray missing)
-        {
-             // Strong directive: return only a JSON array. If required numeric values are missing,
-             // choose safe defaults (cx=0, cy=0, w=100, h=100) rather than asking questions.
-             // Additionally: ALWAYS include explicit dimension steps for any sketch geometry you create.
-             return DEFAULT_SYSTEM_PROMPT + "\n\n" +
-                 "INSTRUCTIONS:\n" +
-                 "- You MUST reply with a single JSON ARRAY only (no surrounding text, no commentary).\n" +
-                 "- Each element must be a complete step object matching the SolidWorks plan schema.\n" +
-                "- For rectangle geometry, include numeric fields for the shape and prefer using the auto-dimension operator: \"op\":\"auto_dimension\" (or \"auto-dimension\"). Include numeric fields such as \"cx\", \"cy\", \"w\", \"h\" (all in mm).\n" +
-                "- ALWAYS include appropriate \"auto_dimension\" steps (op:\"auto_dimension\") for any sketch geometry you create (e.g., horizontal and vertical dimensions for rectangles with a numeric \"value\" in mm).\n" +
-                 "- If any numeric values are missing, do NOT ask questions — fill sensible defaults: cx=0, cy=0, w=100, h=100.\n" +
-                 "- Do NOT emit any natural-language question or explanation. Output JSON ONLY.\n\n" +
-                 "Provide corrected steps for the following missing entries (same order):\n" + missing.ToString();
-        }
-
-        private static string BuildSingleStepPrompt(JObject step, object handlerData)
-        {
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine(DEFAULT_SYSTEM_PROMPT + "\n");
-            sb.AppendLine("INSTRUCTIONS:");
-            sb.AppendLine("- Reply with a single JSON OBJECT only (no commentary).\n");
-            sb.AppendLine("- The object must be a valid plan step. For dimension steps include numeric fields: cx, cy, w, h (mm).\n");
-            sb.AppendLine("- ALWAYS use op:'auto_dimension' (NOT 'dimension') for sketch dimension steps.\n");
-            sb.AppendLine("- If you need numeric values, do NOT ask questions — supply sensible defaults: cx=0, cy=0, w=100, h=100.\n");
-            sb.AppendLine("- Do NOT include any natural-language text; output JSON only.\n");
-            sb.AppendLine("Original step:");
-            sb.AppendLine(step.ToString());
-            if (handlerData != null)
-            {
-                sb.AppendLine("Handler data:");
-                try { sb.AppendLine(JToken.FromObject(handlerData).ToString()); } catch { sb.AppendLine(handlerData.ToString()); }
-            }
-            return sb.ToString();
         }
 
         private static JArray ExtractJsonArray(string txt)
@@ -592,9 +543,7 @@ namespace AICAD.Services
         {
             try
             {
-                var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                                  ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                                  ?? "local,gemini,groq";
+                var priorityStr = LlmPriorityManager.GetPriority();
                 var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
                 Exception lastEx = null;
@@ -620,7 +569,7 @@ namespace AICAD.Services
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
                                 var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? DEFAULT_SYSTEM_PROMPT;
+                                                   ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -653,7 +602,7 @@ namespace AICAD.Services
                                                ?? "gemini-1.5-flash";
                                 var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                     ?? DEFAULT_SYSTEM_PROMPT;
+                                                     ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -685,7 +634,7 @@ namespace AICAD.Services
                                                 ?? "llama-3.3-70b-versatile";
                                 var groqSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
                                                       ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                      ?? DEFAULT_SYSTEM_PROMPT;
+                                                      ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)
                                 {
@@ -752,9 +701,7 @@ namespace AICAD.Services
         {
             try
             {
-                var priorityStr = System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.User)
-                                  ?? System.Environment.GetEnvironmentVariable("AICAD_LLM_PRIORITY", System.EnvironmentVariableTarget.Process)
-                                  ?? "local,gemini,groq";
+                var priorityStr = LlmPriorityManager.GetPriority();
                 var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
 
                 Exception lastEx = null;
@@ -932,7 +879,7 @@ namespace AICAD.Services
                     return cot.Steps;
                 }
 
-                var prompt = BuildIntentPrompt(intent, modelFacts);
+                var prompt = PromptHandler.BuildIntentPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, intent, modelFacts);
                 AddinStatusLogger.Log("ClarificationService", $"Requesting LLM plan from intent: {intent}");
 
                 var reply = GenerateWithPriority(prompt);
@@ -1026,7 +973,7 @@ namespace AICAD.Services
         {
             try
             {
-                var prompt = BuildIntentPromptWithCoT(intent, modelFacts);
+                var prompt = PromptHandler.BuildIntentPromptWithCoT(PromptHandler.DEFAULT_SYSTEM_PROMPT, intent, modelFacts);
                 AddinStatusLogger.Log("ClarificationService", $"Requesting LLM CoT plan from intent: {intent}");
 
                 var reply = GenerateWithPriority(prompt);
@@ -1061,65 +1008,6 @@ namespace AICAD.Services
                 AddinStatusLogger.Error("ClarificationService", "PlanFromIntentWithThinking failed", ex);
                 return null;
             }
-        }
-
-        private static string BuildIntentPrompt(string intent, JObject facts)
-        {
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine(DEFAULT_SYSTEM_PROMPT + "\n");
-            sb.AppendLine("INSTRUCTIONS:");
-            sb.AppendLine("- The user wants to modify an existing SolidWorks model based on their intent.");
-            sb.AppendLine("- You are provided with the current model state (features, geometry, etc.).");
-            sb.AppendLine("- Generate a JSON ARRAY of steps to fulfill the user's request.");
-            sb.AppendLine("- Output ONLY the JSON array — no markdown, no extra text.");
-            sb.AppendLine("- Use operations that work on the existing model (select faces, sketch, cut, etc.).");
-            sb.AppendLine("- For dice pips: select face by id (top/bottom/left/right/front/back), sketch circles at calculated positions, extrude_cut shallow depth.\n");
-            
-            if (facts != null)
-            {
-                sb.AppendLine("CURRENT MODEL STATE:");
-                sb.AppendLine(facts.ToString());
-                sb.AppendLine();
-            }
-            
-            sb.AppendLine("USER INTENT:");
-            sb.AppendLine(intent);
-            sb.AppendLine();
-            sb.AppendLine("Generate the steps array now:");
-            
-            return sb.ToString();
-        }
-
-        private static string BuildIntentPromptWithCoT(string intent, JObject facts)
-        {
-            var sb = new System.Text.StringBuilder();
-            sb.AppendLine(DEFAULT_SYSTEM_PROMPT + "\n");
-            sb.AppendLine("FORMAT:");
-            sb.AppendLine("Return a single JSON OBJECT with:");
-            sb.AppendLine("{\"thinking\": string, \"steps\": [ ... ]}");
-            sb.AppendLine("- 'thinking' must explain geometric reasoning prior to steps: plane selection, coordinate math, constraints, and why dimensions are chosen.");
-            sb.AppendLine("- 'steps' must be executable ops for SolidWorks as per schema.");
-            sb.AppendLine("- Output ONLY the JSON object — no markdown fences, no extra text.\n");
-
-            sb.AppendLine("INSTRUCTIONS:");
-            sb.AppendLine("- The user wants to modify an existing SolidWorks model based on their intent.");
-            sb.AppendLine("- You are provided with the current model state (features, geometry, etc.).");
-            sb.AppendLine("- Ensure 'auto_dimension' is used for sketch dimensions where applicable, copying numeric fields when required.");
-            sb.AppendLine("- Use operations that work on the existing model (select faces, sketch, cut, etc.).\n");
-
-            if (facts != null)
-            {
-                sb.AppendLine("CURRENT MODEL STATE:");
-                sb.AppendLine(facts.ToString());
-                sb.AppendLine();
-            }
-
-            sb.AppendLine("USER INTENT:");
-            sb.AppendLine(intent);
-            sb.AppendLine();
-            sb.AppendLine("Return the JSON object now:");
-
-            return sb.ToString();
         }
 
     }

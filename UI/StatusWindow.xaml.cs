@@ -100,6 +100,7 @@ namespace AICAD.UI
                 _statusConsole.Document.Blocks.Add(para);
                 _statusConsole.ScrollToEnd();
                 SetActiveState();
+                FlushUi();
             }
             catch { }
         }
@@ -123,6 +124,18 @@ namespace AICAD.UI
                 _statusConsole.Document.Blocks.Add(new Paragraph(new Run(formatted)) { Margin = new Thickness(0) });
                 _statusConsole.ScrollToEnd();
                 SetActiveState();
+                FlushUi();
+            }
+            catch { }
+        }
+
+        private void FlushUi()
+        {
+            try
+            {
+                var frame = new DispatcherFrame();
+                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() => frame.Continue = false));
+                Dispatcher.PushFrame(frame);
             }
             catch { }
         }

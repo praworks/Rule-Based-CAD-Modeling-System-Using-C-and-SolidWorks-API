@@ -80,6 +80,37 @@ namespace AICAD.Services
             }
         }
 
+        private static bool IsVerboseLoggingEnabled()
+        {
+            try
+            {
+                var env = Environment.GetEnvironmentVariable("AICAD_GROQ_VERBOSE_LOG", EnvironmentVariableTarget.Process)
+                          ?? Environment.GetEnvironmentVariable("AICAD_GROQ_VERBOSE_LOG", EnvironmentVariableTarget.User);
+                return !string.IsNullOrWhiteSpace(env) && (env == "1" || env.Equals("true", StringComparison.OrdinalIgnoreCase));
+            }
+            catch { return false; }
+        }
+
+        private static void LogRequestSummary(string endpoint, string json)
+        {
+            try
+            {
+                var length = json?.Length ?? 0;
+                AddinStatusLogger.Log("GroqClient", $"Request sent to {endpoint} (payload_len={length})");
+            }
+            catch { }
+        }
+
+        private static void LogResponseSummary(string endpoint, HttpResponseMessage httpResp, string body)
+        {
+            try
+            {
+                var length = body?.Length ?? 0;
+                AddinStatusLogger.Log("GroqClient", $"Response {(int)httpResp.StatusCode} from {endpoint} (body_len={length})");
+            }
+            catch { }
+        }
+
         public class RateLimitInfo
         {
             public int? RemainingRequests;
@@ -119,10 +150,17 @@ namespace AICAD.Services
             var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
             try
             {
-                var prettyReq = FormatJsonForLog(json, 3000);
-                AddinStatusLogger.Log("GroqClient", $"\n=== HTTP Request to {endpoint} ===");
-                AddinStatusLogger.Log("GroqClient", prettyReq);
-                AddinStatusLogger.Log("GroqClient", "=====================================");
+                if (IsVerboseLoggingEnabled())
+                {
+                    var prettyReq = FormatJsonForLog(json, 3000);
+                    AddinStatusLogger.Log("GroqClient", $"\n=== HTTP Request to {endpoint} ===");
+                    AddinStatusLogger.Log("GroqClient", prettyReq);
+                    AddinStatusLogger.Log("GroqClient", "=====================================");
+                }
+                else
+                {
+                    LogRequestSummary(endpoint, json);
+                }
             }
             catch { }
 
@@ -153,10 +191,17 @@ namespace AICAD.Services
                 try { res.Body = await httpResp.Content.ReadAsStringAsync().ConfigureAwait(false); } catch { }
                 try
                 {
-                    var prettyResp = FormatJsonForLog(res.Body, 8000);
-                    AddinStatusLogger.Log("GroqClient", $"\n=== HTTP Response {(int)httpResp.StatusCode} from {endpoint} ===");
-                    AddinStatusLogger.Log("GroqClient", prettyResp);
-                    AddinStatusLogger.Log("GroqClient", "=====================================");
+                    if (IsVerboseLoggingEnabled())
+                    {
+                        var prettyResp = FormatJsonForLog(res.Body, 8000);
+                        AddinStatusLogger.Log("GroqClient", $"\n=== HTTP Response {(int)httpResp.StatusCode} from {endpoint} ===");
+                        AddinStatusLogger.Log("GroqClient", prettyResp);
+                        AddinStatusLogger.Log("GroqClient", "=====================================");
+                    }
+                    else
+                    {
+                        LogResponseSummary(endpoint, httpResp, res.Body);
+                    }
                 }
                 catch { }
 

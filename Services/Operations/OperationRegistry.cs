@@ -101,6 +101,7 @@ namespace AICAD.Services.Operations
             registry.Register("extrude", new PartFeatures.ExtrudeBossHandler());
             registry.Register("extrude_cut", new PartFeatures.ExtrudeCutHandler());
             registry.Register("extrude-cut", new PartFeatures.ExtrudeCutHandler());
+            registry.Register("thread", new PartFeatures.ThreadHandler());
             registry.Register("revolve", new PartFeatures.RevolveHandler());
             registry.Register("sweep", new PartFeatures.SweepHandler());
             registry.Register("loft", new PartFeatures.LoftHandler());

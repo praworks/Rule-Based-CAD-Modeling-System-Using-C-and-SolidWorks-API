@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
 namespace AICAD.Services
@@ -25,6 +26,29 @@ namespace AICAD.Services
         private static string _groqKey;
         private static string _groqModel;
         private static readonly ConcurrentDictionary<string, DateTime> _providerDeadUntil = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _rateLimitLock = new object();
+        private static readonly Dictionary<string, DateTime> _lastProviderCall = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        private static void EnforceProviderPacing(string provider, int minIntervalMs)
+        {
+            if (minIntervalMs <= 0 || string.IsNullOrWhiteSpace(provider)) return;
+            DateTime last;
+            lock (_rateLimitLock)
+            {
+                if (!_lastProviderCall.TryGetValue(provider, out last))
+                {
+                    _lastProviderCall[provider] = DateTime.UtcNow;
+                    return;
+                }
+            }
+            var elapsedMs = (DateTime.UtcNow - last).TotalMilliseconds;
+            if (elapsedMs < minIntervalMs)
+            {
+                var sleepMs = (int)Math.Ceiling(minIntervalMs - elapsedMs);
+                if (sleepMs > 0) System.Threading.Thread.Sleep(sleepMs);
+            }
+            lock (_rateLimitLock) { _lastProviderCall[provider] = DateTime.UtcNow; }
+        }
 
         public static JArray PlanThreadSubtask(JObject threadStep, JObject modelFacts = null)
         {
@@ -67,6 +91,7 @@ namespace AICAD.Services
             {
                 var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, userRequest);
                 AddinStatusLogger.Log("LlmPlanService", "Requesting LLM feature decomposition");
+                try { AddinStatusLogger.Log("LlmPlanService", "LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
                 var reply = GenerateWithPriority(prompt);
                 if (string.IsNullOrWhiteSpace(reply))
                     return null;
@@ -92,7 +117,17 @@ namespace AICAD.Services
                 var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 AddinStatusLogger.Log("LlmPlanService", $"Requesting LLM plan for feature: {label}");
-                var reply = GenerateWithPriority(prompt);
+                int timeoutSeconds = 120;
+                try
+                {
+                    var env = System.Environment.GetEnvironmentVariable("AICAD_FEATURE_PLAN_TIMEOUT_SECONDS", System.EnvironmentVariableTarget.Process)
+                              ?? System.Environment.GetEnvironmentVariable("AICAD_FEATURE_PLAN_TIMEOUT_SECONDS", System.EnvironmentVariableTarget.User);
+                    if (!string.IsNullOrWhiteSpace(env) && int.TryParse(env, out var secs) && secs > 0)
+                        timeoutSeconds = secs;
+                }
+                catch { }
+                try { AddinStatusLogger.Log("LlmPlanService", "LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
+                var reply = GenerateWithPriority(prompt, timeoutSeconds);
                 if (string.IsNullOrWhiteSpace(reply))
                     return null;
                 var extracted = ExtractJsonArray(reply);
@@ -109,6 +144,12 @@ namespace AICAD.Services
                             Thinking = obj.Value<string>("thinking")
                         };
                     }
+                }
+                catch { }
+                try
+                {
+                    var truncated = reply.Length > 800 ? reply.Substring(0, 800) + "..." : reply;
+                    AddinStatusLogger.Log("LlmPlanService", $"Feature plan parse failed; reply={truncated}");
                 }
                 catch { }
                 return null;
@@ -134,6 +175,7 @@ namespace AICAD.Services
                 {
                     try
                     {
+                        EnforceProviderPacing(provider, 2000);
                         if (IsProviderMarkedDead(provider))
                         {
                             AddinStatusLogger.Log("LlmPlanService", $"Skipping provider {provider} - marked dead");

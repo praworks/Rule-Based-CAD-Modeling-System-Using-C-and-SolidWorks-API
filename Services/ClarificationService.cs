@@ -36,6 +36,29 @@ namespace AICAD.Services
         private static string _groqModel;
         // Track providers that recently failed so we can skip them for a cooldown period
         private static readonly ConcurrentDictionary<string, DateTime> _providerDeadUntil = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private static readonly object _rateLimitLock = new object();
+        private static readonly Dictionary<string, DateTime> _lastProviderCall = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+
+        private static void EnforceProviderPacing(string provider, int minIntervalMs)
+        {
+            if (minIntervalMs <= 0 || string.IsNullOrWhiteSpace(provider)) return;
+            DateTime last;
+            lock (_rateLimitLock)
+            {
+                if (!_lastProviderCall.TryGetValue(provider, out last))
+                {
+                    _lastProviderCall[provider] = DateTime.UtcNow;
+                    return;
+                }
+            }
+            var elapsedMs = (DateTime.UtcNow - last).TotalMilliseconds;
+            if (elapsedMs < minIntervalMs)
+            {
+                var sleepMs = (int)Math.Ceiling(minIntervalMs - elapsedMs);
+                if (sleepMs > 0) System.Threading.Thread.Sleep(sleepMs);
+            }
+            lock (_rateLimitLock) { _lastProviderCall[provider] = DateTime.UtcNow; }
+        }
         public class ClarificationResult<T>
         {
             public T Parsed { get; set; }
@@ -66,6 +89,7 @@ namespace AICAD.Services
                     // Skip providers currently marked dead
                     try
                     {
+                        EnforceProviderPacing(provider, 2000);
                         if (IsProviderMarkedDead(provider))
                         {
                             AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
@@ -246,6 +270,7 @@ namespace AICAD.Services
                     // Skip providers currently marked dead
                     try
                     {
+                        EnforceProviderPacing(provider, 2000);
                         if (IsProviderMarkedDead(provider))
                         {
                             AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
@@ -553,6 +578,7 @@ namespace AICAD.Services
                 {
                     try
                     {
+                        EnforceProviderPacing(provider, 2000);
                         if (IsProviderMarkedDead(provider))
                         {
                             AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
@@ -711,6 +737,7 @@ namespace AICAD.Services
                 {
                     try
                     {
+                        EnforceProviderPacing(provider, 2000);
                         if (IsProviderMarkedDead(provider))
                         {
                             AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");

@@ -984,7 +984,7 @@ namespace AICAD.UI
                 // Clear placeholder text when first focusing
                 try
                 {
-                    if (string.Equals((prompt.Text ?? string.Empty).Trim(), "Enter prompt...", StringComparison.OrdinalIgnoreCase))
+                    if (string.Equals((prompt.Text ?? string.Empty).Trim(), "Make M10x1.5 100mm Thread bar", StringComparison.OrdinalIgnoreCase))
                     {
                         prompt.Text = string.Empty;
                     }
@@ -1134,7 +1134,7 @@ namespace AICAD.UI
                 // Keep placeholder behavior: if empty, restore hint text (non-destructive)
                 if (string.IsNullOrWhiteSpace(prompt.Text))
                 {
-                    prompt.Text = "Enter prompt...";
+                    prompt.Text = "Make M10x1.5 100mm Thread bar";
                 }
             }
             catch { }
@@ -1969,19 +1969,22 @@ namespace AICAD.UI
                 if (string.IsNullOrWhiteSpace(response))
                     return ("Unknown", string.Empty);
 
-                try
-                {
-                    var obj = Newtonsoft.Json.Linq.JObject.Parse(response);
-                    var cat = obj["category"]?.ToString();
-                    var desc = obj["description"]?.ToString();
-                    cat = AICAD.Services.PromptHandler.NormalizeCategory(cat, categories);
-                    return (cat, desc ?? string.Empty);
-                }
-                catch
-                {
-                    var cat = AICAD.Services.PromptHandler.NormalizeCategory(response, categories);
-                    return (cat, string.Empty);
-                }
+                  try
+                  {
+                      var json = ExtractRawJson(response);
+                      var obj = Newtonsoft.Json.Linq.JObject.Parse(json);
+                      var cat = obj["category"]?.ToString();
+                      var desc = obj["description"]?.ToString();
+                      cat = AICAD.Services.PromptHandler.NormalizeCategory(cat, categories);
+                      try { AddinStatusLogger.Log("Classify", $"Parsed category={cat}"); } catch { }
+                      return (cat, desc ?? string.Empty);
+                  }
+                  catch
+                  {
+                      var cat = AICAD.Services.PromptHandler.NormalizeCategory(response, categories);
+                      try { AddinStatusLogger.Log("Classify", $"Parsed category (fallback)={cat}"); } catch { }
+                      return (cat, string.Empty);
+                  }
             }
             catch (Exception ex)
             {
@@ -2136,7 +2139,7 @@ namespace AICAD.UI
             var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "enter prompt", "enter prompt...", "...", ".", "," };
             if (meaninglessWords.Contains(lowerText) || text.Length < 2)
             {
-                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: meaningless prompt"); } catch { }
+                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: meaningless prompt; prompt='" + text + "'"); } catch { }
                 AppendStatusLine("❌ Please enter a meaningful CAD description (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm').");
                 SetRealTimeStatus("Invalid prompt", Colors.OrangeRed);
                 return;
@@ -2642,6 +2645,7 @@ namespace AICAD.UI
                 catch { }
 
                 // Prefer streaming when available to update Thinking in real-time
+                try { AddinStatusLogger.Log("TaskpaneWpf", "LLM Prompt: " + (finalPrompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
                 reply = await Task.Run(async () => await GenerateWithStreamingAsync(finalPrompt));
                 string threadReply = null;
                 if (!string.IsNullOrWhiteSpace(threadPrompt))
@@ -2649,6 +2653,7 @@ namespace AICAD.UI
                     try
                     {
                         AppendStatusLine("[LLM] Requesting thread subtask...");
+                        try { AddinStatusLogger.Log("TaskpaneWpf", "LLM Thread Prompt: " + (threadPrompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
                         threadReply = await Task.Run(async () => await GenerateWithStreamingAsync(threadPrompt));
                     }
                     catch (Exception exThread)
@@ -2747,6 +2752,11 @@ namespace AICAD.UI
                 var attempt = 0;
                 var maxAttempts = 2;
                 string planJson = ExtractRawJson(reply);
+                if (decomposeOnly)
+                {
+                    var arrJson = ExtractRawJsonArray(reply);
+                    if (!string.IsNullOrWhiteSpace(arrJson)) planJson = arrJson;
+                }
                 Newtonsoft.Json.Linq.JObject planDoc = null;
                 // Track whether the user explicitly declined the automatic AI retry.
                 // If they declined, do not close the partial model so they can inspect it.
@@ -2757,28 +2767,54 @@ namespace AICAD.UI
                     {
                         if (decomposeOnly)
                         {
-                            var token = Newtonsoft.Json.Linq.JToken.Parse(planJson);
+                            var jsonToParse = planJson ?? string.Empty;
+                            var firstArr = jsonToParse.IndexOf('[');
+                            var lastArr = jsonToParse.LastIndexOf(']');
+                            if (firstArr >= 0 && lastArr > firstArr)
+                                jsonToParse = jsonToParse.Substring(firstArr, lastArr - firstArr + 1);
                             JArray tasks = null;
-                            if (token is JArray arr)
+                            Newtonsoft.Json.Linq.JToken token = null;
+                            try { tasks = JArray.Parse(jsonToParse); } catch { }
+                            if (tasks == null)
                             {
-                                tasks = arr;
-                            }
-                            else if (token is JObject obj)
-                            {
-                                if (obj["tasks"] is JArray t1) tasks = t1;
-                                else if (obj["steps"] is JArray t2) tasks = t2;
-                                else if (obj["feature_tasks"] is JArray t3) tasks = t3;
+                                try { token = Newtonsoft.Json.Linq.JToken.Parse(jsonToParse); } catch { }
+                                if (token is JValue val && val.Type == JTokenType.String)
+                                {
+                                    var inner = val.Value?.ToString();
+                                    if (!string.IsNullOrWhiteSpace(inner))
+                                    {
+                                        try { token = Newtonsoft.Json.Linq.JToken.Parse(inner); } catch { }
+                                    }
+                                }
+                                if (token is JArray arr)
+                                {
+                                    tasks = arr;
+                                }
+                                else if (token is JObject obj)
+                                {
+                                    if (obj["tasks"] is JArray t1) tasks = t1;
+                                    else if (obj["steps"] is JArray t2) tasks = t2;
+                                    else if (obj["feature_tasks"] is JArray t3) tasks = t3;
+                                    else if (obj["feature_type"] != null && obj["intent"] != null)
+                                        tasks = new JArray(obj);
+                                }
                             }
                             if (tasks == null)
+                            {
+                                try { AddinStatusLogger.Log("TaskpaneWpf", "Decompose parse token=" + (token == null ? "<null>" : token.Type.ToString())); } catch { }
                                 throw new Exception("plan-parse: feature decomposition did not return an array");
+                            }
 
                             var wrapperSteps = new JArray();
                             try
                             {
                                 AppendStatusLine($"[Decompose] Feature tasks count={tasks.Count}");
-                                var firstTask = tasks.OfType<JObject>().FirstOrDefault();
-                                if (firstTask != null)
-                                    AppendStatusLine("[Decompose] First task=" + Newtonsoft.Json.JsonConvert.SerializeObject(firstTask, Newtonsoft.Json.Formatting.None));
+                                int tIndex = 0;
+                                foreach (var task in tasks.OfType<JObject>())
+                                {
+                                    AppendStatusLine($"[Decompose] Task {tIndex}=" + Newtonsoft.Json.JsonConvert.SerializeObject(task, Newtonsoft.Json.Formatting.None));
+                                    tIndex++;
+                                }
                             }
                             catch { }
                             foreach (var t in tasks.OfType<JObject>())
@@ -2994,6 +3030,12 @@ namespace AICAD.UI
 
                     // Ask the user before attempting an automatic corrective retry via LLM
                     bool allowRetry = false;
+                    if (decomposeOnly)
+                    {
+                        AppendStatusLine("Skipping automatic AI retry in decompose-only mode.");
+                        userDeclinedAutoRetry = true;
+                        break; // exit retry loop
+                    }
                     try
                     {
                         var mbRes = System.Windows.MessageBoxResult.No;
@@ -4221,6 +4263,41 @@ namespace AICAD.UI
             }
 
             return t;
+        }
+
+        private string ExtractRawJsonArray(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+            var t = text.Trim();
+            if (t.StartsWith("```"))
+            {
+                var newline = t.IndexOf('\n');
+                if (newline >= 0)
+                {
+                    t = t.Substring(newline + 1);
+                    var fence = t.LastIndexOf("```", StringComparison.Ordinal);
+                    if (fence >= 0) t = t.Substring(0, fence);
+                    t = t.Trim();
+                }
+            }
+
+            int start = t.IndexOf('[');
+            if (start < 0) return string.Empty;
+            int depth = 0;
+            bool inString = false;
+            for (int i = start; i < t.Length; i++)
+            {
+                char c = t[i];
+                if (c == '"' && (i == 0 || t[i - 1] != '\\')) inString = !inString;
+                if (inString) continue;
+                if (c == '[') depth++;
+                else if (c == ']')
+                {
+                    depth--;
+                    if (depth == 0) return t.Substring(start, i - start + 1);
+                }
+            }
+            return string.Empty;
         }
 
         /// <summary>

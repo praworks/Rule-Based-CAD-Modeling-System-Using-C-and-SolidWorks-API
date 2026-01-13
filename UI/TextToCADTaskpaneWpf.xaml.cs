@@ -2532,12 +2532,15 @@ namespace AICAD.UI
                 {
                     var categories = templateConfig?.Categories?.Keys?.ToList() ?? new List<string>();
                     var orchestrator = new AICAD.Services.BuildOrchestrator(_swApp, _goodStore, _stepStore);
-                    var orchResult = orchestrator.Run(text, categories, useFewShot, maxFewShotCount, _lastRunId, (plan, run, req) =>
+                    var orchResult = await Task.Run(() =>
                     {
-                        return Dispatcher.Invoke(() => Services.StepExecutor.Execute(plan, _swApp, (pct, op, idx) =>
+                        return orchestrator.Run(text, categories, useFewShot, maxFewShotCount, _lastRunId, (plan, run, req) =>
                         {
-                            try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
-                        }, false, true, run, req));
+                            return Dispatcher.Invoke(() => Services.StepExecutor.Execute(plan, _swApp, (pct, op, idx) =>
+                            {
+                                try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
+                            }, false, true, run, req));
+                        });
                     });
 
                     classifiedCategory = orchResult.Category;

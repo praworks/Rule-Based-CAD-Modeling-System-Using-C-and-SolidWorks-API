@@ -21,6 +21,9 @@ namespace AICAD.Services
     {
         private const string HeaderLine = "===============================================================================";
         private const string SectionLine = "───────────────────────────────────────────────────────────────────────────────";
+        private const int LevelWidth = 5;
+        private const int IdWidth = 8;
+        private const int ComponentWidth = 24;
         private static readonly object _lock = new object();
         private static readonly HashSet<string> _startedRuns = new HashSet<string>(StringComparer.Ordinal);
         private static readonly Dictionary<string, HashSet<string>> _sectionsByRun = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -118,10 +121,17 @@ namespace AICAD.Services
         public static void LogLine(string runId, string requestId, string component, string level, string message)
         {
             var lvl = string.IsNullOrWhiteSpace(level) ? "INFO" : level.Trim().ToUpperInvariant();
-            var rid = string.IsNullOrWhiteSpace(runId) ? "-" : runId;
-            var req = string.IsNullOrWhiteSpace(requestId) ? "-" : requestId;
-            var comp = string.IsNullOrWhiteSpace(component) ? "Unknown" : component;
-            var line = $"| {lvl} | run={rid} | req={req} | {comp} | {message}";
+            var rid = FormatId(runId);
+            var req = FormatId(requestId);
+            var comp = FitFixed(component, ComponentWidth, "Unknown");
+            var msg = message ?? string.Empty;
+            var line = string.Format(
+                "| {0,-5} | run={1,-8} | req={2,-8} | {3,-24} | {4}",
+                FitFixed(lvl, LevelWidth, "INFO"),
+                rid,
+                req,
+                comp,
+                msg);
             AddinStatusLogger.Log(string.Empty, line);
         }
 
@@ -137,7 +147,31 @@ namespace AICAD.Services
             if (len <= maxLen)
                 return text + $" (len={len})";
 
-            return text.Substring(0, maxLen) + $"... (len={len})";
+            var suffix = $"... (len={len})";
+            var headLen = Math.Max(0, maxLen - suffix.Length);
+            var head = headLen > 0 ? text.Substring(0, headLen) : string.Empty;
+            return head + suffix;
+        }
+
+        private static string FormatId(string id)
+        {
+            if (string.IsNullOrWhiteSpace(id))
+                return "-";
+
+            var trimmed = id.Trim();
+            if (Guid.TryParse(trimmed, out var guid))
+            {
+                var compact = guid.ToString("N");
+                return compact.Substring(0, Math.Min(IdWidth, compact.Length));
+            }
+
+            return trimmed.Length > IdWidth ? trimmed.Substring(0, IdWidth) : trimmed;
+        }
+
+        private static string FitFixed(string value, int width, string fallback)
+        {
+            var text = string.IsNullOrWhiteSpace(value) ? (fallback ?? string.Empty) : value.Trim();
+            return text.Length > width ? text.Substring(0, width) : text;
         }
 
         private static void WriteRaw(string line)

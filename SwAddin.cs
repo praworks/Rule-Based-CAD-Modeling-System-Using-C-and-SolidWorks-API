@@ -56,7 +56,7 @@ namespace AICAD
                     {
                         // try { AddinStatusLogger.Log("AICadAddin", "Build requested from Taskpane"); } catch { }
                         try { AICAD.Services.LocalLogger.Log("SwAddin: wrapper BuildRequested received"); } catch { }
-                        try { AICAD.Services.AddinStatusLogger.Log("SwAddin", "BuildRequested received; starting build"); } catch { }
+                        try { AICAD.Services.AddinStatusLogger.Log("SwAddin", "event=BuildRequested action=StartBuild"); } catch { }
                         try { _ = _textToCadControl.RunBuildFromPromptAsync(); } catch { }
                     };
                     _textToCadControl.PromptTextChanged += (s, e) => { /* try { AddinStatusLogger.Log("AICadAddin", $"Prompt changed (len={e.Text?.Length})"); } catch { } */ };

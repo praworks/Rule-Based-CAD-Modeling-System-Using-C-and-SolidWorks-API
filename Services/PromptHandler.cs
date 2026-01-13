@@ -366,9 +366,14 @@ namespace AICAD.Services
             return sb.ToString();
         }
 
-        public static string BuildFeaturePlanPrompt(string systemPrompt, JObject featureTask, JObject facts)
+        public static string BuildFeaturePlanPrompt(string systemPrompt, JObject featureTask, JObject facts, string fewShot = null)
         {
             var sb = new StringBuilder();
+            if (!string.IsNullOrWhiteSpace(fewShot))
+            {
+                sb.AppendLine(fewShot.Trim());
+                sb.AppendLine();
+            }
             sb.AppendLine((systemPrompt ?? string.Empty) + "\n");
             sb.AppendLine("FORMAT:");
             sb.AppendLine("Return a single JSON OBJECT with:");

@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
 using System.Net.Sockets;
 using Newtonsoft.Json.Linq;
 
@@ -35,7 +34,6 @@ namespace AICAD.Services
         private static string _groqKey;
         private static string _groqModel;
         // Track providers that recently failed so we can skip them for a cooldown period
-        private static readonly ConcurrentDictionary<string, DateTime> _providerDeadUntil = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _rateLimitLock = new object();
         private static readonly Dictionary<string, DateTime> _lastProviderCall = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
@@ -78,21 +76,19 @@ namespace AICAD.Services
                 AddinStatusLogger.Log("ClarificationService", "Requesting LLM clarification for missing dimension params");
 
                 // Respect provider priority like the UI: AICAD_LLM_PRIORITY (e.g. "local,gemini,groq")
-                var priorityStr = LlmPriorityManager.GetPriority();
-                var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+                var priority = ProviderRouter.GetFallbackOrder().ToList();
 
                 Exception lastEx = null;
                 string lastReply = null;
                 var promptText = PromptHandler.BuildMissingPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, missing);
                 foreach (var provider in priority)
                 {
-                    // Skip providers currently marked dead
                     try
                     {
                         EnforceProviderPacing(provider, 2000);
-                        if (IsProviderMarkedDead(provider))
+                        if (ProviderRouter.IsDead(provider))
                         {
-                            AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
+                            AddinStatusLogger.Log("ClarificationService", $"provider={provider} marked_dead=true skipping");
                             continue;
                         }
                         if (provider == "local")
@@ -198,7 +194,7 @@ namespace AICAD.Services
                         if (ex is TimeoutException || IsConnectionRefused(ex))
                         {
                             try { AddinStatusLogger.Log("ClarificationService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
-                            try { MarkProviderDead(provider); } catch { }
+                            try { ProviderRouter.MarkDead(provider); } catch { }
                             continue;
                         }
 
@@ -271,7 +267,7 @@ namespace AICAD.Services
                     try
                     {
                         EnforceProviderPacing(provider, 2000);
-                        if (IsProviderMarkedDead(provider))
+                        if (ProviderRouter.IsDead(provider))
                         {
                             AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
                             continue;
@@ -358,7 +354,7 @@ namespace AICAD.Services
                         if (ex is TimeoutException || IsConnectionRefused(ex))
                         {
                             try { AddinStatusLogger.Log("ClarificationService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
-                            try { MarkProviderDead(provider); } catch { }
+                            try { ProviderRouter.MarkDead(provider); } catch { }
                             continue;
                         }
 
@@ -457,38 +453,6 @@ namespace AICAD.Services
             }
         }
 
-        // Return true if provider is marked dead (until a future UTC time)
-        private static bool IsProviderMarkedDead(string provider)
-        {
-            try
-            {
-                if (_providerDeadUntil.TryGetValue(provider ?? string.Empty, out var until))
-                {
-                    if (DateTime.UtcNow < until) return true;
-                    // expired - remove
-                    _providerDeadUntil.TryRemove(provider, out _);
-                }
-            }
-            catch { }
-            return false;
-        }
-
-        // Mark provider dead for a cooldown period read from env or default 300s
-        private static void MarkProviderDead(string provider)
-        {
-            try
-            {
-                var env = System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.User)
-                          ?? System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.Process)
-                          ?? "300";
-                if (!int.TryParse(env, out var secs)) secs = 300;
-                var until = DateTime.UtcNow.AddSeconds(secs);
-                _providerDeadUntil[provider] = until;
-                AddinStatusLogger.Log("ClarificationService", $"Provider {provider} marked unreachable until {until:u}");
-            }
-            catch { }
-        }
-
         // Inspect exception chain for socket/connect errors
         private static bool IsConnectionRefused(Exception ex)
         {
@@ -560,16 +524,15 @@ namespace AICAD.Services
         }
 
         /// <summary>
-        /// Generate raw LLM text using the configured provider priority (AICAD_LLM_PRIORITY).
+        /// Generate raw LLM text using the fallback provider order (groq -> local -> gemini).
         /// This is a synchronous helper that mirrors the provider selection logic used
         /// by the clarifier helpers and returns the raw reply or null.
         /// </summary>
-        public static string GenerateWithPriority(string prompt, int timeoutSeconds = 120)
+        public static string GenerateWithPriority(string prompt, int timeoutSeconds = 120, string runId = null, string requestId = null)
         {
             try
             {
-                var priorityStr = LlmPriorityManager.GetPriority();
-                var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+                var priority = ProviderRouter.GetFallbackOrder().ToList();
 
                 Exception lastEx = null;
                 string lastReply = null;
@@ -579,11 +542,12 @@ namespace AICAD.Services
                     try
                     {
                         EnforceProviderPacing(provider, 2000);
-                        if (IsProviderMarkedDead(provider))
+                        if (ProviderRouter.IsDead(provider))
                         {
-                            AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
+                            AddinStatusLogger.Log("ClarificationService", $"run={runId} req={requestId} provider={provider} marked_dead=true skipping");
                             continue;
                         }
+                        AddinStatusLogger.Log("ClarificationService", $"run={runId} req={requestId} provider={provider} marked_dead=false attempting");
                         if (provider == "local")
                         {
                             var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -603,7 +567,7 @@ namespace AICAD.Services
                                     var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
                                     lastReply = reply;
                                     try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
-                                    AddinStatusLogger.Log("ClarificationService", "Local LLM reply length=" + (reply?.Length ?? 0));
+                                    AddinStatusLogger.Log("ClarificationService", $"run={runId} req={requestId} provider=local reply_len=" + (reply?.Length ?? 0));
                                     try
                                     {
                                         var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
@@ -635,7 +599,7 @@ namespace AICAD.Services
                                     var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini", timeoutSeconds);
                                     lastReply = reply;
                                     try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
-                                    AddinStatusLogger.Log("ClarificationService", "Gemini reply length=" + (reply?.Length ?? 0));
+                                    AddinStatusLogger.Log("ClarificationService", $"run={runId} req={requestId} provider=gemini reply_len=" + (reply?.Length ?? 0));
                                     try
                                     {
                                         var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
@@ -667,7 +631,7 @@ namespace AICAD.Services
                                     var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(promptText), "groq", timeoutSeconds);
                                     lastReply = reply;
                                     try { LastRawReply = reply; LastPromptUsed = promptText; } catch { }
-                                    AddinStatusLogger.Log("ClarificationService", "Groq reply length=" + (reply?.Length ?? 0));
+                                    AddinStatusLogger.Log("ClarificationService", $"run={runId} req={requestId} provider=groq reply_len=" + (reply?.Length ?? 0));
                                     try
                                     {
                                         var truncated = (reply ?? string.Empty).Replace("\r\n", "\\n");
@@ -686,7 +650,7 @@ namespace AICAD.Services
                         if (ex is TimeoutException || IsConnectionRefused(ex))
                         {
                             try { AddinStatusLogger.Log("ClarificationService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
-                            try { MarkProviderDead(provider); } catch { }
+                            try { ProviderRouter.MarkDead(provider); } catch { }
                             continue;
                         }
 
@@ -719,16 +683,15 @@ namespace AICAD.Services
         }
 
         /// <summary>
-        /// Generate using provider priority but suppress the system prompt (send only a user message).
+        /// Generate using fallback provider order but suppress the system prompt (send only a user message).
         /// Useful for short helper prompts like description generation where global system instructions
         /// would interfere.
         /// </summary>
-        public static string GenerateUserOnlyWithPriority(string prompt, int timeoutSeconds = 120)
+        public static string GenerateUserOnlyWithPriority(string prompt, int timeoutSeconds = 120, string runId = null, string requestId = null)
         {
             try
             {
-                var priorityStr = LlmPriorityManager.GetPriority();
-                var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+                var priority = ProviderRouter.GetFallbackOrder().ToList();
 
                 Exception lastEx = null;
                 string lastReply = null;
@@ -738,11 +701,12 @@ namespace AICAD.Services
                     try
                     {
                         EnforceProviderPacing(provider, 2000);
-                        if (IsProviderMarkedDead(provider))
+                        if (ProviderRouter.IsDead(provider))
                         {
-                            AddinStatusLogger.Log("ClarificationService", $"Skipping provider {provider} - marked dead");
+                            AddinStatusLogger.Log("ClarificationService", $"run={runId} req={requestId} provider={provider} marked_dead=true skipping");
                             continue;
                         }
+                        AddinStatusLogger.Log("ClarificationService", $"run={runId} req={requestId} provider={provider} marked_dead=false attempting");
                         if (provider == "local")
                         {
                             var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -840,7 +804,7 @@ namespace AICAD.Services
                         if (ex is TimeoutException || IsConnectionRefused(ex))
                         {
                             try { AddinStatusLogger.Log("ClarificationService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
-                            try { MarkProviderDead(provider); } catch { }
+                            try { ProviderRouter.MarkDead(provider); } catch { }
                             continue;
                         }
 

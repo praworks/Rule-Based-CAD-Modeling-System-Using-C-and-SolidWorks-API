@@ -27,9 +27,6 @@ namespace AICAD.Services
     internal static class StepExecutor
     {
         private static readonly OperationRegistry _operationRegistry = OperationRegistry.CreateDefault();
-        private const string SubtaskGeneratedFlag = "_subtask_generated";
-        private const string FeatureDecomposedFlag = "__feature_decomposed";
-        private const string FeatureTaskOp = "feature_task";
 
         private static JObject BuildLlmRepairContext(JObject plan, int stepIndex, string op, string error, object data)
         {
@@ -67,7 +64,7 @@ namespace AICAD.Services
         /// <summary>
         /// Execute a plan with multiple steps using the operation handler registry
         /// </summary>
-        public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null, bool continueOnError = false, bool preservePartsOnErrorOverride = false)
+        public static StepExecutionResult Execute(JObject plan, ISldWorks swApp, Action<int, string, int?> progressCallback = null, bool continueOnError = false, bool preservePartsOnErrorOverride = false, string runId = null, string requestId = null)
         {
             var result = new StepExecutionResult();
             // Preserve newly-created parts on error for interactive diagnostics by default.
@@ -87,7 +84,7 @@ namespace AICAD.Services
                 }
             }
             catch { }
-            try { AddinStatusLogger.Log("StepExecutor", $"Execute: invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
+            try { AddinStatusLogger.Log("StepExecutor", $"run={runId} req={requestId} Execute invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
             if (swApp == null)
             {
         result.Log.Add(new JObject { ["step"] = -1, ["op"] = "init", ["success"] = false, ["error"] = "SOLIDWORKS app not available" });
@@ -98,7 +95,7 @@ namespace AICAD.Services
                 try
             {
                 var steps = plan.ContainsKey("steps") && plan["steps"] is JArray ? (JArray)plan["steps"] : new JArray();
-                    try { AddinStatusLogger.Log("StepExecutor", $"Execute: resolved {steps.Count} steps"); } catch { }
+                    try { AddinStatusLogger.Log("StepExecutor", $"run={runId} req={requestId} Execute resolved {steps.Count} steps"); } catch { }
 
                 // Flatten feature-wrapped steps: some LLMs return an array of feature objects
                 // where each feature contains its own 'steps' array. Convert those into a
@@ -141,54 +138,12 @@ namespace AICAD.Services
                 }
                 catch { }
 
-                // Declare document/context variables early so they can be referenced
-                // by pre-execution logic such as feature decomposition.
+                // Declare document/context variables early for execution context.
                 IModelDoc2 model = null;
                 ISketchManager sketchMgr = null;
                 IFeatureManager featMgr = null;
                 bool inSketch = false;
 
-                // Optional: decompose by feature type and plan each feature as a subtask.
-                try
-                {
-                    bool enableFeatureDecompose = true;
-                    var envDecompose = System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.Process)
-                                        ?? System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.User);
-                    if (!string.IsNullOrWhiteSpace(envDecompose) &&
-                        (envDecompose == "0" || envDecompose.Equals("false", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        enableFeatureDecompose = false;
-                    }
-
-                    if (enableFeatureDecompose && plan[FeatureDecomposedFlag] == null)
-                    {
-                        var userPrompt = plan?["__user_prompt"]?.ToString();
-                        if (!string.IsNullOrWhiteSpace(userPrompt))
-                        {
-                            var featureTasks = LlmPlanService.DecomposeByFeature(userPrompt);
-                            if (featureTasks != null && featureTasks.Count > 0)
-                            {
-                                var newSteps = new JArray();
-                                foreach (var task in featureTasks.OfType<JObject>())
-                                {
-                                    var wrapper = new JObject
-                                    {
-                                        ["op"] = FeatureTaskOp,
-                                        ["task"] = task
-                                    };
-                                    newSteps.Add(wrapper);
-                                }
-                                steps = newSteps;
-                                plan[FeatureDecomposedFlag] = true;
-                                try { AddinStatusLogger.Log("StepExecutor", $"Feature decomposition produced {steps.Count} feature tasks"); } catch { }
-                            }
-                        }
-                    }
-                }
-                catch (Exception exDecompose)
-                {
-                    try { AddinStatusLogger.Log("StepExecutor", $"Feature decomposition skipped: {exDecompose.Message}"); } catch { }
-                }
                 bool perStepCanonicalize = false;
                 if (enableLlmRepair)
                 {
@@ -296,43 +251,6 @@ namespace AICAD.Services
                     try
                     {
 
-                        // Expand feature task into executable steps, then continue
-                        if (opLower == FeatureTaskOp)
-                        {
-                            try
-                            {
-                                JObject facts = null;
-                                try { if (model != null) facts = ModelInspector.InspectModel(model, emitLogs: false); } catch { }
-                                var task = s["task"] as JObject ?? new JObject();
-                                var featureResult = LlmPlanService.PlanFeatureSubtask(task, facts);
-                                var featureSteps = featureResult?.Steps;
-                                if (!string.IsNullOrWhiteSpace(featureResult?.Thinking))
-                                {
-                                    AddinStatusLogger.Log("StepExecutor", $"Feature thinking: {featureResult.Thinking}");
-                                }
-                                if (featureSteps != null && featureSteps.Count > 0)
-                                {
-                                    AddinStatusLogger.Log("StepExecutor", $"Feature task expanded to {featureSteps.Count} steps at index {i}");
-                                    steps.RemoveAt(i);
-                                    for (int fi = featureSteps.Count - 1; fi >= 0; fi--)
-                                    {
-                                        steps.Insert(i, featureSteps[fi]);
-                                    }
-                                    i--; // reprocess at this index
-                                    continue;
-                                }
-                            }
-                            catch (Exception ftEx)
-                            {
-                                AddinStatusLogger.Log("StepExecutor", $"Feature task planning failed: {ftEx.Message}");
-                            }
-                            log["success"] = false;
-                            log["error"] = "Feature task expansion failed";
-                            result.Log.Add(log);
-                            result.Success = false;
-                            return result;
-                        }
-
                         // Handle new_part inline to ensure model exists before other handlers
                         if (string.Equals(op, "new_part", StringComparison.OrdinalIgnoreCase))
                         {
@@ -367,35 +285,6 @@ namespace AICAD.Services
                             }
                             int actErr2 = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr2);
                             sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
-                        }
-
-                        // Orchestrate a second LLM call for thread operations as a subtask.
-                        if (opLower == "thread" && s.Value<bool?>(SubtaskGeneratedFlag) != true)
-                        {
-                            try
-                            {
-                                JObject facts = null;
-                                try { facts = ModelInspector.InspectModel(model, emitLogs: false); } catch { }
-                                var subtaskSteps = LlmPlanService.PlanThreadSubtask(s, facts);
-                                if (subtaskSteps != null && subtaskSteps.Count > 0)
-                                {
-                                    AddinStatusLogger.Log("StepExecutor", $"Thread subtask generated {subtaskSteps.Count} steps; splicing at index {i}");
-                                    steps.RemoveAt(i);
-                                    for (int si = subtaskSteps.Count - 1; si >= 0; si--)
-                                    {
-                                        if (subtaskSteps[si] is JObject obj)
-                                            obj[SubtaskGeneratedFlag] = true;
-                                        steps.Insert(i, subtaskSteps[si]);
-                                    }
-                                    i--; // reprocess the newly inserted first subtask step
-                                    continue;
-                                }
-                            }
-                            catch (Exception subtaskEx)
-                            {
-                                try { AddinStatusLogger.Log("StepExecutor", $"Thread subtask planning failed: {subtaskEx.Message}"); } catch { }
-                                // Fall through to direct thread execution if subtask fails.
-                            }
                         }
 
                         // Look up handler in registry

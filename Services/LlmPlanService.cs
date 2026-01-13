@@ -1,7 +1,6 @@
 using System;
 using System.Linq;
 using System.Threading.Tasks;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
 
@@ -14,6 +13,11 @@ namespace AICAD.Services
             public JArray Steps { get; set; }
             public string Thinking { get; set; }
         }
+        public class ClassifyResult
+        {
+            public string Category { get; set; }
+            public string Description { get; set; }
+        }
         private static readonly object _clientLock = new object();
         private static LocalHttpLlmClient _localClient;
         private static string _localEndpoint;
@@ -25,7 +29,6 @@ namespace AICAD.Services
         private static GroqLlmClient _groqClient;
         private static string _groqKey;
         private static string _groqModel;
-        private static readonly ConcurrentDictionary<string, DateTime> _providerDeadUntil = new ConcurrentDictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         private static readonly object _rateLimitLock = new object();
         private static readonly Dictionary<string, DateTime> _lastProviderCall = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
 
@@ -50,14 +53,14 @@ namespace AICAD.Services
             lock (_rateLimitLock) { _lastProviderCall[provider] = DateTime.UtcNow; }
         }
 
-        public static JArray PlanThreadSubtask(JObject threadStep, JObject modelFacts = null)
+        public static JArray PlanThreadSubtask(JObject threadStep, JObject modelFacts = null, string runId = null, string requestId = null)
         {
             try
             {
                 var prompt = PromptHandler.BuildThreadSubtaskPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, threadStep, modelFacts);
-                AddinStatusLogger.Log("LlmPlanService", "Requesting LLM subtask for thread steps");
+                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM subtask for thread steps");
 
-                var reply = GenerateWithPriority(prompt);
+                var reply = GenerateWithPriority(prompt, 120, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                     return null;
 
@@ -85,14 +88,14 @@ namespace AICAD.Services
             }
         }
 
-        public static JArray DecomposeByFeature(string userRequest)
+        public static JArray DecomposeByFeature(string userRequest, string runId = null, string requestId = null)
         {
             try
             {
                 var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, userRequest);
-                AddinStatusLogger.Log("LlmPlanService", "Requesting LLM feature decomposition");
-                try { AddinStatusLogger.Log("LlmPlanService", "LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
-                var reply = GenerateWithPriority(prompt);
+                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM feature decomposition");
+                try { AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
+                var reply = GenerateWithPriority(prompt, 120, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                     return null;
                 var extracted = ExtractJsonArray(reply);
@@ -110,13 +113,13 @@ namespace AICAD.Services
             }
         }
 
-        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null)
+        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null, string fewShot = null, string runId = null, string requestId = null)
         {
             try
             {
-                var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts);
+                var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts, fewShot);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
-                AddinStatusLogger.Log("LlmPlanService", $"Requesting LLM plan for feature: {label}");
+                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM plan for feature: {label}");
                 int timeoutSeconds = 120;
                 try
                 {
@@ -126,8 +129,8 @@ namespace AICAD.Services
                         timeoutSeconds = secs;
                 }
                 catch { }
-                try { AddinStatusLogger.Log("LlmPlanService", "LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
-                var reply = GenerateWithPriority(prompt, timeoutSeconds);
+                try { AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
+                var reply = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                     return null;
                 var extracted = ExtractJsonArray(reply);
@@ -161,12 +164,47 @@ namespace AICAD.Services
             }
         }
 
-        public static string GenerateWithPriority(string prompt, int timeoutSeconds = 120)
+        public static ClassifyResult ClassifyAndDescribe(string userPrompt, IReadOnlyCollection<string> categories, string runId = null, string requestId = null, int timeoutSeconds = 25)
+        {
+            if (string.IsNullOrWhiteSpace(userPrompt) || categories == null || categories.Count == 0)
+                return new ClassifyResult { Category = "Unknown", Description = string.Empty };
+
+            try
+            {
+                var prompt = PromptHandler.BuildClassificationAndDescriptionPrompt(userPrompt, categories);
+                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM classification");
+                try { AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
+                var response = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
+                if (string.IsNullOrWhiteSpace(response))
+                    return new ClassifyResult { Category = "Unknown", Description = string.Empty };
+
+                try
+                {
+                    var json = ExtractRawJson(response);
+                    var obj = JObject.Parse(json);
+                    var cat = obj["category"]?.ToString();
+                    var desc = obj["description"]?.ToString();
+                    cat = PromptHandler.NormalizeCategory(cat, categories);
+                    return new ClassifyResult { Category = cat, Description = desc ?? string.Empty };
+                }
+                catch
+                {
+                    var cat = PromptHandler.NormalizeCategory(response, categories);
+                    return new ClassifyResult { Category = cat, Description = string.Empty };
+                }
+            }
+            catch (Exception ex)
+            {
+                AddinStatusLogger.Error("LlmPlanService", "ClassifyAndDescribe failed", ex);
+                return new ClassifyResult { Category = "Unknown", Description = string.Empty };
+            }
+        }
+
+        public static string GenerateWithPriority(string prompt, int timeoutSeconds = 120, string runId = null, string requestId = null)
         {
             try
             {
-                var priorityStr = LlmPriorityManager.GetPriority();
-                var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+                var priority = ProviderRouter.GetFallbackOrder().ToList();
 
                 Exception lastEx = null;
                 string lastReply = null;
@@ -176,11 +214,12 @@ namespace AICAD.Services
                     try
                     {
                         EnforceProviderPacing(provider, 2000);
-                        if (IsProviderMarkedDead(provider))
+                        if (ProviderRouter.IsDead(provider))
                         {
-                            AddinStatusLogger.Log("LlmPlanService", $"Skipping provider {provider} - marked dead");
+                            AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider={provider} marked_dead=true skipping");
                             continue;
                         }
+                        AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider={provider} marked_dead=false attempting");
                         if (provider == "local")
                         {
                             var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -199,7 +238,7 @@ namespace AICAD.Services
                                 {
                                     var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
                                     lastReply = reply;
-                                    AddinStatusLogger.Log("LlmPlanService", "Local LLM reply length=" + (reply?.Length ?? 0));
+                                    AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider=local reply_len=" + (reply?.Length ?? 0));
                                     return reply;
                                 }
                             }
@@ -222,7 +261,7 @@ namespace AICAD.Services
                                 {
                                     var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini", timeoutSeconds);
                                     lastReply = reply;
-                                    AddinStatusLogger.Log("LlmPlanService", "Gemini reply length=" + (reply?.Length ?? 0));
+                                    AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider=gemini reply_len=" + (reply?.Length ?? 0));
                                     return reply;
                                 }
                             }
@@ -245,7 +284,7 @@ namespace AICAD.Services
                                 {
                                     var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(promptText), "groq", timeoutSeconds);
                                     lastReply = reply;
-                                    AddinStatusLogger.Log("LlmPlanService", "Groq reply length=" + (reply?.Length ?? 0));
+                                    AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider=groq reply_len=" + (reply?.Length ?? 0));
                                     return reply;
                                 }
                             }
@@ -256,7 +295,7 @@ namespace AICAD.Services
                         if (ex is TimeoutException || IsConnectionRefused(ex))
                         {
                             try { AddinStatusLogger.Log("LlmPlanService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
-                            try { MarkProviderDead(provider); } catch { }
+                            try { ProviderRouter.MarkDead(provider); } catch { }
                             continue;
                         }
 
@@ -304,6 +343,23 @@ namespace AICAD.Services
                 if (last <= first) return null;
                 var json = txt.Substring(first, last - first + 1);
                 return JObject.Parse(json);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string ExtractRawJson(string txt)
+        {
+            if (string.IsNullOrWhiteSpace(txt)) return null;
+            try
+            {
+                var first = txt.IndexOf('{');
+                if (first < 0) return null;
+                var last = txt.LastIndexOf('}');
+                if (last <= first) return null;
+                return txt.Substring(first, last - first + 1);
             }
             catch
             {
@@ -364,35 +420,6 @@ namespace AICAD.Services
                 }
                 return _groqClient;
             }
-        }
-
-        private static bool IsProviderMarkedDead(string provider)
-        {
-            try
-            {
-                if (_providerDeadUntil.TryGetValue(provider ?? string.Empty, out var until))
-                {
-                    if (DateTime.UtcNow < until) return true;
-                    _providerDeadUntil.TryRemove(provider, out _);
-                }
-            }
-            catch { }
-            return false;
-        }
-
-        private static void MarkProviderDead(string provider)
-        {
-            try
-            {
-                var env = System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.User)
-                          ?? System.Environment.GetEnvironmentVariable("AICAD_PROVIDER_DEAD_COOLDOWN_SECONDS", System.EnvironmentVariableTarget.Process)
-                          ?? "300";
-                if (!int.TryParse(env, out var secs)) secs = 300;
-                var until = DateTime.UtcNow.AddSeconds(secs);
-                _providerDeadUntil[provider] = until;
-                AddinStatusLogger.Log("LlmPlanService", $"Provider {provider} marked unreachable until {until:u}");
-            }
-            catch { }
         }
 
         private static bool IsConnectionRefused(Exception ex)

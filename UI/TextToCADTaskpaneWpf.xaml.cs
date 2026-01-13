@@ -493,7 +493,7 @@ namespace AICAD.UI
                     try
                     {
                         AddinStatusLogger.Log("TaskpaneWpf", "No BuildRequested listeners; running build directly");
-                        _ = BuildFromPromptAsync();
+                        _ = RunBuildFromPromptAsync();
                     }
                     catch { }
                 }
@@ -972,8 +972,10 @@ namespace AICAD.UI
         /// </summary>
         public Task RunBuildFromPromptAsync()
         {
-            try { AddinStatusLogger.Log("TaskpaneWpf", "RunBuildFromPromptAsync invoked"); } catch { }
-            return BuildFromPromptAsync();
+            var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            _lastRunId = runId;
+            try { AddinStatusLogger.Log("TaskpaneWpf", $"run={runId} RunBuildFromPromptAsync invoked"); } catch { }
+            return BuildFromPromptAsync(runId);
         }
 
         // Public helpers to ensure focus can be moved into WPF textboxes from the WinForms host
@@ -1156,7 +1158,7 @@ namespace AICAD.UI
                         try { build.IsEnabled = false; } catch { }
                     }
                     try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
-                    _ = BuildFromPromptAsync();
+                    _ = RunBuildFromPromptAsync();
                     e.Handled = true;
                 }
             }
@@ -1956,8 +1958,10 @@ namespace AICAD.UI
         }
 
         private async Task<(string category, string description)> ClassifyAndDescribeAsync(
-            string userPrompt,
-            IReadOnlyCollection<string> categories)
+              string userPrompt,
+              IReadOnlyCollection<string> categories,
+              string runId,
+              string requestId)
         {
             if (string.IsNullOrWhiteSpace(userPrompt) || categories == null || categories.Count == 0)
                 return ("Unknown", string.Empty);
@@ -1965,26 +1969,12 @@ namespace AICAD.UI
             try
             {
                 var prompt = AICAD.Services.PromptHandler.BuildClassificationAndDescriptionPrompt(userPrompt, categories);
-                var response = await Task.Run(() => AICAD.Services.ClarificationService.GenerateUserOnlyWithPriority(prompt, 25)).ConfigureAwait(false);
-                if (string.IsNullOrWhiteSpace(response))
+                try { AddinStatusLogger.Log("Classify", $"run={runId} req={requestId}"); } catch { }
+                var result = await Task.Run(() => AICAD.Services.LlmPlanService.ClassifyAndDescribe(userPrompt, categories, runId, requestId, 25)).ConfigureAwait(false);
+                if (result == null)
                     return ("Unknown", string.Empty);
-
-                  try
-                  {
-                      var json = ExtractRawJson(response);
-                      var obj = Newtonsoft.Json.Linq.JObject.Parse(json);
-                      var cat = obj["category"]?.ToString();
-                      var desc = obj["description"]?.ToString();
-                      cat = AICAD.Services.PromptHandler.NormalizeCategory(cat, categories);
-                      try { AddinStatusLogger.Log("Classify", $"Parsed category={cat}"); } catch { }
-                      return (cat, desc ?? string.Empty);
-                  }
-                  catch
-                  {
-                      var cat = AICAD.Services.PromptHandler.NormalizeCategory(response, categories);
-                      try { AddinStatusLogger.Log("Classify", $"Parsed category (fallback)={cat}"); } catch { }
-                      return (cat, string.Empty);
-                  }
+                try { AddinStatusLogger.Log("Classify", $"Parsed category={result.Category}"); } catch { }
+                return (result.Category ?? "Unknown", result.Description ?? string.Empty);
             }
             catch (Exception ex)
             {
@@ -2123,9 +2113,14 @@ namespace AICAD.UI
             catch { }
         }
 
-        private async Task BuildFromPromptAsync()
+        private async Task BuildFromPromptAsync(string runId)
         {
-            try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync entered"); } catch { }
+            if (string.IsNullOrWhiteSpace(runId))
+            {
+                runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                _lastRunId = runId;
+            }
+            try { AddinStatusLogger.Log("TaskpaneWpf", $"run={runId} BuildFromPromptAsync entered"); } catch { }
             var text = (PromptText ?? string.Empty).Trim();
             if (string.IsNullOrEmpty(text))
             {
@@ -2290,7 +2285,6 @@ namespace AICAD.UI
                 
                 // Divider and Run ID
                 AppendStatusLine("―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――");
-                var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                 _lastRunId = runId;
                 AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff} -----");
                 
@@ -2321,51 +2315,22 @@ namespace AICAD.UI
                 SetLastError(null);
                 SetTimes(null, null);
 
-                // Generate classification + description FIRST and keep in memory
                 _generatedDescription = null;
                 string classifiedCategory = null;
-                string curatedTemplate = null;
                 AICAD.Services.PromptTemplateConfig templateConfig = null;
-                bool isThreadbar = false;
                 try
                 {
                     templateConfig = AICAD.Services.PromptHandler.LoadTemplateConfig();
-                    if (templateConfig != null && templateConfig.Categories.Count > 0)
-                    {
-                        AppendStatusLine("[LLM] Generating description & category...");
-                        var cats = templateConfig.Categories.Keys.ToList();
-                        var result = await ClassifyAndDescribeAsync(text, cats).ConfigureAwait(false);
-                        classifiedCategory = result.category;
-                        _generatedDescription = result.description;
-                        AppendStatusLine($"[Classify] Category: {classifiedCategory}");
-                        if (!string.IsNullOrWhiteSpace(_generatedDescription))
-                        {
-                            AppendStatusLine($"[Description] Generated: {_generatedDescription}");
-                            Dispatcher.Invoke(() => { typeDescriptionTextBox.Text = _generatedDescription; });
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(classifiedCategory) &&
-                            templateConfig.Categories.TryGetValue(classifiedCategory, out var tpl))
-                        {
-                            curatedTemplate = tpl;
-                        }
-                        else if (!string.IsNullOrWhiteSpace(templateConfig.UnknownTemplate))
-                        {
-                            curatedTemplate = templateConfig.UnknownTemplate;
-                        }
-                        isThreadbar = string.Equals(classifiedCategory, "Threadbar", StringComparison.OrdinalIgnoreCase);
-                    }
                 }
                 catch (Exception descEx)
                 {
-                    try { AddinStatusLogger.Error("TaskpaneWpf", "Description/classification failed", descEx); } catch { }
-                    AppendStatusLine("[Description] Generation failed - will use empty description");
+                    try { AddinStatusLogger.Error("TaskpaneWpf", "Template config load failed", descEx); } catch { }
                 }
 
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
                 bool useFewShot = true;
                 int maxFewShotCount = 3; // Default: few-shot uses up to 3 examples
-                // classifiedCategory/curatedTemplate are set during classify+describe step above
+                // classifiedCategory is set after orchestration begins
                 
                 try
                 {
@@ -2424,656 +2389,42 @@ namespace AICAD.UI
                 }
                 catch { }
 
-                StringBuilder fewshot = null;
-                StringBuilder threadFewshot = null;
-                // classification and template selection are already done above when templates are available
-
-                if (useFewShot && string.IsNullOrWhiteSpace(curatedTemplate))
+                var useOrchestrator = true;
+                if (useOrchestrator)
                 {
-                    // NOTE: hard-coded static examples removed – rely on DB-provided examples when available.
-                    fewshot = new StringBuilder();
-
-                    // Signal we're attempting to apply examples so the status console can group them underneath
-                    var exampleType = maxFewShotCount == 1 ? "one-shot example" : "few-shot examples";
-                    SetRealTimeStatus($"Applying {exampleType}…", Colors.DarkOrange);
-
-                    if (forceStaticFewShot)
+                    var categories = templateConfig?.Categories?.Keys?.ToList() ?? new List<string>();
+                    var orchestrator = new AICAD.Services.BuildOrchestrator(_swApp, _goodStore, _stepStore);
+                    var orchResult = orchestrator.Run(text, categories, useFewShot, maxFewShotCount, _lastRunId, (plan, run, req) =>
                     {
-                        AddinStatusLogger.Log("FewShot", "Forced static few-shot mode enabled; no built-in examples are available — skipping DB examples per user request");
-                        // When forceStaticFewShot is enabled but there are no built-ins, behave as if few-shot is disabled for DB fetches.
-                    }
-                    else
-                    {
-                        if (_goodStore != null)
+                        return Dispatcher.Invoke(() => Services.StepExecutor.Execute(plan, _swApp, (pct, op, idx) =>
                         {
-                            var extras = _goodStore.GetRecentFewShots(maxFewShotCount);
-                            try
-                            {
-                                AddinStatusLogger.Log("FewShot", $"GoodStore returned {extras.Count} examples");
-                                int i = 0;
-                                foreach (var s in extras)
-                                {
-                                    i++;
-                                    AddinStatusLogger.Log("FewShot", $"GoodStore example {i}: (formatted JSON)");
-                                    try
-                                    {
-                                        var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
-                                        var prettyJson = Newtonsoft.Json.JsonConvert.SerializeObject(parsed, Newtonsoft.Json.Formatting.Indented);
-                                        AddinStatusLogger.Log("FewShot", prettyJson);
-                                    }
-                                    catch
-                                    {
-                                        // If JSON parsing fails, log raw
-                                        AddinStatusLogger.Log("FewShot", s);
-                                    }
-                                    fewshot.Append(s);
-                                }
-                            }
-                            catch (Exception ex) { AddinStatusLogger.Error("FewShot", "GoodStore logging failed", ex); }
-                        }
-                        // If configured to use only the good_feedback store, skip step-store few-shots
-                        if (!_forceUseOnlyGoodFeedback && _stepStore != null)
-                        {
-                            var more = _stepStore.GetRelevantFewShots(text, maxFewShotCount);
-                            try
-                            {
-                                AddinStatusLogger.Log("FewShot", $"StepStore returned {more.Count} examples (max={maxFewShotCount})");
-                                int j = 0;
-                                foreach (var s in more)
-                                {
-                                    j++;
-                                    AddinStatusLogger.Log("FewShot", $"StepStore example {j}: (formatted JSON)");
-                                    try
-                                    {
-                                        var parsed = Newtonsoft.Json.Linq.JToken.Parse(s);
-                                        var prettyJson = Newtonsoft.Json.JsonConvert.SerializeObject(parsed, Newtonsoft.Json.Formatting.Indented);
-                                        AddinStatusLogger.Log("FewShot", prettyJson);
-                                    }
-                                    catch
-                                    {
-                                        // If JSON parsing fails, log raw
-                                        AddinStatusLogger.Log("FewShot", s);
-                                    }
-                                    fewshot.Append(s);
-                                }
-                            }
-                            catch (Exception ex) { AddinStatusLogger.Error("FewShot", "StepStore logging failed", ex); }
-                        }
-                    }
-                }
-
-                if (useFewShot && isThreadbar)
-                {
-                    threadFewshot = new StringBuilder();
-                    try
-                    {
-                        if (_goodStore != null)
-                        {
-                            var extras = _goodStore.GetRecentFewShots(maxFewShotCount);
-                            foreach (var s in extras)
-                                threadFewshot.Append(s);
-                        }
-                        if (!_forceUseOnlyGoodFeedback && _stepStore != null)
-                        {
-                            var threadSeed = "thread " + text;
-                            var more = _stepStore.GetRelevantFewShots(threadSeed, maxFewShotCount);
-                            foreach (var s in more)
-                                threadFewshot.Append(s);
-                        }
-                        if (threadFewshot.Length == 0)
-                            threadFewshot = null;
-                    }
-                    catch { threadFewshot = null; }
-                }
-
-                // Build user prompt with optional few-shot examples
-                var fewshotText = (fewshot == null ? string.Empty : fewshot.ToString());
-                var userPrompt = (useFewShot && fewshotText.Length > 0 ? fewshotText + "\n\n" : string.Empty) + "User request: ";
-                try { AddinStatusLogger.Log("FewShot", $"Final few-shot prompt length={(fewshot==null?0:fewshot.Length)}"); } catch { }
-                // Notify user when few-shot examples are not being included
-                try
-                {
-                    if (!useFewShot)
-                    {
-                        AppendStatusLine("[FewShot] Final few-shot prompt length=0 — feature disabled in settings");
-                    }
-                    else if (fewshot == null || fewshot.Length == 0)
-                    {
-                        AppendStatusLine("[FewShot] Final few-shot prompt length=0 — no few-shot examples available");
-                    }
-                }
-                catch { }
-                var llmSw = System.Diagnostics.Stopwatch.StartNew();
-                bool decomposeOnly = false;
-                try
-                {
-                    var envDecompose = System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.Process)
-                                        ?? System.Environment.GetEnvironmentVariable("AICAD_FEATURE_DECOMPOSE", System.EnvironmentVariableTarget.User);
-                    if (!string.IsNullOrWhiteSpace(envDecompose) &&
-                        (envDecompose == "1" || envDecompose.Equals("true", StringComparison.OrdinalIgnoreCase)))
-                    {
-                        decomposeOnly = true;
-                    }
-                }
-                catch { }
-
-                string finalPrompt;
-                string threadPrompt = null;
-                if (decomposeOnly)
-                {
-                    finalPrompt = AICAD.Services.PromptHandler.BuildFeatureDecomposePrompt(
-                        AICAD.Services.PromptHandler.DEFAULT_SYSTEM_PROMPT, text);
-                }
-                else if (isThreadbar)
-                {
-                    finalPrompt = AICAD.Services.PromptHandler.BuildThreadbarShaftPrompt(text, templateConfig?.CommonPreamble);
-                    var threadBasePrompt = AICAD.Services.PromptHandler.BuildThreadSubtaskPromptFromRequest(
-                        AICAD.Services.PromptHandler.DEFAULT_SYSTEM_PROMPT, text, null);
-                    if (useFewShot && threadFewshot != null && threadFewshot.Length > 0)
-                        threadPrompt = threadFewshot.ToString() + "\n\n" + threadBasePrompt;
-                    else
-                        threadPrompt = threadBasePrompt;
-                }
-                else
-                {
-                    // Build final prompt: user instructions + optional few-shot examples + actual user request
-                    finalPrompt = string.IsNullOrWhiteSpace(curatedTemplate)
-                        ? AICAD.Services.PromptHandler.BuildFinalPlanPrompt(text, useFewShot ? fewshot?.ToString() : null, FORCE_LOCAL_ONLY)
-                        : AICAD.Services.PromptHandler.BuildTemplatePrompt(curatedTemplate, text, templateConfig?.CommonPreamble);
-                }
-                // Start LLM progress estimation timer using a background System.Timers.Timer to ensure ticks fire
-                System.Timers.Timer threadTimer = null;
-                try
-                {
-                    try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); } catch { }
-                    _llmProgressStopwatch = System.Diagnostics.Stopwatch.StartNew();
-
-                    threadTimer = new System.Timers.Timer(1000); // 1s interval for background logging
-                    threadTimer.Elapsed += (s, ev) =>
-                    {
-                        try
-                        {
-                            var elapsed = _llmProgressStopwatch?.Elapsed.TotalSeconds ?? 0.0;
-                            double targetPercent = 95.0;
-
-                            // Simple linear mapping for debugging: 0-95% over 30s
-                            double pctDouble = (elapsed / 30.0) * targetPercent;
-                            int pct = (int)Math.Min(99, Math.Max(1, Math.Floor(pctDouble)));
-
-                            var bar = MakeProgressBar(pct, 20);
-                            var msg = StatusConsole.FormatLlmProgress(bar, pct);
-
-                            // Do NOT write these fine-grained progress ticks to the permanent log
-                            // (they spam the log). Only update the UI.
-                            try { Dispatcher.BeginInvoke(new Action(() => { AppendStatusLine(msg); UpdateGenerationProgressAnimated(pct); })); } catch { }
-                        }
-                        catch { }
-                    };
-                    try { threadTimer.Start(); } catch { }
-                }
-                catch { }
-                // mark formal run-level step states and initialize fixed UI steps
-                try
-                {
-                    InitializeStepProgress(new[] {
-                        "Got your request", "Preparing inputs", "Connecting to AI",
-                        "Sending request to AI", "Waiting for AI response", "AI responded",
-                        "Reading AI response", "Checking parameters", "Building sketch",
-                        "Adding features", "Applying constraints", "Running checks",
-                        "Saving model", "Updating UI", "Complete"
+                            try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
+                        }, false, true, run, req));
                     });
-                    // Initialize step entries without hardcoded percent values.
-                    // Percents will be updated from runtime events (LLM timer, op callbacks, executor updates).
-                    SetStepProgress("Got your request", null, StepState.Pending);
-                    SetStepProgress("Preparing inputs", null, StepState.Pending);
-                    SetStepProgress("Connecting to AI", null, StepState.Pending);
 
-                // LM Studio fallback is handled in GenerateWithFallbackAsync; no local LM call here.
-                    SetStepProgress("Sending request to AI", null, StepState.Pending);
-                    SetStepProgress("Waiting for AI response", null, StepState.Pending);
-                    SetStepProgress("AI responded", null, StepState.Pending);
-                    SetStepProgress("Reading AI response", null, StepState.Pending);
-                    SetStepProgress("Checking parameters", null, StepState.Pending);
-                    SetStepProgress("Building sketch", null, StepState.Pending);
-                    SetStepProgress("Adding features", null, StepState.Pending);
-                    SetStepProgress("Applying constraints", null, StepState.Pending);
-                    SetStepProgress("Running checks", null, StepState.Pending);
-                    SetStepProgress("Saving model", null, StepState.Pending);
-                    SetStepProgress("Updating UI", null, StepState.Pending);
-                    SetStepProgress("Complete", null, StepState.Pending);
-                }
-                catch { }
-
-                // Prefer streaming when available to update Thinking in real-time
-                try { AddinStatusLogger.Log("TaskpaneWpf", "LLM Prompt: " + (finalPrompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
-                reply = await Task.Run(async () => await GenerateWithStreamingAsync(finalPrompt));
-                string threadReply = null;
-                if (!string.IsNullOrWhiteSpace(threadPrompt))
-                {
-                    try
+                    classifiedCategory = orchResult.Category;
+                    _generatedDescription = orchResult.Description;
+                    if (!string.IsNullOrWhiteSpace(_generatedDescription))
                     {
-                        AppendStatusLine("[LLM] Requesting thread subtask...");
-                        try { AddinStatusLogger.Log("TaskpaneWpf", "LLM Thread Prompt: " + (threadPrompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
-                        threadReply = await Task.Run(async () => await GenerateWithStreamingAsync(threadPrompt));
+                        try { AppendStatusLine($"[Description] Generated: {_generatedDescription}"); } catch { }
+                        try { Dispatcher.Invoke(() => { typeDescriptionTextBox.Text = _generatedDescription; }); } catch { }
                     }
-                    catch (Exception exThread)
+                    exec = orchResult.Execution;
+                    llmMs = TimeSpan.FromMilliseconds(orchResult.LlmMs);
+                    if (!orchResult.Success)
                     {
-                        try { AddinStatusLogger.Log("TaskpaneWpf", "Thread subtask LLM call failed: " + exThread.Message); } catch { }
-                    }
-                }
-
-                // LLM responded; finalize progress line to Done (100%) and update EMA
-                try
-                {
-                    try { if (threadTimer != null) { threadTimer.Stop(); } } catch { }
-                    try
-                    {
-                        if (_llmProgressStopwatch != null)
-                        {
-                            _llmProgressStopwatch.Stop();
-                            var observed = _llmProgressStopwatch.Elapsed.TotalSeconds;
-                            // Update EMA: new = alpha*observed + (1-alpha)*old
-                            try
-                            {
-                                var old = _llmAverageSeconds;
-                                var nw = _llmEmaAlpha * observed + (1.0 - _llmEmaAlpha) * old;
-                                if (nw > 0 && !double.IsNaN(nw) && !double.IsInfinity(nw))
-                                {
-                                    _llmAverageSeconds = nw;
-                                    try { Services.SettingsManager.SetDouble("LLM_AvgSeconds", _llmAverageSeconds); } catch { }
-                                    AddinStatusLogger.Log("TaskpaneWpf", $"Updated LLM average: observed={observed:F1}s newAvg={_llmAverageSeconds:F2}s");
-                                }
-                            }
-                            catch { }
-                            int pct = 100;
-                            var bar = MakeProgressBar(pct, 20);
-                            var doneMsg = StatusConsole.FormatLlmProgressDone(bar, pct);
-                            AppendStatusLine(doneMsg);
-                            try { AddinStatusLogger.Log("LLM", doneMsg); } catch { }
-                        }
-                    }
-                    catch { }
-                    _llmProgressStopwatch = null;
-                }
-                catch { }
-                // Update step UI to reflect LLM response
-                try
-                {
-                    SetStepProgress("Sending request to AI", 100, StepState.Success);
-                    SetStepProgress("Waiting for AI response", 100, StepState.Success);
-                    SetStepProgress("AI responded", 100, StepState.Success);
-                    SetStepProgress("Reading AI response", 30, StepState.Running);
-                    SetStepProgress("Checking parameters", null, StepState.Pending);
-                    SetStepProgress("Building sketch", null, StepState.Pending);
-                    SetStepProgress("Adding features", null, StepState.Pending);
-                    SetStepProgress("Applying constraints", null, StepState.Pending);
-                    SetStepProgress("Running checks", null, StepState.Pending);
-                    SetStepProgress("Saving model", null, StepState.Pending);
-                    SetStepProgress("Updating UI", null, StepState.Pending);
-                    SetStepProgress("Complete", null, StepState.Pending);
-
-                }
-                catch { }
-                // Respect user Stop requests (cancellation) after LLM returns
-                if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
-                llmSw.Stop();
-                var client = _client ?? GetClient();
-                // LLM returned — advance progress realistically
-                StartProgressPhase("awaiting_response");
-                llmMs = llmSw.Elapsed;
-                _lastReply = reply;
-                AppendStatusLine(reply);
-                // Try to extract CoT 'thinking' from JSON and display it
-                try
-                {
-                    var objForThinking = Newtonsoft.Json.Linq.JObject.Parse(ExtractRawJson(reply));
-                    var thinking = objForThinking?["thinking"]?.ToString();
-                    if (!string.IsNullOrWhiteSpace(thinking))
-                    {
-                        ThinkingText.Text = thinking;
-                        ThinkingContainer.Visibility = Visibility.Visible;
-                    }
-                    else
-                    {
-                        // Hide if no thinking provided
-                        ThinkingContainer.Visibility = Visibility.Collapsed;
-                    }
-                }
-                catch { /* keep UI robust even if reply isn't an object */ }
-                SetRealTimeStatus("Received response from LLM", Colors.DarkGreen);
-                StopKaraoke();
-                ShowKaraokeScenario("awaiting_response");
-                SetLlmStatus("OK", Colors.DarkGreen);
-
-                SetRealTimeStatus("Executing SolidWorks Operation plan…", Colors.DarkOrange);
-                StartProgressPhase("executing");
-                ShowKaraokeScenario("executing");
-                SetSwStatus("Working…", Colors.DarkOrange);
-                var attempt = 0;
-                var maxAttempts = 2;
-                string planJson = ExtractRawJson(reply);
-                if (decomposeOnly)
-                {
-                    var arrJson = ExtractRawJsonArray(reply);
-                    if (!string.IsNullOrWhiteSpace(arrJson)) planJson = arrJson;
-                }
-                Newtonsoft.Json.Linq.JObject planDoc = null;
-                // Track whether the user explicitly declined the automatic AI retry.
-                // If they declined, do not close the partial model so they can inspect it.
-                bool userDeclinedAutoRetry = false;
-                for (; attempt < maxAttempts; attempt++)
-                {
-                    try
-                    {
-                        if (decomposeOnly)
-                        {
-                            var jsonToParse = planJson ?? string.Empty;
-                            var firstArr = jsonToParse.IndexOf('[');
-                            var lastArr = jsonToParse.LastIndexOf(']');
-                            if (firstArr >= 0 && lastArr > firstArr)
-                                jsonToParse = jsonToParse.Substring(firstArr, lastArr - firstArr + 1);
-                            JArray tasks = null;
-                            Newtonsoft.Json.Linq.JToken token = null;
-                            try { tasks = JArray.Parse(jsonToParse); } catch { }
-                            if (tasks == null)
-                            {
-                                try { token = Newtonsoft.Json.Linq.JToken.Parse(jsonToParse); } catch { }
-                                if (token is JValue val && val.Type == JTokenType.String)
-                                {
-                                    var inner = val.Value?.ToString();
-                                    if (!string.IsNullOrWhiteSpace(inner))
-                                    {
-                                        try { token = Newtonsoft.Json.Linq.JToken.Parse(inner); } catch { }
-                                    }
-                                }
-                                if (token is JArray arr)
-                                {
-                                    tasks = arr;
-                                }
-                                else if (token is JObject obj)
-                                {
-                                    if (obj["tasks"] is JArray t1) tasks = t1;
-                                    else if (obj["steps"] is JArray t2) tasks = t2;
-                                    else if (obj["feature_tasks"] is JArray t3) tasks = t3;
-                                    else if (obj["feature_type"] != null && obj["intent"] != null)
-                                        tasks = new JArray(obj);
-                                }
-                            }
-                            if (tasks == null)
-                            {
-                                try { AddinStatusLogger.Log("TaskpaneWpf", "Decompose parse token=" + (token == null ? "<null>" : token.Type.ToString())); } catch { }
-                                throw new Exception("plan-parse: feature decomposition did not return an array");
-                            }
-
-                            var wrapperSteps = new JArray();
-                            try
-                            {
-                                AppendStatusLine($"[Decompose] Feature tasks count={tasks.Count}");
-                                int tIndex = 0;
-                                foreach (var task in tasks.OfType<JObject>())
-                                {
-                                    AppendStatusLine($"[Decompose] Task {tIndex}=" + Newtonsoft.Json.JsonConvert.SerializeObject(task, Newtonsoft.Json.Formatting.None));
-                                    tIndex++;
-                                }
-                            }
-                            catch { }
-                            foreach (var t in tasks.OfType<JObject>())
-                            {
-                                var wrapper = new JObject
-                                {
-                                    ["op"] = "feature_task",
-                                    ["task"] = t
-                                };
-                                wrapperSteps.Add(wrapper);
-                            }
-                            planDoc = new JObject
-                            {
-                                ["steps"] = wrapperSteps,
-                                ["__feature_decomposed"] = true
-                            };
-                        }
-                        else
-                        {
-                            planDoc = Newtonsoft.Json.Linq.JObject.Parse(planJson);
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        errText = "plan-parse: " + ex.Message;
-                        break;
-                    }
-
-                    if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
-
-                    try { SetStepProgress("Reading AI response", 100, StepState.Success); SetStepProgress("Checking parameters", 50, StepState.Running); } catch { }
-
-                    try
-                    {
-                        planDoc = AugmentPlanWithProperties(planDoc, text);
-                        if (isThreadbar)
-                        {
-                            try
-                            {
-                                if (planDoc["steps"] is JArray baseSteps)
-                                {
-                                    var filtered = new JArray();
-                                    foreach (var s in baseSteps)
-                                    {
-                                        var op = s?["op"]?.ToString() ?? string.Empty;
-                                        if (!string.Equals(op, "thread", StringComparison.OrdinalIgnoreCase))
-                                            filtered.Add(s);
-                                    }
-                                    planDoc["steps"] = filtered;
-                                }
-                            }
-                            catch { }
-                        }
+                        errText = orchResult.Error ?? "Build failed";
                         try
                         {
-                            planDoc["__llm_raw"] = reply ?? string.Empty;
-                            planDoc["__llm_prompt"] = finalPrompt ?? string.Empty;
-                            planDoc["__user_prompt"] = text ?? string.Empty;
-                            if (!string.IsNullOrWhiteSpace(threadReply))
-                            {
-                                planDoc["__llm_thread_raw"] = threadReply;
-                                planDoc["__llm_thread_prompt"] = threadPrompt ?? string.Empty;
-                            }
+                            AddinStatusLogger.Log("BuildOrchestrator",
+                                $"run={_lastRunId} failedTaskIndex={orchResult.FailedTaskIndex} failedStepIndex={orchResult.FailedStepIndex} lastOp={orchResult.LastOp}");
                         }
                         catch { }
-
-                        // If 'thinking' exists in plan, keep showing it during execution
-                        try
-                        {
-                            var thinkingText = planDoc?["thinking"]?.ToString();
-                            if (!string.IsNullOrWhiteSpace(thinkingText))
-                            {
-                                ThinkingText.Text = thinkingText;
-                                ThinkingContainer.Visibility = Visibility.Visible;
-                            }
-                        }
-                        catch { }
-
-                        if (!string.IsNullOrWhiteSpace(threadReply))
-                        {
-                            try
-                            {
-                                var raw = ExtractRawJson(threadReply);
-                                JArray threadSteps = null;
-                                try { threadSteps = JArray.Parse(raw); } catch { }
-                                if (threadSteps == null)
-                                {
-                                    try
-                                    {
-                                        var obj = JObject.Parse(raw);
-                                        if (obj["steps"] is JArray arr) threadSteps = arr;
-                                    }
-                                    catch { }
-                                }
-                                if (threadSteps != null && threadSteps.Count > 0)
-                                {
-                                    if (planDoc["steps"] is JArray baseSteps)
-                                    {
-                                        foreach (var s in threadSteps)
-                                        {
-                                            if (s is JObject obj) obj["_subtask_generated"] = true;
-                                            baseSteps.Add(s);
-                                        }
-                                    }
-                                }
-                            }
-                            catch { }
-                        }
-
-                        exec = Dispatcher.Invoke(() => Services.StepExecutor.Execute(planDoc, _swApp, (pct, op, idx) =>
-                        {
-                            try
-                            {
-                                /* generationProgressBar and generationProgressText removed from XAML */
-
-                                if (idx.HasValue && idx.Value >= 0 && idx.Value < _steps.Count)
-                                {
-                                    var vm = _steps[idx.Value];
-                                    vm.Percent = pct;
-                                    vm.State = pct >= 100 ? StepState.Success : StepState.Running;
-                                    vm.Timestamp = DateTime.Now;
-                                }
-                                else
-                                {
-                                    for (int i = 0; i < _steps.Count; i++)
-                                    {
-                                        if (string.Equals(_steps[i].Label, op, StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            _steps[i].Percent = pct;
-                                            _steps[i].State = pct >= 100 ? StepState.Success : StepState.Running;
-                                            _steps[i].Timestamp = DateTime.Now;
-                                            break;
-                                        }
-                                    }
-                                }
-
-                                try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
-
-                                try
-                                {
-                                    Dispatcher.BeginInvoke(new Action(() =>
-                                    {
-                                        try
-                                        {
-                                            var completed = _steps.Count(s => s.State == StepState.Success);
-                                            if (_taskCountText != null) _taskCountText.Text = $"{completed}/{_steps.Count}";
-                                        }
-                                        catch { }
-                                    }));
-                                }
-                                catch { }
-                            }
-                            catch { }
-                        }, false, true)); // continueOnError=false, preservePartsOnErrorOverride=true for interactive UI
-
-                    // If the executor returned a clarification request, surface it prominently and stop.
-                    try
-                    {
-                        if (exec != null && exec.Clarification != null)
-                        {
-                            string clarText = null;
-                            try { clarText = exec.Clarification["clarification_needed"]?.ToString() ?? exec.Clarification.ToString(); } catch { clarText = exec.Clarification.ToString(); }
-                            if (!string.IsNullOrWhiteSpace(clarText))
-                            {
-                                AppendStatusLine("AI requests clarification: " + clarText);
-                                SetRealTimeStatus("AI requests clarification — see status console", Colors.OrangeRed);
-                                SetSwStatus("Clarification", Colors.OrangeRed);
-                                // Offer to copy clarification into the prompt for the user to edit
-                                System.Windows.MessageBoxResult mbRes = System.Windows.MessageBoxResult.None;
-                                Dispatcher.Invoke(() =>
-                                {
-                                    mbRes = System.Windows.MessageBox.Show(
-                                        "AI requests clarification:\n\n" + clarText + "\n\nClick Yes to copy this into the prompt for editing; No to dismiss.",
-                                        "AI Clarification",
-                                        System.Windows.MessageBoxButton.YesNo,
-                                        System.Windows.MessageBoxImage.Information);
-                                });
-                                if (mbRes == System.Windows.MessageBoxResult.Yes)
-                                {
-                                    try { Dispatcher.Invoke(() => { prompt.Text = clarText; FocusPrompt(); }); } catch { }
-                                }
-                                try { _isBuilding = false; } catch { }
-                                try { Dispatcher.Invoke(() => { build.Content = "Build"; build.IsEnabled = true; build.Background = new System.Windows.Media.SolidColorBrush(Colors.DodgerBlue); build.Foreground = new System.Windows.Media.SolidColorBrush(Colors.White); }); } catch { }
-                                return; // stop the build flow so the user can respond
-                            }
-                        }
                     }
-                    catch { /* robust UI: ignore errors and continue to normal failure handling */ }
-                    }
-                    catch (Exception ex)
-                    {
-                        try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Unhandled exception during plan execution", ex); } catch { }
-                        try { AICAD.Services.TempFileWriter.AppendAllText("AICAD_UnhandledException.log", $"[{DateTime.UtcNow:O}] Exec exception: {ex}\n"); } catch { }
-                        exec = new AICAD.Services.StepExecutionResult { Success = false };
-                    }
-
-                    if (exec != null && exec.Success) break;
-
-                    var errDoc = new JObject
-                    {
-                        ["last_plan"] = SafeJson(planJson),
-                        ["errors"] = (exec != null) ? new JArray(exec.Log) : new JArray()
-                    };
-
-                    var corrective =
-                        "Your previous plan failed in SOLIDWORKS. Fix the plan based on this error log and output only corrected JSON.\n" +
-                        errDoc.ToString() +
-                        "\nRemember: output only JSON with steps; use Front Plane and mm units.";
-
-                    // Do NOT close the newly-created part yet; ask the user first so they
-                    // can inspect the partial model for diagnostics. We'll only close if
-                    // the user explicitly allows the AI corrective retry below.
-
-                    // Ask the user before attempting an automatic corrective retry via LLM
-                    bool allowRetry = false;
-                    if (decomposeOnly)
-                    {
-                        AppendStatusLine("Skipping automatic AI retry in decompose-only mode.");
-                        userDeclinedAutoRetry = true;
-                        break; // exit retry loop
-                    }
-                    try
-                    {
-                        var mbRes = System.Windows.MessageBoxResult.No;
-                        Dispatcher.Invoke(() => mbRes = System.Windows.MessageBox.Show(
-                            "AI-generated plan failed. Allow the LLM to try to automatically fix and retry?\n\nSelect Yes to let the AI attempt a corrected plan; No to abort.",
-                            "Confirm AI retry",
-                            System.Windows.MessageBoxButton.YesNo,
-                            System.Windows.MessageBoxImage.Question));
-                        allowRetry = (mbRes == System.Windows.MessageBoxResult.Yes);
-                    }
-                    catch { allowRetry = false; }
-
-                    if (!allowRetry)
-                    {
-                        AppendStatusLine("User declined automatic LLM corrective retry.");
-                        userDeclinedAutoRetry = true;
-                        break; // exit retry loop
-                    }
-
-                    // User allowed retry — close the partial model before asking the LLM
-                    try
-                    {
-                        if (exec != null && exec.CreatedNewPart && !exec.Success && _swApp != null && !string.IsNullOrWhiteSpace(exec.ModelTitle))
-                        {
-                            try { Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle)); } catch { }
-                        }
-                    }
-                    catch { }
-
-                    var llmFixSw = System.Diagnostics.Stopwatch.StartNew();
-                    if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
-                    var fixedPlan = await client.GenerateAsync(corrective);
-                    if (_buildCts?.Token.IsCancellationRequested == true) throw new OperationCanceledException();
-                    llmFixSw.Stop();
-                    llmMs += llmFixSw.Elapsed;
-                    planJson = ExtractRawJson(fixedPlan);
+                    goto AfterExecution;
                 }
 
+                AfterExecution:
                 if (exec != null && exec.Success)
                 {
                     AppendStatusLine("Model created.");
@@ -3224,6 +2575,7 @@ namespace AICAD.UI
                             // Only close the partial document if the user did not explicitly decline
                             // the automatic AI retry. If the user declined, preserve the model
                             // so they can inspect it.
+                            bool userDeclinedAutoRetry = false;
                             if (!userDeclinedAutoRetry)
                             {
                                 Dispatcher.Invoke(() => _swApp.CloseDoc(exec.ModelTitle));
@@ -3415,7 +2767,7 @@ namespace AICAD.UI
             }
         }
 
-        private async Task<string> GenerateWithStreamingAsync(string prompt)
+        private async Task<string> GenerateWithStreamingAsync(string prompt, string runId, string requestId)
         {
             Exception lastEx = null;
             var sb = new StringBuilder();
@@ -3448,13 +2800,18 @@ namespace AICAD.UI
             }
 
             // Load priority similar to non-streaming path
-            var priorityStr = AICAD.Services.LlmPriorityManager.GetPriority();
-            var priority = priorityStr.Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries).Select(p => p.Trim().ToLower()).ToList();
+            var priority = AICAD.Services.ProviderRouter.GetFallbackOrder().ToList();
 
             foreach (var provider in priority)
             {
                 try
                 {
+                    try { AddinStatusLogger.Log("TaskpaneWpf", $"run={runId} req={requestId} provider={provider} attempting"); } catch { }
+                    if (AICAD.Services.ProviderRouter.IsDead(provider))
+                    {
+                        try { AddinStatusLogger.Log("TaskpaneWpf", $"run={runId} req={requestId} provider={provider} marked_dead=true skipping"); } catch { }
+                        continue;
+                    }
                     if (provider == "local")
                     {
                         var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -3545,6 +2902,7 @@ namespace AICAD.UI
                 {
                     lastEx = ex;
                     AppendStatusLine($"[LLM] {provider} failed: {ex.Message}");
+                    try { AddinStatusLogger.Log("TaskpaneWpf", $"run={runId} req={requestId} provider={provider} failed: {ex.Message}"); } catch { }
                     continue;
                 }
             }
@@ -4300,6 +3658,22 @@ namespace AICAD.UI
             return string.Empty;
         }
 
+        private void NormalizeTaskParams(JObject task)
+        {
+            if (task == null) return;
+            var paramsObj = task["params"] as JObject;
+            if (paramsObj == null) return;
+            if (paramsObj["op"] == null && paramsObj["type"] != null)
+            {
+                paramsObj["op"] = paramsObj["type"];
+            }
+        }
+
+        private string GetFewShotForFeature(JObject task, int maxCount)
+        {
+            return AICAD.Services.FewShotSelector.SelectFeatureFewShot(task, _goodStore, _stepStore, maxCount);
+        }
+
         /// <summary>
         /// Best-effort insertion of material/description steps when missing.
         /// </summary>
@@ -4648,3 +4022,5 @@ namespace AICAD.UI
         }
     }
 }
+
+

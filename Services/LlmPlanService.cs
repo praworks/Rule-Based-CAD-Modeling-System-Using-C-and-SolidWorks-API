@@ -98,7 +98,7 @@ namespace AICAD.Services
             }
         }
 
-        public static JArray DecomposeByFeature(string userRequest, string runId = null, string requestId = null)
+        public static JArray DecomposeByFeature(string userRequest, string runId = null, string requestId = null, int timeoutSeconds = 120)
         {
             try
             {
@@ -106,7 +106,7 @@ namespace AICAD.Services
                 var sw = Stopwatch.StartNew();
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: decompose");
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1200));
-                var reply = GenerateWithPriority(prompt, 120, runId, requestId);
+                var reply = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                 {
                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: decompose empty_reply elapsedMs={sw.ElapsedMilliseconds}");
@@ -136,7 +136,7 @@ namespace AICAD.Services
             }
         }
 
-        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null, string fewShot = null, string runId = null, string requestId = null)
+        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null, string fewShot = null, string runId = null, string requestId = null, int timeoutSeconds = 120)
         {
             try
             {
@@ -144,17 +144,17 @@ namespace AICAD.Services
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 var sw = Stopwatch.StartNew();
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request start: expand feature={label}");
-                int timeoutSeconds = 120;
+                int effectiveTimeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 120;
                 try
                 {
                     var env = System.Environment.GetEnvironmentVariable("AICAD_FEATURE_PLAN_TIMEOUT_SECONDS", System.EnvironmentVariableTarget.Process)
                               ?? System.Environment.GetEnvironmentVariable("AICAD_FEATURE_PLAN_TIMEOUT_SECONDS", System.EnvironmentVariableTarget.User);
                     if (!string.IsNullOrWhiteSpace(env) && int.TryParse(env, out var secs) && secs > 0)
-                        timeoutSeconds = secs;
+                        effectiveTimeoutSeconds = secs;
                 }
                 catch { }
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1600));
-                var reply = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
+                var reply = GenerateWithPriority(prompt, effectiveTimeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                 {
                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: expand empty_reply elapsedMs={sw.ElapsedMilliseconds}");
@@ -251,19 +251,14 @@ namespace AICAD.Services
                 var priority = ProviderRouter.GetFallbackOrder().ToList();
 
                 Exception lastEx = null;
-                string lastReply = null;
                 var promptText = prompt;
                 foreach (var provider in priority)
                 {
                     try
                     {
                         EnforceProviderPacing(provider, 2000);
-                        if (ProviderRouter.IsDead(provider))
-                        {
-                            DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", $"provider={provider} marked_dead=true skipping");
-                            continue;
-                        }
-                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"provider={provider} marked_dead=false attempting");
+                        var markedDead = ProviderRouter.IsDead(provider);
+                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"provider={provider} marked_dead={markedDead} attempting");
                         if (provider == "local")
                         {
                             var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -281,9 +276,10 @@ namespace AICAD.Services
                                 if (localClient != null)
                                 {
                                     var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
-                                    lastReply = reply;
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=local reply_len=" + (reply?.Length ?? 0));
-                                    return reply;
+                                    if (!string.IsNullOrWhiteSpace(reply))
+                                        return reply;
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "provider=local empty_reply continuing");
                                 }
                             }
                         }
@@ -304,9 +300,10 @@ namespace AICAD.Services
                                 if (gemClient != null)
                                 {
                                     var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini", timeoutSeconds);
-                                    lastReply = reply;
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=gemini reply_len=" + (reply?.Length ?? 0));
-                                    return reply;
+                                    if (!string.IsNullOrWhiteSpace(reply))
+                                        return reply;
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "provider=gemini empty_reply continuing");
                                 }
                             }
                         }
@@ -327,9 +324,10 @@ namespace AICAD.Services
                                 if (groqClient != null)
                                 {
                                     var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(promptText), "groq", timeoutSeconds);
-                                    lastReply = reply;
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=groq reply_len=" + (reply?.Length ?? 0));
-                                    return reply;
+                                    if (!string.IsNullOrWhiteSpace(reply))
+                                        return reply;
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "provider=groq empty_reply continuing");
                                 }
                             }
                         }

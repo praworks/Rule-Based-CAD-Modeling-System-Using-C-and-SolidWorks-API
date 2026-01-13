@@ -51,7 +51,7 @@ namespace AICAD.Services
                 }
             }
             catch { }
-            try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Execute invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
+            try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"STEP 8.4 Execute invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
             if (swApp == null)
             {
         result.Log.Add(new JObject { ["step"] = -1, ["op"] = "init", ["success"] = false, ["error"] = "SOLIDWORKS app not available" });

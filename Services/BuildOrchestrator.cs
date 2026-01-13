@@ -36,7 +36,7 @@ namespace AICAD.Services
             _stepStore = stepStore;
         }
 
-        public BuildResult Run(string userPrompt, IReadOnlyCollection<string> categories, bool useFewShot, int maxFewShotCount, string runId, Func<JObject, string, string, StepExecutionResult> executePlan)
+        public BuildResult Run(string userPrompt, IReadOnlyCollection<string> categories, bool useFewShot, int maxFewShotCount, string runId, Func<JObject, string, string, StepExecutionResult> executePlan, DiagnosticLogSettings settings = null)
         {
             var result = new BuildResult();
             if (string.IsNullOrWhiteSpace(userPrompt))
@@ -47,16 +47,28 @@ namespace AICAD.Services
             }
 
             var llmSw = Stopwatch.StartNew();
+            var classifyTimeout = (settings?.ClassifyTimeoutSeconds ?? 25);
+            var decomposeTimeout = (settings?.DecomposeTimeoutSeconds ?? 120);
+            var expandTimeout = (settings?.ExpandTimeoutSeconds ?? 120);
+            var fewShotEnabled = settings?.FewShotEnabled ?? useFewShot;
+            try
+            {
+                var providerPriority = settings?.ProviderPriority ?? string.Join(",", ProviderRouter.GetFallbackOrder());
+                DiagnosticLogWriter.LogLine(runId, null, "BuildOrchestrator", "INFO",
+                    $"STEP 5 Settings loaded provider_priority={providerPriority} classify_timeout={classifyTimeout}s decompose_timeout={decomposeTimeout}s expand_timeout={expandTimeout}s few_shot={fewShotEnabled}");
+            }
+            catch { }
             var classifyReqId = Guid.NewGuid().ToString("N");
             DiagnosticLogWriter.StartSection(runId, "CLASSIFY");
-            var classify = LlmPlanService.ClassifyAndDescribe(userPrompt, categories, runId, classifyReqId, 25);
+            DiagnosticLogWriter.LogLine(runId, classifyReqId, "BuildOrchestrator", "INFO", "STEP 6 Classify start");
+            var classify = LlmPlanService.ClassifyAndDescribe(userPrompt, categories, runId, classifyReqId, classifyTimeout);
             result.Category = classify?.Category ?? "Unknown";
             result.Description = classify?.Description ?? string.Empty;
 
             var decomposeReqId = Guid.NewGuid().ToString("N");
             DiagnosticLogWriter.StartSection(runId, "DECOMPOSE");
-            DiagnosticLogWriter.LogLine(runId, decomposeReqId, "BuildOrchestrator", "INFO", "Decompose start");
-            var tasks = LlmPlanService.DecomposeByFeature(userPrompt, runId, decomposeReqId);
+            DiagnosticLogWriter.LogLine(runId, decomposeReqId, "BuildOrchestrator", "INFO", "STEP 7 Decompose start");
+            var tasks = LlmPlanService.DecomposeByFeature(userPrompt, runId, decomposeReqId, decomposeTimeout);
             if (tasks == null || tasks.Count == 0)
             {
                 result.Success = false;
@@ -78,12 +90,14 @@ namespace AICAD.Services
                 var featureType = task.Value<string>("feature_type") ?? "feature";
                 var intent = task.Value<string>("intent") ?? string.Empty;
                 DiagnosticLogWriter.FeatureHeader(runId, ti, featureType);
-                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", $"Feature intent={intent}");
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", $"STEP 8 Feature start index={ti} feature_type={featureType} intent={intent}");
 
-                var fewShot = useFewShot ? FewShotSelector.SelectFeatureFewShot(task, _goodStore, _stepStore, maxFewShotCount) : null;
-                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "DEBUG", $"FewShot length={(fewShot ?? string.Empty).Length}");
+                var fewShot = fewShotEnabled ? FewShotSelector.SelectFeatureFewShot(task, _goodStore, _stepStore, maxFewShotCount) : null;
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", $"STEP 8.1 FewShot selected length={(fewShot ?? string.Empty).Length}");
 
-                var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, fewShot, runId, reqId);
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", $"STEP 8.2 Build prompt model_state={(modelFacts != null)}");
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", "STEP 8.3 Expand start");
+                var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, fewShot, runId, reqId, expandTimeout);
                 if (plan == null || plan.Steps == null || plan.Steps.Count == 0)
                 {
                     result.Success = false;
@@ -102,6 +116,7 @@ namespace AICAD.Services
                     ["__user_prompt"] = userPrompt ?? string.Empty
                 };
 
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", "STEP 8.4 Execute start");
                 var exec = executePlan?.Invoke(perPlan, runId, reqId);
                 result.Execution = exec;
                 if (exec == null || !exec.Success)
@@ -133,7 +148,7 @@ namespace AICAD.Services
 
                 modelFacts = ModelStateProvider.Capture(_swApp, emitLogs: false);
                 result.ModelState = modelFacts;
-                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "DEBUG", $"Model state updated={(modelFacts != null)}");
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", $"STEP 8.5 ModelState updated={(modelFacts != null)}");
             }
 
             result.Success = true;

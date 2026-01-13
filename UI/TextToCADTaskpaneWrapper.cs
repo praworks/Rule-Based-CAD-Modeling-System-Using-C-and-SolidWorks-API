@@ -70,6 +70,12 @@ namespace AICAD.UI
                     _wpfControl.BuildRequested += (s, e) =>
                     {
                         try { AICAD.Services.LocalLogger.Log("Wrapper: BuildRequested forwarded"); } catch { }
+                        try
+                        {
+                            var runId = _wpfControl?.GetRunIdForLogging();
+                            AICAD.Services.DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWrapper", "INFO", "STEP 3 BuildRequested forwarded");
+                        }
+                        catch { }
                         try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
                     };
                     _wpfControl.PromptTextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, e); } catch { } };

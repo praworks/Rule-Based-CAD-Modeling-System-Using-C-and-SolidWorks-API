@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -484,10 +484,9 @@ namespace AICAD.UI
                     {
                         var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                         _pendingRunId = runId;
-                        var settings = BuildDiagnosticLogSettings();
-                        DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
-                        DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
-                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Build clicked");
+                        var promptText = (PromptText ?? string.Empty).Trim();
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "STEP 1 Prompt captured: " + DiagnosticLogWriter.Truncate(promptText, 200));
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "STEP 2 Build clicked");
                     }
                     catch { }
                 }
@@ -497,7 +496,7 @@ namespace AICAD.UI
                     try
                     {
                         var runId = GetRunIdForLogging();
-                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildRequested forwarded");
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildRequested raised");
                     }
                     catch { }
                     BuildRequested?.Invoke(this, EventArgs.Empty);
@@ -926,7 +925,7 @@ namespace AICAD.UI
 
         private DiagnosticLogSettings BuildDiagnosticLogSettings()
         {
-            var priority = AICAD.Services.LlmPriorityManager.GetPriority();
+            var priority = string.Join(",", AICAD.Services.ProviderRouter.GetFallbackOrder());
             int expandTimeoutSeconds = 120;
             try
             {
@@ -1054,14 +1053,16 @@ namespace AICAD.UI
                 runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
             _pendingRunId = null;
             _lastRunId = runId;
+            DiagnosticLogSettings settings = null;
             try
             {
-                var settings = BuildDiagnosticLogSettings();
+                settings = BuildDiagnosticLogSettings();
                 DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
                 DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
+                DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "STEP 5 Settings loaded");
             }
             catch { }
-            return BuildFromPromptAsync(runId);
+            return BuildFromPromptAsync(runId, settings);
         }
 
         // Public helpers to ensure focus can be moved into WPF textboxes from the WinForms host
@@ -1247,15 +1248,15 @@ namespace AICAD.UI
                     {
                         var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                         _pendingRunId = runId;
-                        var settings = BuildDiagnosticLogSettings();
-                        DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
-                        DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
-                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Build clicked");
-                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildRequested forwarded");
+                        var promptText = (PromptText ?? string.Empty).Trim();
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "STEP 1 Prompt captured: " + DiagnosticLogWriter.Truncate(promptText, 200));
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "STEP 2 Build clicked");
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildRequested raised");
                     }
                     catch { }
                     try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
-                    _ = RunBuildFromPromptAsync();
+                    if (BuildRequested == null)
+                        _ = RunBuildFromPromptAsync();
                     e.Handled = true;
                 }
             }
@@ -2210,7 +2211,7 @@ namespace AICAD.UI
             catch { }
         }
 
-        private async Task BuildFromPromptAsync(string runId)
+        private async Task BuildFromPromptAsync(string runId, DiagnosticLogSettings settings)
         {
             if (string.IsNullOrWhiteSpace(runId))
             {
@@ -2219,8 +2220,6 @@ namespace AICAD.UI
             }
             try
             {
-                var settings = BuildDiagnosticLogSettings();
-                DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
                 DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
                 DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildFromPromptAsync entered");
             }
@@ -2289,21 +2288,18 @@ namespace AICAD.UI
                 try { build.IsEnabled = true; } catch { }
                 _lastPrompt = text;
                 
-                // Refine prompt if enabled
-                var originalText = text;
+                // Refine prompt is skipped to preserve strict pipeline ordering (Classify is LLM call #1).
                 try
                 {
-                    text = await RefinePromptAsync(text).ConfigureAwait(false);
-                    if (text != originalText)
+                    var refineProvider = System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.User)
+                                        ?? System.Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", System.EnvironmentVariableTarget.Process)
+                                        ?? "disabled";
+                    if (!refineProvider.Equals("disabled", StringComparison.OrdinalIgnoreCase))
                     {
-                        AppendStatusLine($"✨ User input refined automatically! to: {text}");
+                        AppendStatusLine("[Refine] Skipped to enforce pipeline order (provider=" + refineProvider + ")");
                     }
                 }
-                catch (Exception refineEx)
-                {
-                    AppendStatusLine($"[Refine] Failed: {refineEx.Message}");
-                    // Continue with original text
-                }
+                catch { }
 
                 AppendStatusLine("> " + text);
                 
@@ -2466,7 +2462,7 @@ namespace AICAD.UI
                 }
 
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
-                bool useFewShot = true;
+                bool useFewShot = settings?.FewShotEnabled ?? true;
                 int maxFewShotCount = 3; // Default: few-shot uses up to 3 examples
                 // classifiedCategory is set after orchestration begins
                 
@@ -2508,7 +2504,10 @@ namespace AICAD.UI
                         }
                     }
                 }
-                catch { useFewShot = true; maxFewShotCount = 3; }
+                catch { useFewShot = settings?.FewShotEnabled ?? true; maxFewShotCount = 3; }
+
+                if (settings != null)
+                    useFewShot = settings.FewShotEnabled;
 
                 // If forcing local-only mode, do not feed few-shot examples to the local LLM.
                 if (FORCE_LOCAL_ONLY)
@@ -2540,7 +2539,7 @@ namespace AICAD.UI
                             {
                                 try { UpdateHigherLevelFromOp(op ?? string.Empty, pct); } catch { }
                             }, false, true, run, req));
-                        });
+                        }, settings);
                     });
 
                     classifiedCategory = orchResult.Category;
@@ -2607,6 +2606,7 @@ namespace AICAD.UI
                     try { _lastRunCreatedModel = exec.CreatedNewPart; _lastCreatedModelTitle = exec.ModelTitle; } catch { }
 
                     // Auto-apply properties (Material/Description/Weight) to ensure Weight shows without manual Apply click
+                    try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "STEP 9 Update model properties"); } catch { }
                     try
                     {
                         var doc = _swApp?.ActiveDoc as IModelDoc2;
@@ -2907,6 +2907,7 @@ namespace AICAD.UI
                 try { _buildCts?.Dispose(); _buildCts = null; } catch { }
                 try
                 {
+                    try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", (exec?.Success ?? false) ? "INFO" : "ERROR", $"STEP 10 Completed success={(exec?.Success ?? false)}"); } catch { }
                     DiagnosticLogWriter.EndRun(runId, exec?.Success ?? false, errText, (long)totalSw.Elapsed.TotalMilliseconds);
                 }
                 catch { }

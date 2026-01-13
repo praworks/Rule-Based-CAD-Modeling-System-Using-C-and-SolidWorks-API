@@ -1,0 +1,39 @@
+{
+  "notes": "CRITICAL ARCHITECTURE NOTE: REFERENCE GEOMETRY - SolidWorks 2D Sketches require a PLANAR surface (Flat Face or Plane). A Base Feature can produce curved surfaces (e.g., shaft face). For cuts on curved faces, create a 'Reference Plane' (tangent) before cutting. Typical flow: 1) Create base (cylinder). 2) Create reference plane (tangent to cylinder). 3) Cut/keyway on reference plane. Omitting this can cause SelectPlanarFace errors when the API expects a planar face.",
+  "feature_taxonomy": {
+    "base_features": [
+      { "name": "Extrude Boss/Base", "valid_planes": ["Front", "Top", "Right"] },
+      { "name": "Revolve Boss/Base", "valid_planes": ["Front", "Top", "Right"] },
+      { "name": "Sweep Boss/Base", "valid_planes": ["Front", "Top", "Right"] },
+      { "name": "Sheet Metal Base Flange", "valid_planes": ["Front", "Top", "Right"], "description": "Creates the initial sheet metal body." }
+    ],
+    "reference_features": [
+      {
+        "name": "Reference Plane",
+        "description": "Creates a construction plane for sketching on curved surfaces or at angles.",
+        "requires_existing_geometry": true,
+        "selection_type": "Face/Plane + Distance/Angle"
+      },
+      {
+        "name": "Reference Axis",
+        "description": "Creates a construction line (centerline) for patterns or revolves.",
+        "requires_existing_geometry": true,
+        "selection_type": "Cylindrical Face or Two Planes"
+      }
+    ],
+    "dependent_features": [
+      { "name": "Extruded Cut", "selection_type": "Face or Plane" },
+      { "name": "Revolved Cut", "selection_type": "Face or Axis" },
+      { "name": "Hole Wizard", "selection_type": "Face" },
+      { "name": "Fillet", "selection_type": "Edge or Face" },
+      { "name": "Chamfer", "selection_type": "Edge or Face" },
+      { "name": "Cosmetic Thread", "selection_type": "Cylindrical Face" },
+      { "name": "Shell", "selection_type": "Face" },
+      { "name": "Draft", "selection_type": "Face + Neutral Plane" },
+      { "name": "Sheet Metal Edge Flange", "selection_type": "Edge" },
+      { "name": "Linear Pattern", "selection_type": "Edge (Direction)" },
+      { "name": "Circular Pattern", "selection_type": "Axis" },
+      { "name": "Mirror", "selection_type": "Face/Plane" }
+    ]
+  }
+}

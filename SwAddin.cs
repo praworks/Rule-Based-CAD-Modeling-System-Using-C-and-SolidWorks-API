@@ -59,7 +59,7 @@ namespace AICAD
                         try
                         {
                             var runId = _textToCadControl.GetRunIdForLogging();
-                            AICAD.Services.DiagnosticLogWriter.LogLine(runId, null, "SwAddin", "INFO", "BuildRequested received");
+                            AICAD.Services.DiagnosticLogWriter.LogLine(runId, null, "SwAddin", "INFO", "STEP 4 BuildRequested received; starting build");
                         }
                         catch { }
                         try { _ = _textToCadControl.RunBuildFromPromptAsync(); } catch { }

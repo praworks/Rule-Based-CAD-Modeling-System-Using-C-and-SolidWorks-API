@@ -22,8 +22,6 @@ namespace AICAD.Services
         private const string HeaderLine = "===============================================================================";
         private const string SectionLine = "───────────────────────────────────────────────────────────────────────────────";
         private const int TimestampWidth = 12;
-        private const int LevelWidth = 5;
-        private const int IdWidth = 6;
         private const int ComponentWidth = 20;
         private static readonly object _lock = new object();
         private static readonly HashSet<string> _startedRuns = new HashSet<string>(StringComparer.Ordinal);
@@ -41,9 +39,7 @@ namespace AICAD.Services
                 _startedRuns.Add(runId);
                 _sectionsByRun[runId] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
-            WriteRaw(HeaderLine);
-            WriteRaw($"DIAGNOSTIC LOG FOR \"{userPrompt ?? string.Empty}\"");
-            WriteRaw(HeaderLine);
+            WriteRaw($"--- Run Started: {userPrompt ?? string.Empty} ---");
             if (settings != null)
             {
                 var provider = string.IsNullOrWhiteSpace(settings.ProviderPriority) ? "NA" : settings.ProviderPriority;
@@ -121,17 +117,11 @@ namespace AICAD.Services
         public static void LogLine(string runId, string requestId, string component, string level, string message)
         {
             var ts = DateTime.Now.ToString("HH:mm:ss.fff");
-            var lvl = string.IsNullOrWhiteSpace(level) ? "INFO" : level.Trim().ToUpperInvariant();
-            var rid = FormatId(runId);
-            var req = FormatId(requestId);
             var comp = FitFixed(component, ComponentWidth, "-");
             var msg = StripStepPrefix(message ?? string.Empty);
             var line = string.Format(
-                "{0,-12} | {1,-5} | {2,-6} | {3,-6} | {4,-20} | {5}",
+                "{0,-12} | {1,-20} | {2}",
                 FitFixed(ts, TimestampWidth, "00:00:00.000"),
-                FitFixed(lvl, LevelWidth, "INFO"),
-                rid,
-                req,
                 comp,
                 msg);
             AddinStatusLogger.Log(string.Empty, line);
@@ -164,18 +154,6 @@ namespace AICAD.Services
             var head = headLen > 0 ? text.Substring(0, headLen) : string.Empty;
             var tail = tailLen > 0 ? text.Substring(len - tailLen, tailLen) : string.Empty;
             return head + ellipsis + tail + suffix;
-        }
-
-        private static string FormatId(string id)
-        {
-            if (string.IsNullOrWhiteSpace(id))
-                return "-";
-
-            var trimmed = id.Trim();
-            if (Guid.TryParse(trimmed, out var guid))
-                trimmed = guid.ToString("N");
-
-            return trimmed.Length > IdWidth ? trimmed.Substring(trimmed.Length - IdWidth) : trimmed;
         }
 
         private static string StripStepPrefix(string message)

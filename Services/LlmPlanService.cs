@@ -292,15 +292,16 @@ namespace AICAD.Services
                     }
                     catch (Exception ex)
                     {
-                        if (ex is TimeoutException || IsConnectionRefused(ex))
-                        {
-                            try { AddinStatusLogger.Log("LlmPlanService", $"{provider} transient failure: {ex.Message}. Marking dead and continuing"); } catch { }
-                            try { ProviderRouter.MarkDead(provider); } catch { }
-                            continue;
-                        }
-
                         lastEx = ex;
-                        AddinStatusLogger.Log("LlmPlanService", provider + " failed: " + ex.Message);
+                        var transient = ex is TimeoutException || IsConnectionRefused(ex);
+                        try
+                        {
+                            var tag = transient ? "transient" : "failure";
+                            AddinStatusLogger.Log("LlmPlanService", $"{provider} {tag}: {ex.Message}. Marking dead and continuing");
+                        }
+                        catch { }
+                        try { ProviderRouter.MarkDead(provider); } catch { }
+                        continue;
                     }
                 }
 

@@ -24,11 +24,10 @@ PHASE 0 — UI / PIPELINE
 ───────────────────────────────────────────────────────────────────────────────
 <TS> <LEVEL> [RunId=<RUN_ID>] [UI] Build clicked
 <TS> <LEVEL> [RunId=<RUN_ID>] [Wrapper] BuildRequested forwarded
-<TS> <LEVEL> [RunId=<RUN_ID>] [SwAddin] event=BuildRequested action=StartBuild
+<TS> <LEVEL> [RunId=<RUN_ID>] [SwAddin] BuildRequested received; starting build
 <TS> <LEVEL> [RunId=<RUN_ID>] [TaskpaneWpf] RunBuildFromPromptAsync invoked
 <TS> <LEVEL> [RunId=<RUN_ID>] [TaskpaneWpf] BuildFromPromptAsync entered
 <TS> <LEVEL> [RunId=<RUN_ID>] [UserPrompt] "<RAW_USER_PROMPT>"
-<TS> <LEVEL> [RunId=<RUN_ID>] [BuildOrchestrator] Start
 
 ───────────────────────────────────────────────────────────────────────────────
 PHASE 1 — LLM CLASSIFY (OPTIONAL)
@@ -137,10 +136,9 @@ PHASE 0 — UI / PIPELINE
 ───────────────────────────────────────────────────────────────────────────────
 2026-01-13 10:12:41.430 [INFO] [RunId=R20260113_101241_001] [UI] Build clicked
 2026-01-13 10:12:41.430 [INFO] [RunId=R20260113_101241_001] [Wrapper] BuildRequested forwarded
-2026-01-13 10:12:41.431 [INFO] [RunId=R20260113_101241_001] [SwAddin] event=BuildRequested action=StartBuild
+2026-01-13 10:12:41.431 [INFO] [RunId=R20260113_101241_001] [SwAddin] BuildRequested received; starting build
 2026-01-13 10:12:41.431 [INFO] [RunId=R20260113_101241_001] [TaskpaneWpf] BuildFromPromptAsync entered
 2026-01-13 10:12:41.431 [INFO] [RunId=R20260113_101241_001] [UserPrompt] "Make M10x1.5 100mm Thread bar"
-2026-01-13 10:12:41.431 [INFO] [RunId=R20260113_101241_001] [BuildOrchestrator] Start
 
 ───────────────────────────────────────────────────────────────────────────────
 PHASE 1 — CLASSIFY

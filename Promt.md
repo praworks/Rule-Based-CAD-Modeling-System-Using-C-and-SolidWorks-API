@@ -107,3 +107,5 @@ Search for and fix these known bad patterns:
 - Any code path that logs "Requesting LLM feature decomposition" during execution
 - Any code path where StepExecutor triggers decomposition/LLM calls
 - Any path where "marked dead" provider stops the pipeline instead of fallback
+
+

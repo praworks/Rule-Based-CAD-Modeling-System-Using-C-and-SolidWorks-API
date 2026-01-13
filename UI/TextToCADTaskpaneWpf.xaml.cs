@@ -4056,8 +4056,11 @@ namespace AICAD.UI
             try
             {
                 var ts = DateTime.Now.ToString("HH:mm:ss.ffffff");
+                var l = line ?? string.Empty;
+                var isHeader = IsDiagnosticHeaderLine(l);
+                var rendered = isHeader ? l : $"{ts} {l}";
                 // Always mirror to temp file for debugging
-                try { MirrorStatusToTempFile($"{ts} {line}"); } catch { }
+                try { MirrorStatusToTempFile(rendered); } catch { }
 
                 // If the external status window exists, write there using WPF RichTextBox
                 if (_statusWindow != null)
@@ -4067,9 +4070,11 @@ namespace AICAD.UI
                         try
                         {
                             var rtb = _statusWindow.StatusConsole; // System.Windows.Controls.RichTextBox
-                            var l = (line ?? string.Empty);
                             SolidColorBrush brush = Brushes.Gainsboro;
-                            if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase) || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase) || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0)
+                            if (l.StartsWith("[ERROR", StringComparison.OrdinalIgnoreCase)
+                                || l.StartsWith("ERROR:", StringComparison.OrdinalIgnoreCase)
+                                || l.IndexOf(" ERROR", StringComparison.OrdinalIgnoreCase) >= 0
+                                || l.StartsWith("| ERROR", StringComparison.OrdinalIgnoreCase))
                                 brush = Brushes.OrangeRed;
                             else if (l.StartsWith("[FewShot", StringComparison.OrdinalIgnoreCase) || l.IndexOf("FewShot", StringComparison.OrdinalIgnoreCase) >= 0)
                                 brush = Brushes.DodgerBlue;
@@ -4097,7 +4102,7 @@ namespace AICAD.UI
                                     if (lastText.IndexOf(StatusConsole.ProgressPrefix, StringComparison.OrdinalIgnoreCase) >= 0 || lastText.IndexOf(StatusConsole.LlmProgressPrefix, StringComparison.OrdinalIgnoreCase) >= 0)
                                     {
                                         last.Inlines.Clear();
-                                        last.Inlines.Add(new Run($"{ts} {l}") { Foreground = brush });
+                                        last.Inlines.Add(new Run(rendered) { Foreground = brush });
                                         rtb.ScrollToEnd();
                                         return;
                                     }
@@ -4105,7 +4110,7 @@ namespace AICAD.UI
                             }
                             catch { }
 
-                            var p = new Paragraph(new Run($"{ts} {l}") { Foreground = brush });
+                            var p = new Paragraph(new Run(rendered) { Foreground = brush });
                             rtb.Document.Blocks.Add(p);
                             rtb.ScrollToEnd();
                         }
@@ -4144,6 +4149,27 @@ namespace AICAD.UI
                 }), System.Windows.Threading.DispatcherPriority.Background);
             }
             catch { }
+        }
+
+        private static bool IsDiagnosticHeaderLine(string line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) return true;
+            var t = line.Trim();
+            if (t.StartsWith("===", StringComparison.Ordinal) || t.StartsWith("──", StringComparison.Ordinal))
+                return true;
+            if (t.StartsWith("DIAGNOSTIC LOG FOR", StringComparison.Ordinal))
+                return true;
+            if (t.Equals("Log Settings", StringComparison.Ordinal))
+                return true;
+            if (t.Equals("UI / PIPELINE", StringComparison.Ordinal)
+                || t.Equals("CLASSIFY", StringComparison.Ordinal)
+                || t.Equals("DECOMPOSE", StringComparison.Ordinal)
+                || t.Equals("EXECUTE", StringComparison.Ordinal)
+                || t.Equals("END", StringComparison.Ordinal))
+                return true;
+            if (t.StartsWith("FEATURE ", StringComparison.Ordinal))
+                return true;
+            return false;
         }
 
         // 'New Bottom' functionality removed

@@ -121,7 +121,8 @@ namespace AICAD.Services
                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Parsed tasks count={extracted.Count}");
                     for (int i = 0; i < extracted.Count; i++)
                     {
-                        var taskJson = extracted[i]?.ToString(Newtonsoft.Json.Formatting.None) ?? string.Empty;
+                        var taskJson = string.Empty;
+                        try { taskJson = Newtonsoft.Json.JsonConvert.SerializeObject(extracted[i], Newtonsoft.Json.Formatting.None); } catch { }
                         DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", $"Task[{i}]: " + DiagnosticLogWriter.Truncate(taskJson, 800));
                     }
                     return extracted;

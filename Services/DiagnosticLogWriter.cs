@@ -50,6 +50,7 @@ namespace AICAD.Services
             }
             WriteRaw($"DIAGNOSTIC LOG FOR \"{userPrompt ?? string.Empty}\"");
             WriteRaw(HeaderLine);
+            WriteRaw(string.Empty);
         }
 
         public static void StartSection(string runId, string name)
@@ -116,12 +117,11 @@ namespace AICAD.Services
 
         public static void LogLine(string runId, string requestId, string component, string level, string message)
         {
-            var timestamp = DateTime.Now.ToString("HH:mm:ss.ffffff");
             var lvl = string.IsNullOrWhiteSpace(level) ? "INFO" : level.Trim().ToUpperInvariant();
             var rid = string.IsNullOrWhiteSpace(runId) ? "-" : runId;
             var req = string.IsNullOrWhiteSpace(requestId) ? "-" : requestId;
             var comp = string.IsNullOrWhiteSpace(component) ? "Unknown" : component;
-            var line = $"{timestamp} | {lvl} | run={rid} | req={req} | {comp} | {message}";
+            var line = $"| {lvl} | run={rid} | req={req} | {comp} | {message}";
             AddinStatusLogger.Log(string.Empty, line);
         }
 

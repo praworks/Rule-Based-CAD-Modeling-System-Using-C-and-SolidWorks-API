@@ -102,7 +102,7 @@ namespace AICAD.Services
         {
             try
             {
-                var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, userRequest);
+                var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_DECOMPOSE_SYSTEM_PROMPT, userRequest);
                 var sw = Stopwatch.StartNew();
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: decompose");
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1200));

@@ -17,6 +17,11 @@ namespace AICAD.Services
             "For plane selection, use ONLY these exact plane names: 'Top Plane', 'Front Plane', or 'Right Plane'. " +
             "For auto_dimension on circles, use radius or diameter field, NOT w/h. For rectangles, copy cx, cy, w, h values. " +
             "Units are millimeters. Output ONLY raw JSON - no markdown, no extra text.";
+        public const string DEFAULT_DECOMPOSE_SYSTEM_PROMPT =
+            "You are a CAD decomposition agent for SOLIDWORKS. " +
+            "Return a pure schematic feature plan only. " +
+            "Output ONLY a JSON array of feature task objects with keys: feature_type, intent, params. " +
+            "Do NOT output steps or executable ops. Units are millimeters.";
 
         public static string BuildRefineSystemPrompt()
         {
@@ -351,12 +356,14 @@ namespace AICAD.Services
         public static string BuildFeatureDecomposePrompt(string systemPrompt, string userRequest)
         {
             var sb = new StringBuilder();
-            sb.AppendLine((systemPrompt ?? string.Empty) + "\n");
+            var sys = string.IsNullOrWhiteSpace(systemPrompt) ? DEFAULT_DECOMPOSE_SYSTEM_PROMPT : systemPrompt;
+            sb.AppendLine(sys + "\n");
             sb.AppendLine("INSTRUCTIONS:");
             sb.AppendLine("- Decompose the request into ordered feature tasks.");
             sb.AppendLine("- Output ONLY a JSON ARRAY of objects, no extra text.");
             sb.AppendLine("- Each object must include: feature_type, intent, and params (object).");
             sb.AppendLine("- feature_type examples: base, hole, fillet, chamfer, thread, cut, pattern.");
+            sb.AppendLine("- Do NOT include steps arrays or executable ops; this stage is schematic only.");
             sb.AppendLine("- Keep tasks minimal and executable in sequence.");
             sb.AppendLine();
             sb.AppendLine("USER REQUEST:");

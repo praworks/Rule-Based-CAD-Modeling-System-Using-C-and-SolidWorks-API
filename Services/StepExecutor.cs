@@ -51,7 +51,7 @@ namespace AICAD.Services
                 }
             }
             catch { }
-            try { AddinStatusLogger.Log("StepExecutor", $"run={runId} req={requestId} Execute invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
+            try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Execute invoked with plan keys={string.Join(",", plan?.Properties().Select(p=>p.Name) ?? new string[0])}"); } catch { }
             if (swApp == null)
             {
         result.Log.Add(new JObject { ["step"] = -1, ["op"] = "init", ["success"] = false, ["error"] = "SOLIDWORKS app not available" });
@@ -62,7 +62,7 @@ namespace AICAD.Services
                 try
             {
                 var steps = plan.ContainsKey("steps") && plan["steps"] is JArray ? (JArray)plan["steps"] : new JArray();
-                    try { AddinStatusLogger.Log("StepExecutor", $"run={runId} req={requestId} Execute resolved {steps.Count} steps"); } catch { }
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Execute resolved {steps.Count} steps"); } catch { }
 
                 // Flatten feature-wrapped steps: some LLMs return an array of feature objects
                 // where each feature contains its own 'steps' array. Convert those into a
@@ -148,7 +148,7 @@ namespace AICAD.Services
                         try { log["error"] = "Missing or empty 'op' field; raw=" + (raw == null ? "<null>" : Newtonsoft.Json.JsonConvert.SerializeObject(raw, Newtonsoft.Json.Formatting.None)); } catch { log["error"] = "Missing or empty 'op' field"; }
                         result.Log.Add(log);
                         result.Success = false;
-                        try { AddinStatusLogger.Error("StepExecutor", $"Step {i} missing op"); } catch { }
+                        try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "ERROR", $"Step missing op globalStepIndex={i}"); } catch { }
                         return result; // stop at first failure
                     }
                     try
@@ -170,7 +170,7 @@ namespace AICAD.Services
                             log["success"] = true;
                             result.Log.Add(log);
                             sw.Stop();
-                            try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
+                            try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Step result globalStepIndex={i} op={op} success={log.Value<bool?>("success")} elapsedMs={sw.ElapsedMilliseconds}"); } catch { }
                             continue;
                         }
 
@@ -197,7 +197,7 @@ namespace AICAD.Services
                             try
                             {
                                 var hint = MissingFeatureAdvisor.AdviseForUnknownOp(op);
-                                if (!string.IsNullOrWhiteSpace(hint)) AddinStatusLogger.Log("FeatureAdvice", hint);
+                                if (!string.IsNullOrWhiteSpace(hint)) DiagnosticLogWriter.LogLine(runId, requestId, "FeatureAdvice", "INFO", hint);
                             }
                             catch { }
                             throw new Exception($"Unknown op '{op}' (not registered)");
@@ -219,7 +219,7 @@ namespace AICAD.Services
                             try
                             {
                                 var hint = MissingFeatureAdvisor.AdviseForFailure(op, opResult.ErrorMessage);
-                                if (!string.IsNullOrWhiteSpace(hint)) AddinStatusLogger.Log("FeatureAdvice", hint);
+                                if (!string.IsNullOrWhiteSpace(hint)) DiagnosticLogWriter.LogLine(runId, requestId, "FeatureAdvice", "INFO", hint);
                             }
                             catch { }
                             throw new Exception(opResult.ErrorMessage ?? "Operation failed");
@@ -276,8 +276,7 @@ namespace AICAD.Services
                         result.Log.Add(log);
                         result.Success = false;
                         // Log completion/info first, then emit the error-level message so the status line appears before the error entry
-                        try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
-                        try { AddinStatusLogger.Error("StepExecutor", $"Step {i} failed op='{op}'", ex); } catch { }
+                        try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "ERROR", $"Step result globalStepIndex={i} op={op} success={log.Value<bool?>("success")} elapsedMs={sw.ElapsedMilliseconds} error={ex.Message}"); } catch { }
 
                         // If continueOnError is enabled, log this failure but process next step
                         if (!continueOnError)
@@ -293,12 +292,12 @@ namespace AICAD.Services
                                         var title = model.GetTitle();
                                         if (preservePartsOnError)
                                         {
-                                            AddinStatusLogger.Log("StepExecutor", $"Preserving newly created part '{title}' due to AICAD_PRESERVE_PARTS_ON_ERROR");
+                                            DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Preserving newly created part '{title}' due to AICAD_PRESERVE_PARTS_ON_ERROR");
                                         }
                                         else
                                         {
                                             swApp.CloseDoc(title);
-                                            AddinStatusLogger.Log("StepExecutor", $"Closed newly created part '{title}' due to error");
+                                            DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Closed newly created part '{title}' due to error");
                                         }
                                     }
                                     catch { }
@@ -311,7 +310,7 @@ namespace AICAD.Services
                         else
                         {
                             // NEW: Continue to next step instead of aborting
-                            try { AddinStatusLogger.Log("StepExecutor", $"Continuing to next step despite failure (continueOnError=true)"); } catch { }
+                            try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", "Continuing to next step despite failure (continueOnError=true)"); } catch { }
                             continue;
                         }
                     }
@@ -324,7 +323,7 @@ namespace AICAD.Services
                     }
                     catch { }
                     sw.Stop();
-                    try { AddinStatusLogger.Log("StepExecutor", $"Step {i}: op='{op}' completed success={log.Value<bool?>("success")} elapsed={sw.ElapsedMilliseconds}ms"); } catch { }
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Step result globalStepIndex={i} op={op} success={log.Value<bool?>("success")} elapsedMs={sw.ElapsedMilliseconds}"); } catch { }
                 }
 
                 // Check if continueOnError mode: success if ANY step succeeded
@@ -332,7 +331,7 @@ namespace AICAD.Services
                 {
                     var anySuccess = result.Log.Any(l => l["success"]?.Value<bool>() == true);
                     result.Success = anySuccess;
-                    try { AddinStatusLogger.Log("StepExecutor", $"continueOnError mode: {result.Log.Count} steps, {result.Log.Count(l => l["success"]?.Value<bool>() == true)} succeeded"); } catch { }
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"continueOnError mode: {result.Log.Count} steps, {result.Log.Count(l => l["success"]?.Value<bool>() == true)} succeeded"); } catch { }
                 }
                 else
                 {
@@ -343,7 +342,7 @@ namespace AICAD.Services
                 if (result.Validations.Count > 0)
                 {
                     result.ValidationReport = ExecutionValidator.GenerateValidationReport(result.Validations);
-                    try { AddinStatusLogger.Log("StepExecutor", $"Validation report: {result.ValidationReport["passed"]}/{result.ValidationReport["total"]} passed"); } catch { }
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Validation report: {result.ValidationReport["passed"]}/{result.ValidationReport["total"]} passed"); } catch { }
                 }
 
                 return result;
@@ -352,7 +351,7 @@ namespace AICAD.Services
             {
                 result.Log.Add(new JObject { ["step"] = -1, ["op"] = "exception", ["success"] = false, ["error"] = ex.Message });
                 result.Success = false;
-                try { AddinStatusLogger.Error("StepExecutor", "Unhandled exception executing plan", ex); } catch { }
+                try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "ERROR", "Unhandled exception executing plan: " + ex.Message); } catch { }
                 // If a new part was created during execution and we hit an unhandled exception,
                 // close the new part so the user does not retain a partially-created model.
                 try
@@ -366,12 +365,12 @@ namespace AICAD.Services
                                 var t = swApp.ActiveDoc.GetTitle();
                                 if (preservePartsOnError)
                                 {
-                                    AddinStatusLogger.Log("StepExecutor", $"Preserving newly created part '{t}' due to AICAD_PRESERVE_PARTS_ON_ERROR (unhandled exception)");
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Preserving newly created part '{t}' due to AICAD_PRESERVE_PARTS_ON_ERROR (unhandled exception)");
                                 }
                                 else
                                 {
                                     swApp.CloseDoc(t);
-                                    AddinStatusLogger.Log("StepExecutor", $"Closed newly created part '{t}' due to unhandled exception");
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Closed newly created part '{t}' due to unhandled exception");
                                 }
                             }
                         }

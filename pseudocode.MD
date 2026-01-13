@@ -292,3 +292,54 @@ DELIVERABLES:
 - Include an example log proving the runtime order above (with RunId/RequestId).
 
 Start by identifying current control flow, then implement the refactor in small steps with minimal churn.
+
+
+
+
+===============================================================================
+AI-CAD DIAGNOSTIC LOG FORMAT (EXPECTED OUTPUT)
+Purpose:
+- Teach Copilot what to log for each build run.
+- Make failures diagnosable: exact prompt, exact LLM request/response, timings,
+  correlation IDs, SW state snapshots, and step-by-step execution results.
+Log Rules:
+- Every line starts with: <timestamp> <level> [RunId=...] [Component] message
+- Every LLM call must include a unique RequestId (no reuse).
+- Always log: prompts sent, raw LLM replies, parsed outputs, and validation.
+- On error: include exception, stack trace, lastStepIndex, lastOp, SW state.
+
+Start
+===============================================================================
+Log Settings
+
+===============================================================================
+DIAGNOSTIC LOG FOR "Make M10x1.5 100mm Thread bar"
+===============================================================================
+Log
+
+───────────────────────────────────────────────────────────────────────────────
+UI / PIPELINE
+───────────────────────────────────────────────────────────────────────────────
+Log
+
+───────────────────────────────────────────────────────────────────────────────
+CLASSIFY
+───────────────────────────────────────────────────────────────────────────────
+Log
+
+───────────────────────────────────────────────────────────────────────────────
+DECOMPOSE
+───────────────────────────────────────────────────────────────────────────────
+Log
+
+───────────────────────────────────────────────────────────────────────────────
+EXECUTE 
+───────────────────────────────────────────────────────────────────────────────
+Log
+FEATURE 0 — ?
+FEATURE 1 — ?
+FEATURE 2 — ?
+===============================================================================
+END
+
+

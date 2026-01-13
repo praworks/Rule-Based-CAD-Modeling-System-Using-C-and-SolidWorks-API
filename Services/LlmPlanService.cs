@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Newtonsoft.Json.Linq;
@@ -58,16 +59,25 @@ namespace AICAD.Services
             try
             {
                 var prompt = PromptHandler.BuildThreadSubtaskPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, threadStep, modelFacts);
-                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM subtask for thread steps");
+                var sw = Stopwatch.StartNew();
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: thread_subtask");
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 800));
 
                 var reply = GenerateWithPriority(prompt, 120, runId, requestId);
+                sw.Stop();
                 if (string.IsNullOrWhiteSpace(reply))
+                {
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: thread_subtask empty_reply elapsedMs={sw.ElapsedMilliseconds}");
                     return null;
+                }
+
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request end: thread_subtask elapsedMs={sw.ElapsedMilliseconds}");
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Raw reply: " + DiagnosticLogWriter.Truncate(reply, 800));
 
                 var extracted = ExtractJsonArray(reply);
                 if (extracted != null && extracted.Count > 0)
                 {
-                    AddinStatusLogger.Log("LlmPlanService", $"Thread subtask returned {extracted.Count} steps");
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thread subtask steps={extracted.Count}");
                     return extracted;
                 }
 
@@ -83,7 +93,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
-                AddinStatusLogger.Error("LlmPlanService", "PlanThreadSubtask failed", ex);
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "PlanThreadSubtask failed: " + ex.Message);
                 return null;
             }
         }
@@ -93,22 +103,34 @@ namespace AICAD.Services
             try
             {
                 var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, userRequest);
-                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM feature decomposition");
-                try { AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
+                var sw = Stopwatch.StartNew();
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: decompose");
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1200));
                 var reply = GenerateWithPriority(prompt, 120, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
+                {
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: decompose empty_reply elapsedMs={sw.ElapsedMilliseconds}");
                     return null;
+                }
+                sw.Stop();
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request end: decompose elapsedMs={sw.ElapsedMilliseconds}");
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Raw reply: " + DiagnosticLogWriter.Truncate(reply, 1200));
                 var extracted = ExtractJsonArray(reply);
                 if (extracted != null && extracted.Count > 0)
                 {
-                    AddinStatusLogger.Log("LlmPlanService", $"Feature decomposition returned {extracted.Count} tasks");
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Parsed tasks count={extracted.Count}");
+                    for (int i = 0; i < extracted.Count; i++)
+                    {
+                        var taskJson = extracted[i]?.ToString(Newtonsoft.Json.Formatting.None) ?? string.Empty;
+                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", $"Task[{i}]: " + DiagnosticLogWriter.Truncate(taskJson, 800));
+                    }
                     return extracted;
                 }
                 return null;
             }
             catch (Exception ex)
             {
-                AddinStatusLogger.Error("LlmPlanService", "DecomposeByFeature failed", ex);
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "DecomposeByFeature failed: " + ex.Message);
                 return null;
             }
         }
@@ -119,7 +141,8 @@ namespace AICAD.Services
             {
                 var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts, fewShot);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
-                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM plan for feature: {label}");
+                var sw = Stopwatch.StartNew();
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request start: expand feature={label}");
                 int timeoutSeconds = 120;
                 try
                 {
@@ -129,22 +152,33 @@ namespace AICAD.Services
                         timeoutSeconds = secs;
                 }
                 catch { }
-                try { AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1600));
                 var reply = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
+                {
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: expand empty_reply elapsedMs={sw.ElapsedMilliseconds}");
                     return null;
+                }
+                sw.Stop();
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request end: expand elapsedMs={sw.ElapsedMilliseconds}");
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Raw reply: " + DiagnosticLogWriter.Truncate(reply, 1600));
                 var extracted = ExtractJsonArray(reply);
                 if (extracted != null && extracted.Count > 0)
+                {
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thinking=<none> steps={extracted.Count}");
                     return new FeaturePlanResult { Steps = extracted };
+                }
                 try
                 {
                     var obj = ExtractJsonObject(reply);
                     if (obj != null && obj["steps"] is JArray arr && arr.Count > 0)
                     {
+                        var thinking = obj.Value<string>("thinking") ?? string.Empty;
+                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thinking={DiagnosticLogWriter.Truncate(thinking, 400)} steps={arr.Count}");
                         return new FeaturePlanResult
                         {
                             Steps = arr,
-                            Thinking = obj.Value<string>("thinking")
+                            Thinking = thinking
                         };
                     }
                 }
@@ -152,14 +186,14 @@ namespace AICAD.Services
                 try
                 {
                     var truncated = reply.Length > 800 ? reply.Substring(0, 800) + "..." : reply;
-                    AddinStatusLogger.Log("LlmPlanService", $"Feature plan parse failed; reply={truncated}");
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "Feature plan parse failed; reply=" + DiagnosticLogWriter.Truncate(truncated, 800));
                 }
                 catch { }
                 return null;
             }
             catch (Exception ex)
             {
-                AddinStatusLogger.Error("LlmPlanService", "PlanFeatureSubtask failed", ex);
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "PlanFeatureSubtask failed: " + ex.Message);
                 return null;
             }
         }
@@ -172,11 +206,18 @@ namespace AICAD.Services
             try
             {
                 var prompt = PromptHandler.BuildClassificationAndDescriptionPrompt(userPrompt, categories);
-                AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} Requesting LLM classification");
-                try { AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} LLM Prompt: " + (prompt ?? string.Empty).Replace("\r\n", "\\n")); } catch { }
+                var sw = Stopwatch.StartNew();
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: classify");
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1200));
                 var response = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(response))
+                {
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: classify empty_reply elapsedMs={sw.ElapsedMilliseconds}");
                     return new ClassifyResult { Category = "Unknown", Description = string.Empty };
+                }
+                sw.Stop();
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request end: classify elapsedMs={sw.ElapsedMilliseconds}");
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Raw reply: " + DiagnosticLogWriter.Truncate(response, 1200));
 
                 try
                 {
@@ -185,17 +226,19 @@ namespace AICAD.Services
                     var cat = obj["category"]?.ToString();
                     var desc = obj["description"]?.ToString();
                     cat = PromptHandler.NormalizeCategory(cat, categories);
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Parsed category={cat} description={DiagnosticLogWriter.Truncate(desc ?? string.Empty, 400)}");
                     return new ClassifyResult { Category = cat, Description = desc ?? string.Empty };
                 }
                 catch
                 {
                     var cat = PromptHandler.NormalizeCategory(response, categories);
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Parsed category={cat} description=<none>");
                     return new ClassifyResult { Category = cat, Description = string.Empty };
                 }
             }
             catch (Exception ex)
             {
-                AddinStatusLogger.Error("LlmPlanService", "ClassifyAndDescribe failed", ex);
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "ClassifyAndDescribe failed: " + ex.Message);
                 return new ClassifyResult { Category = "Unknown", Description = string.Empty };
             }
         }
@@ -216,10 +259,10 @@ namespace AICAD.Services
                         EnforceProviderPacing(provider, 2000);
                         if (ProviderRouter.IsDead(provider))
                         {
-                            AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider={provider} marked_dead=true skipping");
+                            DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", $"provider={provider} marked_dead=true skipping");
                             continue;
                         }
-                        AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider={provider} marked_dead=false attempting");
+                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"provider={provider} marked_dead=false attempting");
                         if (provider == "local")
                         {
                             var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
@@ -238,7 +281,7 @@ namespace AICAD.Services
                                 {
                                     var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
                                     lastReply = reply;
-                                    AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider=local reply_len=" + (reply?.Length ?? 0));
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=local reply_len=" + (reply?.Length ?? 0));
                                     return reply;
                                 }
                             }
@@ -261,7 +304,7 @@ namespace AICAD.Services
                                 {
                                     var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini", timeoutSeconds);
                                     lastReply = reply;
-                                    AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider=gemini reply_len=" + (reply?.Length ?? 0));
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=gemini reply_len=" + (reply?.Length ?? 0));
                                     return reply;
                                 }
                             }
@@ -284,7 +327,7 @@ namespace AICAD.Services
                                 {
                                     var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(promptText), "groq", timeoutSeconds);
                                     lastReply = reply;
-                                    AddinStatusLogger.Log("LlmPlanService", $"run={runId} req={requestId} provider=groq reply_len=" + (reply?.Length ?? 0));
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=groq reply_len=" + (reply?.Length ?? 0));
                                     return reply;
                                 }
                             }
@@ -297,7 +340,7 @@ namespace AICAD.Services
                         try
                         {
                             var tag = transient ? "transient" : "failure";
-                            AddinStatusLogger.Log("LlmPlanService", $"{provider} {tag}: {ex.Message}. Marking dead and continuing");
+                            DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"{provider} {tag}: {ex.Message}. Marking dead and continuing");
                         }
                         catch { }
                         try { ProviderRouter.MarkDead(provider); } catch { }
@@ -310,7 +353,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
-                AddinStatusLogger.Error("LlmPlanService", "GenerateWithPriority failed", ex);
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "GenerateWithPriority failed: " + ex.Message);
             }
             return null;
         }

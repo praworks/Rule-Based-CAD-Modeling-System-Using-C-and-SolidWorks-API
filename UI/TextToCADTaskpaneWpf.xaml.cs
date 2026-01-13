@@ -209,6 +209,7 @@ namespace AICAD.UI
         private string _lastDbStatus;
         private bool? _lastDbLogged;
         private string _lastRunId;
+        private string _pendingRunId;
         private bool _isBuilding = false;
         private System.Threading.CancellationTokenSource _buildCts;
         private bool _lastRunCreatedModel = false;
@@ -478,12 +479,28 @@ namespace AICAD.UI
                     // Immediate visual feedback so users know the click was received
                     SetRealTimeStatus("Build clicked", Colors.DodgerBlue);
                     try { AICAD.Services.LocalLogger.Log("WPF: build.Click invoked"); } catch { }
+
+                    try
+                    {
+                        var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                        _pendingRunId = runId;
+                        var settings = BuildDiagnosticLogSettings();
+                        DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
+                        DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Build clicked");
+                    }
+                    catch { }
                 }
                 catch { }
                 try
                 {
+                    try
+                    {
+                        var runId = GetRunIdForLogging();
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildRequested forwarded");
+                    }
+                    catch { }
                     BuildRequested?.Invoke(this, EventArgs.Empty);
-                    try { AddinStatusLogger.Log("TaskpaneWpf", "BuildRequested invoked"); } catch { }
                 }
                 catch { }
                 // Build is initiated by external listeners (SwAddin) via BuildRequested.
@@ -492,7 +509,7 @@ namespace AICAD.UI
                 {
                     try
                     {
-                        AddinStatusLogger.Log("TaskpaneWpf", "No BuildRequested listeners; running build directly");
+                        DiagnosticLogWriter.LogLine(GetRunIdForLogging(), null, "TaskpaneWpf", "INFO", "No BuildRequested listeners; running build directly");
                         _ = RunBuildFromPromptAsync();
                     }
                     catch { }
@@ -901,6 +918,66 @@ namespace AICAD.UI
             get => prompt.Text;
             set => prompt.Text = value ?? string.Empty;
         }
+
+        public string GetRunIdForLogging()
+        {
+            return !string.IsNullOrWhiteSpace(_pendingRunId) ? _pendingRunId : _lastRunId;
+        }
+
+        private DiagnosticLogSettings BuildDiagnosticLogSettings()
+        {
+            var priority = AICAD.Services.LlmPriorityManager.GetPriority();
+            int expandTimeoutSeconds = 120;
+            try
+            {
+                var env = System.Environment.GetEnvironmentVariable("AICAD_FEATURE_PLAN_TIMEOUT_SECONDS", System.EnvironmentVariableTarget.Process)
+                          ?? System.Environment.GetEnvironmentVariable("AICAD_FEATURE_PLAN_TIMEOUT_SECONDS", System.EnvironmentVariableTarget.User);
+                if (!string.IsNullOrWhiteSpace(env) && int.TryParse(env, out var secs) && secs > 0)
+                    expandTimeoutSeconds = secs;
+            }
+            catch { }
+
+            var sampleMode = System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.User)
+                           ?? System.Environment.GetEnvironmentVariable("AICAD_SAMPLE_MODE", System.EnvironmentVariableTarget.Process)
+                           ?? "few";
+            var useFewShotEnv = System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.User)
+                             ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Process)
+                             ?? System.Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", System.EnvironmentVariableTarget.Machine)
+                             ?? "1";
+            bool fewShotEnabled = !sampleMode.Equals("zero", StringComparison.OrdinalIgnoreCase);
+            if (useFewShotEnv == "0" || useFewShotEnv.Equals("false", StringComparison.OrdinalIgnoreCase))
+                fewShotEnabled = false;
+            if (FORCE_LOCAL_ONLY)
+                fewShotEnabled = false;
+
+            var randomizeEnv = System.Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", System.EnvironmentVariableTarget.User)
+                             ?? System.Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", System.EnvironmentVariableTarget.Process)
+                             ?? "0";
+            var forceStaticEnv = System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.User)
+                               ?? System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.Process)
+                               ?? System.Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", System.EnvironmentVariableTarget.Machine)
+                               ?? "0";
+            var localEndpoint = System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.User)
+                             ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_ENDPOINT", System.EnvironmentVariableTarget.Process)
+                             ?? System.Environment.GetEnvironmentVariable("LMSTUDIO_ENDPOINT", System.EnvironmentVariableTarget.User)
+                             ?? "http://127.0.0.1:1234";
+
+            return new DiagnosticLogSettings
+            {
+                ProviderPriority = priority,
+                ClassifyTimeoutSeconds = 25,
+                DecomposeTimeoutSeconds = 120,
+                ExpandTimeoutSeconds = expandTimeoutSeconds,
+                FewShotEnabled = fewShotEnabled,
+                FewShotRandomize = randomizeEnv == "1" || randomizeEnv.Equals("true", StringComparison.OrdinalIgnoreCase),
+                FewShotForceStatic = forceStaticEnv == "1" || forceStaticEnv.Equals("true", StringComparison.OrdinalIgnoreCase),
+                LocalEndpoint = localEndpoint,
+                GeminiKeyPresent = !string.IsNullOrWhiteSpace(System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.User)
+                                 ?? System.Environment.GetEnvironmentVariable("GEMINI_API_KEY", System.EnvironmentVariableTarget.Process)),
+                GroqKeyPresent = !string.IsNullOrWhiteSpace(System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.User)
+                               ?? System.Environment.GetEnvironmentVariable("GROQ_API_KEY", System.EnvironmentVariableTarget.Process))
+            };
+        }
         
         private string MakeProgressBar(int pct, int width = 20)
         {
@@ -972,9 +1049,18 @@ namespace AICAD.UI
         /// </summary>
         public Task RunBuildFromPromptAsync()
         {
-            var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            var runId = _pendingRunId;
+            if (string.IsNullOrWhiteSpace(runId))
+                runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+            _pendingRunId = null;
             _lastRunId = runId;
-            try { AddinStatusLogger.Log("TaskpaneWpf", $"run={runId} RunBuildFromPromptAsync invoked"); } catch { }
+            try
+            {
+                var settings = BuildDiagnosticLogSettings();
+                DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
+                DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
+            }
+            catch { }
             return BuildFromPromptAsync(runId);
         }
 
@@ -1157,6 +1243,17 @@ namespace AICAD.UI
                     {
                         try { build.IsEnabled = false; } catch { }
                     }
+                    try
+                    {
+                        var runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
+                        _pendingRunId = runId;
+                        var settings = BuildDiagnosticLogSettings();
+                        DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
+                        DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Build clicked");
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildRequested forwarded");
+                    }
+                    catch { }
                     try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
                     _ = RunBuildFromPromptAsync();
                     e.Handled = true;
@@ -2120,11 +2217,27 @@ namespace AICAD.UI
                 runId = DateTime.UtcNow.ToString("yyyyMMddHHmmssfff");
                 _lastRunId = runId;
             }
-            try { AddinStatusLogger.Log("TaskpaneWpf", $"run={runId} BuildFromPromptAsync entered"); } catch { }
+            try
+            {
+                var settings = BuildDiagnosticLogSettings();
+                DiagnosticLogWriter.BeginRun(runId, (PromptText ?? string.Empty).Trim(), settings, "TaskpaneWpf");
+                DiagnosticLogWriter.StartSection(runId, "UI / PIPELINE");
+                DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "BuildFromPromptAsync entered");
+            }
+            catch { }
             var text = (PromptText ?? string.Empty).Trim();
+            try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "User prompt: " + DiagnosticLogWriter.Truncate(text, 400)); } catch { }
             if (string.IsNullOrEmpty(text))
             {
-                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: empty prompt"); } catch { }
+                try
+                {
+                    DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", "BuildFromPromptAsync exit: empty prompt");
+                    DiagnosticLogWriter.SkipSection(runId, "CLASSIFY", "Empty prompt");
+                    DiagnosticLogWriter.SkipSection(runId, "DECOMPOSE", "Empty prompt");
+                    DiagnosticLogWriter.SkipSection(runId, "EXECUTE", "Empty prompt");
+                    DiagnosticLogWriter.EndRun(runId, false, "Empty prompt", null);
+                }
+                catch { }
                 AppendStatusLine("Enter a prompt describing a simple box or cylinder in mm.");
                 return;
             }
@@ -2134,7 +2247,15 @@ namespace AICAD.UI
             var meaninglessWords = new[] { "hi", "hello", "hey", "test", "testing", "enter prompt", "enter prompt...", "...", ".", "," };
             if (meaninglessWords.Contains(lowerText) || text.Length < 2)
             {
-                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: meaningless prompt; prompt='" + text + "'"); } catch { }
+                try
+                {
+                    DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", "BuildFromPromptAsync exit: meaningless prompt");
+                    DiagnosticLogWriter.SkipSection(runId, "CLASSIFY", "Meaningless prompt");
+                    DiagnosticLogWriter.SkipSection(runId, "DECOMPOSE", "Meaningless prompt");
+                    DiagnosticLogWriter.SkipSection(runId, "EXECUTE", "Meaningless prompt");
+                    DiagnosticLogWriter.EndRun(runId, false, "Meaningless prompt", null);
+                }
+                catch { }
                 AppendStatusLine("❌ Please enter a meaningful CAD description (e.g., 'box 50x50x100mm' or 'cylinder radius 20mm').");
                 SetRealTimeStatus("Invalid prompt", Colors.OrangeRed);
                 return;
@@ -2143,7 +2264,15 @@ namespace AICAD.UI
             // Prevent re-entry if a build is already running
             if (_isBuilding)
             {
-                try { AddinStatusLogger.Log("TaskpaneWpf", "BuildFromPromptAsync exit: already building"); } catch { }
+                try
+                {
+                    DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", "BuildFromPromptAsync exit: already building");
+                    DiagnosticLogWriter.SkipSection(runId, "CLASSIFY", "Build already running");
+                    DiagnosticLogWriter.SkipSection(runId, "DECOMPOSE", "Build already running");
+                    DiagnosticLogWriter.SkipSection(runId, "EXECUTE", "Build already running");
+                    DiagnosticLogWriter.EndRun(runId, false, "Build already running", null);
+                }
+                catch { }
                 // Silently prevent re-entry (defensive code path)
                 return;
             }
@@ -2306,6 +2435,15 @@ namespace AICAD.UI
                     SetRealTimeStatus("No LLM providers available", Colors.DarkRed);
                     try { _llmProgressTimer?.Stop(); _llmProgressTimer?.Dispose(); _llmProgressTimer = null; } catch { }
                     _isBuilding = false;
+                    try
+                    {
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", "No reachable LLM providers detected. Aborting build.");
+                        DiagnosticLogWriter.SkipSection(runId, "CLASSIFY", "No providers available");
+                        DiagnosticLogWriter.SkipSection(runId, "DECOMPOSE", "No providers available");
+                        DiagnosticLogWriter.SkipSection(runId, "EXECUTE", "No providers available");
+                        DiagnosticLogWriter.EndRun(runId, false, "No LLM providers available", totalSw.ElapsedMilliseconds);
+                    }
+                    catch { }
                     try { AppendStatusLine($"[Run:{runId}] ----- Build End: success=False totalMs={totalSw.ElapsedMilliseconds} error=No LLM providers available -----"); } catch { }
                     return;
                 }
@@ -2324,7 +2462,7 @@ namespace AICAD.UI
                 }
                 catch (Exception descEx)
                 {
-                    try { AddinStatusLogger.Error("TaskpaneWpf", "Template config load failed", descEx); } catch { }
+                    try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", "Template config load failed: " + descEx.Message); } catch { }
                 }
 
                 // Determine whether to apply few-shot examples (user-configurable via env var AICAD_USE_FEWSHOT)
@@ -2416,8 +2554,8 @@ namespace AICAD.UI
                         errText = orchResult.Error ?? "Build failed";
                         try
                         {
-                            AddinStatusLogger.Log("BuildOrchestrator",
-                                $"run={_lastRunId} failedTaskIndex={orchResult.FailedTaskIndex} failedStepIndex={orchResult.FailedStepIndex} lastOp={orchResult.LastOp}");
+                            DiagnosticLogWriter.LogLine(runId, null, "BuildOrchestrator", "ERROR",
+                                $"failedTaskIndex={orchResult.FailedTaskIndex} failedStepIndex={orchResult.FailedStepIndex} lastOp={orchResult.LastOp}");
                         }
                         catch { }
                     }
@@ -2458,7 +2596,7 @@ namespace AICAD.UI
                         }
                         catch (Exception vex)
                         {
-                            try { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Error displaying validation report: {vex.Message}"); } catch { }
+                            try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", $"Error displaying validation report: {vex.Message}"); } catch { }
                         }
                     }
                     
@@ -2489,12 +2627,12 @@ namespace AICAD.UI
                             catch { }
 
                             SetPartPropertiesOnDocument(doc, material ?? string.Empty, desc ?? string.Empty, weight ?? string.Empty, partName);
-                            try { doc.ForceRebuild3(false); AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", "Model rebuilt after auto-apply properties (ForceRebuild3 false)"); } catch (Exception ex) { AICAD.Services.AddinStatusLogger.Log("TaskpaneWpf", $"Model rebuild after auto-apply properties failed: {ex.Message}"); }
+                            try { doc.ForceRebuild3(false); DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Model rebuilt after auto-apply properties (ForceRebuild3 false)"); } catch (Exception ex) { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", $"Model rebuild after auto-apply properties failed: {ex.Message}"); }
                         }
                     }
                     catch (Exception propEx)
                     {
-                        try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Auto-apply properties after build failed", propEx); } catch { }
+                        try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", "Auto-apply properties after build failed: " + propEx.Message); } catch { }
                     }
                     StopKaraoke();
                     ShowKaraokeScenario("success");
@@ -2759,11 +2897,16 @@ namespace AICAD.UI
                 }
                 catch (Exception ex)
                 {
-                    try { AICAD.Services.AddinStatusLogger.Error("TaskpaneWpf", "Unhandled exception during plan execution", ex); } catch { }
+                    try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", "Unhandled exception during plan execution: " + ex.Message); } catch { }
                     try { AICAD.Services.TempFileWriter.AppendAllText("AICAD_UnhandledException.log", $"[{DateTime.UtcNow:O}] Exec exception: {ex}\n"); } catch { }
                     exec = new AICAD.Services.StepExecutionResult { Success = false };
                 }
                 try { _buildCts?.Dispose(); _buildCts = null; } catch { }
+                try
+                {
+                    DiagnosticLogWriter.EndRun(runId, exec?.Success ?? false, errText, (long)totalSw.Elapsed.TotalMilliseconds);
+                }
+                catch { }
             }
         }
 

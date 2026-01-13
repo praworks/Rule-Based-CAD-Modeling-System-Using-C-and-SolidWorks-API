@@ -48,23 +48,27 @@ namespace AICAD.Services
 
             var llmSw = Stopwatch.StartNew();
             var classifyReqId = Guid.NewGuid().ToString("N");
+            DiagnosticLogWriter.StartSection(runId, "CLASSIFY");
             var classify = LlmPlanService.ClassifyAndDescribe(userPrompt, categories, runId, classifyReqId, 25);
             result.Category = classify?.Category ?? "Unknown";
             result.Description = classify?.Description ?? string.Empty;
 
             var decomposeReqId = Guid.NewGuid().ToString("N");
-            AddinStatusLogger.Log("BuildOrchestrator", $"run={runId} req={decomposeReqId} stage=decompose_start");
+            DiagnosticLogWriter.StartSection(runId, "DECOMPOSE");
+            DiagnosticLogWriter.LogLine(runId, decomposeReqId, "BuildOrchestrator", "INFO", "Decompose start");
             var tasks = LlmPlanService.DecomposeByFeature(userPrompt, runId, decomposeReqId);
             if (tasks == null || tasks.Count == 0)
             {
                 result.Success = false;
                 result.Error = "Decompose returned no tasks";
                 result.FeatureTasks = tasks ?? new JArray();
+                DiagnosticLogWriter.LogLine(runId, decomposeReqId, "BuildOrchestrator", "ERROR", "Decompose returned no tasks");
                 result.LlmMs = llmSw.ElapsedMilliseconds;
                 return result;
             }
 
             result.FeatureTasks = tasks;
+            DiagnosticLogWriter.StartSection(runId, "EXECUTE");
             JObject modelFacts = null;
             for (int ti = 0; ti < tasks.Count; ti++)
             {
@@ -73,10 +77,11 @@ namespace AICAD.Services
                 var reqId = Guid.NewGuid().ToString("N");
                 var featureType = task.Value<string>("feature_type") ?? "feature";
                 var intent = task.Value<string>("intent") ?? string.Empty;
-                AddinStatusLogger.Log("BuildOrchestrator", $"run={runId} req={reqId} feature_index={ti} feature_type={featureType} intent={intent}");
+                DiagnosticLogWriter.FeatureHeader(runId, ti, featureType);
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", $"Feature intent={intent}");
 
                 var fewShot = useFewShot ? FewShotSelector.SelectFeatureFewShot(task, _goodStore, _stepStore, maxFewShotCount) : null;
-                AddinStatusLogger.Log("BuildOrchestrator", $"run={runId} req={reqId} feature_index={ti} fewshot_len={(fewShot ?? string.Empty).Length}");
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "DEBUG", $"FewShot length={(fewShot ?? string.Empty).Length}");
 
                 var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, fewShot, runId, reqId);
                 if (plan == null || plan.Steps == null || plan.Steps.Count == 0)
@@ -84,6 +89,7 @@ namespace AICAD.Services
                     result.Success = false;
                     result.Error = "Feature task expansion failed";
                     result.FailedTaskIndex = ti;
+                    DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "ERROR", "Feature task expansion failed");
                     result.LlmMs = llmSw.ElapsedMilliseconds;
                     return result;
                 }
@@ -101,6 +107,7 @@ namespace AICAD.Services
                 if (exec == null || !exec.Success)
                 {
                     PopulateFailureContext(result, exec, ti, runId);
+                    DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "ERROR", "Gate proceed=false reason=execution failed");
                     result.LlmMs = llmSw.ElapsedMilliseconds;
                     return result;
                 }
@@ -113,14 +120,20 @@ namespace AICAD.Services
                         result.Success = false;
                         result.Error = "Task0 gating failed: base geometry not found after rebuild";
                         PopulateFailureContext(result, exec, ti, runId);
+                        DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "ERROR", "Gate proceed=false reason=Task0 base geometry missing");
                         result.LlmMs = llmSw.ElapsedMilliseconds;
                         return result;
                     }
+                    DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", "Gate proceed=true reason=Task0 geometry validated");
+                }
+                else
+                {
+                    DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "INFO", "Gate proceed=true reason=feature complete");
                 }
 
                 modelFacts = ModelStateProvider.Capture(_swApp, emitLogs: false);
                 result.ModelState = modelFacts;
-                AddinStatusLogger.Log("BuildOrchestrator", $"run={runId} req={reqId} feature_index={ti} model_state_updated={(modelFacts != null)}");
+                DiagnosticLogWriter.LogLine(runId, reqId, "BuildOrchestrator", "DEBUG", $"Model state updated={(modelFacts != null)}");
             }
 
             result.Success = true;
@@ -138,7 +151,7 @@ namespace AICAD.Services
                 try { rebuildOk = doc.ForceRebuild3(false); } catch { rebuildOk = false; }
                 if (!rebuildOk)
                 {
-                    AddinStatusLogger.Log("BuildOrchestrator", $"run={runId} gate=task0 rebuild_ok=false");
+                    DiagnosticLogWriter.LogLine(runId, null, "BuildOrchestrator", "ERROR", "Gate rebuild_ok=false");
                     return false;
                 }
 
@@ -156,7 +169,7 @@ namespace AICAD.Services
                     return name.StartsWith("Boss-Extrude", StringComparison.OrdinalIgnoreCase)
                            || type.IndexOf("Boss", StringComparison.OrdinalIgnoreCase) >= 0;
                 });
-                AddinStatusLogger.Log("BuildOrchestrator", $"run={runId} gate=task0 bodies={hasBodies} faces={totalFaces} boss={hasBoss}");
+                DiagnosticLogWriter.LogLine(runId, null, "BuildOrchestrator", "INFO", $"Gate check bodies={hasBodies} faces={totalFaces} boss={hasBoss}");
                 return hasBodies || hasFaces || hasBoss;
             }
             catch { return false; }
@@ -190,8 +203,8 @@ namespace AICAD.Services
             {
                 var bodies = result.FailedModelState?["bodies"] as JArray;
                 var totalFaces = result.FailedModelState?["total_faces"]?.Value<int>() ?? 0;
-                AddinStatusLogger.Log("BuildOrchestrator",
-                    $"run={runId} failedTaskIndex={result.FailedTaskIndex} failedStepIndex={result.FailedStepIndex} lastOp={result.LastOp} bodies={(bodies == null ? 0 : bodies.Count)} total_faces={totalFaces}");
+                DiagnosticLogWriter.LogLine(runId, null, "BuildOrchestrator", "ERROR",
+                    $"Failure context failedTaskIndex={result.FailedTaskIndex} failedStepIndex={result.FailedStepIndex} lastOp={result.LastOp} bodies={(bodies == null ? 0 : bodies.Count)} total_faces={totalFaces}");
             }
             catch { }
         }

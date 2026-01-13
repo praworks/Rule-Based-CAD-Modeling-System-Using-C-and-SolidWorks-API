@@ -40,6 +40,8 @@ namespace AICAD.UI
         /// </summary>
         public System.Threading.Tasks.Task RunBuildFromPromptAsync() => _wpfControl?.RunBuildFromPromptAsync() ?? System.Threading.Tasks.Task.CompletedTask;
 
+        public string GetRunIdForLogging() => _wpfControl?.GetRunIdForLogging();
+
         public TextToCADTaskpaneWrapper(ISldWorks swApp)
         {
             InitializeComponent(swApp);
@@ -68,7 +70,6 @@ namespace AICAD.UI
                     _wpfControl.BuildRequested += (s, e) =>
                     {
                         try { AICAD.Services.LocalLogger.Log("Wrapper: BuildRequested forwarded"); } catch { }
-                        try { AICAD.Services.AddinStatusLogger.Log("Wrapper", "BuildRequested forwarded"); } catch { }
                         try { BuildRequested?.Invoke(this, EventArgs.Empty); } catch { }
                     };
                     _wpfControl.PromptTextChanged += (s, e) => { try { PromptTextChanged?.Invoke(this, e); } catch { } };

@@ -21,6 +21,8 @@ namespace AICAD.Services
     {
         private const string HeaderLine = "===============================================================================";
         private const string SectionLine = "───────────────────────────────────────────────────────────────────────────────";
+        private const int TimestampWidth = 12;
+        private const int ComponentWidth = 20;
         private static readonly object _lock = new object();
         private static readonly HashSet<string> _startedRuns = new HashSet<string>(StringComparer.Ordinal);
         private static readonly Dictionary<string, HashSet<string>> _sectionsByRun = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
@@ -37,19 +39,16 @@ namespace AICAD.Services
                 _startedRuns.Add(runId);
                 _sectionsByRun[runId] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
-
-            WriteRaw(HeaderLine);
-            WriteRaw("Log Settings");
-            WriteRaw(HeaderLine);
+            WriteRaw($"--- Run Started: {userPrompt ?? string.Empty} ---");
             if (settings != null)
             {
-                LogLine(runId, null, component, "INFO", $"ProviderPriority={settings.ProviderPriority ?? string.Empty}");
-                LogLine(runId, null, component, "INFO", $"Timeouts: classify={settings.ClassifyTimeoutSeconds}s decompose={settings.DecomposeTimeoutSeconds}s expand={settings.ExpandTimeoutSeconds}s");
-                LogLine(runId, null, component, "INFO", $"FewShot: enabled={settings.FewShotEnabled} randomize={settings.FewShotRandomize} force_static={settings.FewShotForceStatic}");
-                LogLine(runId, null, component, "INFO", $"LocalEndpoint={settings.LocalEndpoint ?? string.Empty} GeminiKeyPresent={settings.GeminiKeyPresent} GroqKeyPresent={settings.GroqKeyPresent}");
+                var provider = string.IsNullOrWhiteSpace(settings.ProviderPriority) ? "NA" : settings.ProviderPriority;
+                var timeout = settings.ExpandTimeoutSeconds > 0 ? settings.ExpandTimeoutSeconds
+                             : (settings.DecomposeTimeoutSeconds > 0 ? settings.DecomposeTimeoutSeconds
+                             : settings.ClassifyTimeoutSeconds);
+                var timeoutText = timeout > 0 ? timeout.ToString() : "NA";
+                LogLine(runId, null, component, "INFO", $"Run Config: Provider={provider}, Timeout={timeoutText}s");
             }
-            WriteRaw($"DIAGNOSTIC LOG FOR \"{userPrompt ?? string.Empty}\"");
-            WriteRaw(HeaderLine);
             WriteRaw(string.Empty);
         }
 
@@ -117,11 +116,14 @@ namespace AICAD.Services
 
         public static void LogLine(string runId, string requestId, string component, string level, string message)
         {
-            var lvl = string.IsNullOrWhiteSpace(level) ? "INFO" : level.Trim().ToUpperInvariant();
-            var rid = string.IsNullOrWhiteSpace(runId) ? "-" : runId;
-            var req = string.IsNullOrWhiteSpace(requestId) ? "-" : requestId;
-            var comp = string.IsNullOrWhiteSpace(component) ? "Unknown" : component;
-            var line = $"| {lvl} | run={rid} | req={req} | {comp} | {message}";
+            var ts = DateTime.Now.ToString("HH:mm:ss.fff");
+            var comp = FitFixed(component, ComponentWidth, "-");
+            var msg = StripStepPrefix(message ?? string.Empty);
+            var line = string.Format(
+                "{0,-12} | {1,-20} | {2}",
+                FitFixed(ts, TimestampWidth, "00:00:00.000"),
+                comp,
+                msg);
             AddinStatusLogger.Log(string.Empty, line);
         }
 
@@ -134,10 +136,49 @@ namespace AICAD.Services
                 return "(len=0)";
 
             var len = text.Length;
-            if (len <= maxLen)
-                return text + $" (len={len})";
+            var suffix = $" (len={len})";
+            if (len <= maxLen - suffix.Length)
+                return text + suffix;
 
-            return text.Substring(0, maxLen) + $"... (len={len})";
+            var available = maxLen - suffix.Length;
+            if (available <= 0)
+                return suffix;
+
+            var ellipsis = "...";
+            if (available <= ellipsis.Length)
+                return ellipsis + suffix;
+
+            var headTailLen = available - ellipsis.Length;
+            var headLen = headTailLen / 2;
+            var tailLen = headTailLen - headLen;
+            var head = headLen > 0 ? text.Substring(0, headLen) : string.Empty;
+            var tail = tailLen > 0 ? text.Substring(len - tailLen, tailLen) : string.Empty;
+            return head + ellipsis + tail + suffix;
+        }
+
+        private static string StripStepPrefix(string message)
+        {
+            if (string.IsNullOrWhiteSpace(message))
+                return message ?? string.Empty;
+
+            var trimmed = message.TrimStart();
+            if (!trimmed.StartsWith("STEP ", StringComparison.OrdinalIgnoreCase))
+                return message;
+
+            var idx = 5;
+            while (idx < trimmed.Length && (char.IsDigit(trimmed[idx]) || trimmed[idx] == '.'))
+                idx++;
+            while (idx < trimmed.Length && (trimmed[idx] == ':' || trimmed[idx] == '-' || char.IsWhiteSpace(trimmed[idx])))
+                idx++;
+            if (idx >= trimmed.Length)
+                return trimmed;
+            return trimmed.Substring(idx);
+        }
+
+        private static string FitFixed(string value, int width, string fallback)
+        {
+            var text = string.IsNullOrWhiteSpace(value) ? (fallback ?? string.Empty) : value.Trim();
+            return text.Length > width ? text.Substring(0, width) : text;
         }
 
         private static void WriteRaw(string line)

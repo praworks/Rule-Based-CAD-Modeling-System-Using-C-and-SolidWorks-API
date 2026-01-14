@@ -1836,7 +1836,7 @@ namespace AICAD.UI
         {
             if (string.IsNullOrWhiteSpace(_lastError)) return null;
             var sb = new StringBuilder();
-            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}");
+            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
             sb.AppendLine($"Error: {_lastError}");
             if (_lastLlm != TimeSpan.Zero || _lastTotal != TimeSpan.Zero)
             {
@@ -1851,7 +1851,7 @@ namespace AICAD.UI
         private string BuildRunCopyText()
         {
             var sb = new StringBuilder();
-            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}");
+            sb.AppendLine($"Time: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff}");
             if (!string.IsNullOrWhiteSpace(_lastModel)) sb.AppendLine($"Model: {_lastModel}");
             if (!string.IsNullOrWhiteSpace(_lastPrompt)) sb.AppendLine($"Prompt: {_lastPrompt}");
             if (!string.IsNullOrWhiteSpace(_lastReply)) sb.AppendLine($"Reply: {_lastReply}");
@@ -2411,7 +2411,7 @@ namespace AICAD.UI
                 // Divider and Run ID
                 AppendStatusLine("―――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――――");
                 _lastRunId = runId;
-                AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff} -----");
+                AppendStatusLine($"[Run:{runId}] ----- Build Start: {DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} -----");
                 
                 // Kick off progress bar animation (realistic phase)
                 StartProgressPhase("communicating");
@@ -4059,10 +4059,9 @@ namespace AICAD.UI
         {
             try
             {
-                var ts = DateTime.Now.ToString("HH:mm:ss.ffffff");
                 var l = line ?? string.Empty;
                 var isHeader = IsDiagnosticHeaderLine(l);
-                var rendered = isHeader ? l : $"{ts} {l}";
+                var rendered = l; // keep one timestamp (added by central logger if needed)
                 // Always mirror to temp file for debugging
                 try { MirrorStatusToTempFile(rendered); } catch { }
 

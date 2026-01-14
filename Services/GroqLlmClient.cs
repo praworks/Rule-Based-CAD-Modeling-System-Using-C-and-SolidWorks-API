@@ -2,6 +2,8 @@ using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Newtonsoft.Json.Linq;
+using Microsoft.Extensions.Logging;
+using AICAD.Services.Logging;
 
 namespace AICAD.Services
 {
@@ -25,6 +27,10 @@ namespace AICAD.Services
 
         public async Task<string> GenerateAsync(string prompt)
         {
+            var logger = Logging.LoggerFactoryBuilder.Factory.CreateLogger("GroqLlmClient");
+            var ctx = Logging.LoggingContext.Current ?? new Logging.LoggingContext { CorrelationId = "-", Operation = "LLM", Provider = "groq", Stage = "EXECUTE" };
+            logger.LogWithContext(Microsoft.Extensions.Logging.LogLevel.Information, ctx, $"LLM_SEND groq promptLen={prompt?.Length ?? 0} promptHash={Logging.LogRedactor.StableHash(prompt ?? string.Empty)} promptPreview={Logging.LogRedactor.Truncate(prompt, 200)}");
+
             // If Groq is busy/anti-burst triggered, wait and retry automatically.
             // Configurable maximum total wait (seconds) via GROQ_MAX_WAIT_SECONDS (default 120s).
             var maxWaitSecondsStr = Environment.GetEnvironmentVariable("GROQ_MAX_WAIT_SECONDS", EnvironmentVariableTarget.User)
@@ -57,7 +63,7 @@ namespace AICAD.Services
 
                 var waitFor = suggested <= remainingAllowedWait ? suggested : remainingAllowedWait;
                 // Log and delay
-                AddinStatusLogger.Log("GroqLlmClient", $"Groq rate limit: {rateLimitCheck.Reason}. Waiting {waitFor.TotalSeconds:F1}s before retrying...");
+                logger.LogWithContext(Microsoft.Extensions.Logging.LogLevel.Warning, ctx, $"LLM_WAIT groq waitMs={waitFor.TotalMilliseconds:F0} reason={rateLimitCheck.Reason}");
                 try
                 {
                     await Task.Delay(waitFor).ConfigureAwait(false);
@@ -98,10 +104,12 @@ namespace AICAD.Services
                 if (choices != null && choices.Count > 0)
                 {
                     var content = choices[0]["message"]?["content"]?.ToString();
+                    logger.LogWithContext(Microsoft.Extensions.Logging.LogLevel.Information, ctx, $"LLM_RECV groq status=200 elapsedMs={(DateTime.UtcNow-startTime).TotalMilliseconds:F0} replyLen={content?.Length ?? 0} replyHash={Logging.LogRedactor.StableHash(content ?? string.Empty)} replyPreview={Logging.LogRedactor.Truncate(content,200)}");
                     return content;
                 }
             }
 
+            logger.LogWithContext(Microsoft.Extensions.Logging.LogLevel.Error, ctx, $"LLM_RECV groq status={(response.Success ? "200" : "error")} elapsedMs={(DateTime.UtcNow-startTime).TotalMilliseconds:F0} error={response.ErrorMessage}");
             throw new Exception(response.ErrorMessage ?? "Groq generation failed");
         }
 

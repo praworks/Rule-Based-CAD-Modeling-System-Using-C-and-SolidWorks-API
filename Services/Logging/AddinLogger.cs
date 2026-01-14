@@ -10,6 +10,7 @@ namespace AICAD.Services
     {
         private static readonly string LogPath;
         private static readonly object Sync = new object();
+        private static bool _enabled = false;
 
         static AddinLogger()
         {
@@ -26,34 +27,20 @@ namespace AICAD.Services
 
         public static void Log(string component, string message)
         {
-            try
-            {
-                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}] [{component}] {message}";
-                lock (Sync)
-                {
-                    File.AppendAllText(LogPath, line + Environment.NewLine);
-                }
-            }
-            catch
-            {
-                // Never throw from logger
-            }
+            // Route through central pipeline for consistency
+            AddinStatusLogger.Log(component, message);
         }
 
         public static void Error(string component, string message, Exception ex)
         {
-            try
-            {
-                var line = $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss.ffffff}] [ERROR] [{component}] {message}\n    Exception: {ex.GetType().Name}: {ex.Message}\n    StackTrace: {ex.StackTrace}";
-                lock (Sync)
-                {
-                    File.AppendAllText(LogPath, line + Environment.NewLine);
-                }
-            }
-            catch
-            {
-                // Never throw from logger
-            }
+            // Route through central pipeline for consistency
+            AddinStatusLogger.Error(component, message, ex);
+        }
+
+        // Allow tests or diagnostics to opt-in to legacy file sink to avoid duplication
+        public static void Enable(bool enabled = true)
+        {
+            _enabled = enabled;
         }
     }
 }

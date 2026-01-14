@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
+using Microsoft.Extensions.Logging;
+using AICAD.Services.Logging;
 
 namespace AICAD.Services
 {
@@ -57,12 +59,13 @@ namespace AICAD.Services
 
         public static JArray PlanThreadSubtask(JObject threadStep, JObject modelFacts = null, string runId = null, string requestId = null)
         {
+            var ctx = new LoggingContext { CorrelationId = runId, Operation = "Classify", Provider = "thread_subtask", StartTimeUtc = DateTimeOffset.UtcNow };
+            var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
             try
             {
                 var prompt = PromptHandler.BuildThreadSubtaskPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, threadStep, modelFacts);
                 var sw = Stopwatch.StartNew();
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: thread_subtask");
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 800));
+                LogLlmSend(logger, ctx, "classify", "priority", prompt);
 
                 var reply = GenerateWithPriority(prompt, 120, runId, requestId);
                 sw.Stop();
@@ -72,13 +75,12 @@ namespace AICAD.Services
                     return null;
                 }
 
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request end: thread_subtask elapsedMs={sw.ElapsedMilliseconds}");
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Raw reply: " + DiagnosticLogWriter.Truncate(reply, 800));
+                LogLlmRecv(logger, ctx, "classify", "priority", reply, sw.ElapsedMilliseconds, 200);
 
                 var extracted = ExtractJsonArray(reply);
                 if (extracted != null && extracted.Count > 0)
                 {
-                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thread subtask steps={extracted.Count}");
+                    logger.LogWithContext(LogLevel.Information, ctx, $"Thread subtask steps={extracted.Count}");
                     return extracted;
                 }
 
@@ -94,7 +96,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "PlanThreadSubtask failed: " + ex.Message);
+                logger.LogException(ctx, ex, "PlanThreadSubtask failed");
                 return null;
             }
         }
@@ -113,17 +115,17 @@ namespace AICAD.Services
 
                 var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_DECOMPOSE_SYSTEM_PROMPT, userRequest);
                 var sw = Stopwatch.StartNew();
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: decompose");
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1200));
+                var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = "decompose", StartTimeUtc = DateTimeOffset.UtcNow };
+                var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
+                LogLlmSend(logger, ctx, "decompose", "priority", prompt);
                 var reply = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                 {
-                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: decompose empty_reply elapsedMs={sw.ElapsedMilliseconds}");
+                    LogLlmRecv(logger, ctx, "decompose", "priority", string.Empty, sw.ElapsedMilliseconds, 0, "empty");
                     return null;
                 }
                 sw.Stop();
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request end: decompose elapsedMs={sw.ElapsedMilliseconds}");
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Raw reply: " + DiagnosticLogWriter.Truncate(reply, 1200));
+                LogLlmRecv(logger, ctx, "decompose", "priority", reply, sw.ElapsedMilliseconds, 200);
                 var extracted = ExtractJsonArray(reply);
                 if (extracted != null && extracted.Count > 0)
                 {
@@ -159,7 +161,9 @@ namespace AICAD.Services
                 var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts, fewShot);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 var sw = Stopwatch.StartNew();
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request start: expand feature={label}");
+                var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = label, StartTimeUtc = DateTimeOffset.UtcNow };
+                var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
+                LogLlmSend(logger, ctx, $"expand-{label}", "priority", prompt);
                 int effectiveTimeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 120;
                 try
                 {
@@ -169,16 +173,14 @@ namespace AICAD.Services
                         effectiveTimeoutSeconds = secs;
                 }
                 catch { }
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1600));
                 var reply = GenerateWithPriority(prompt, effectiveTimeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                 {
-                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: expand empty_reply elapsedMs={sw.ElapsedMilliseconds}");
+                    LogLlmRecv(logger, ctx, $"expand-{label}", "priority", string.Empty, sw.ElapsedMilliseconds, 0, "empty");
                     return null;
                 }
                 sw.Stop();
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"LLM request end: expand elapsedMs={sw.ElapsedMilliseconds}");
-                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Raw reply: " + DiagnosticLogWriter.Truncate(reply, 1600));
+                LogLlmRecv(logger, ctx, $"expand-{label}", "priority", reply, sw.ElapsedMilliseconds, 200);
                 var extracted = ExtractJsonArray(reply);
                 if (extracted != null && extracted.Count > 0)
                 {
@@ -423,6 +425,57 @@ namespace AICAD.Services
             catch
             {
                 return null;
+            }
+        }
+
+        private static void LogLlmSend(ILogger logger, LoggingContext ctx, string name, string provider, string prompt)
+        {
+            ctx.Stage = NormalizeStage(ctx.Stage ?? ctx.Operation);
+            var preview = LogRedactor.Truncate(prompt, 200);
+            var hash = LogRedactor.StableHash(prompt ?? string.Empty);
+            logger.LogWithContext(LogLevel.Information, ctx, $"LLM ► {name}", null, new Dictionary<string, object>
+            {
+                ["event"] = "LLM_SEND",
+                ["provider"] = provider,
+                ["promptLen"] = prompt?.Length ?? 0,
+                ["promptHash"] = hash,
+                ["promptPreview"] = preview
+            });
+        }
+
+        private static void LogLlmRecv(ILogger logger, LoggingContext ctx, string name, string provider, string reply, long elapsedMs, int previewLen = 200, string status = "200")
+        {
+            ctx.Stage = NormalizeStage(ctx.Stage ?? ctx.Operation);
+            var preview = LogRedactor.Truncate(reply, previewLen);
+            var hash = LogRedactor.StableHash(reply ?? string.Empty);
+            logger.LogWithContext(LogLevel.Information, ctx, $"LLM ◄ {name}", null, new Dictionary<string, object>
+            {
+                ["event"] = "LLM_RECV",
+                ["provider"] = provider,
+                ["status"] = status,
+                ["elapsedMs"] = elapsedMs,
+                ["replyLen"] = reply?.Length ?? 0,
+                ["replyHash"] = hash,
+                ["replyPreview"] = preview
+            });
+        }
+
+        private static string NormalizeStage(string stage)
+        {
+            if (string.IsNullOrWhiteSpace(stage)) return null;
+            var parts = stage.Split(new[] { ',', '/', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return stage;
+            var last = parts[parts.Length - 1];
+            switch (last.ToUpperInvariant())
+            {
+                case "CLASSIFY":
+                case "DECOMPOSE":
+                case "EXECUTE":
+                case "VALIDATE":
+                case "UI":
+                    return last.ToUpperInvariant();
+                default:
+                    return last;
             }
         }
 

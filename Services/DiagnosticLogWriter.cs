@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using AICAD.Services.Logging;
+using Microsoft.Extensions.Logging;
 
 namespace AICAD.Services
 {
@@ -20,12 +22,13 @@ namespace AICAD.Services
     internal static class DiagnosticLogWriter
     {
         private const string HeaderLine = "===============================================================================";
-        private const string SectionLine = "───────────────────────────────────────────────────────────────────────────────";
+        private const string SectionLine = "--------------------------------------------------------------------------";
         private const int TimestampWidth = 12;
         private const int ComponentWidth = 20;
         private static readonly object _lock = new object();
         private static readonly HashSet<string> _startedRuns = new HashSet<string>(StringComparer.Ordinal);
-        private static readonly Dictionary<string, HashSet<string>> _sectionsByRun = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
+        private static readonly Dictionary<string, string> _currentStageByRun = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly ILogger _logger = LoggerFactoryBuilder.Factory.CreateLogger("DiagnosticLogWriter");
 
         public static void BeginRun(string runId, string userPrompt, DiagnosticLogSettings settings, string component = "TaskpaneWpf")
         {
@@ -37,9 +40,9 @@ namespace AICAD.Services
                 if (_startedRuns.Contains(runId))
                     return;
                 _startedRuns.Add(runId);
-                _sectionsByRun[runId] = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                _currentStageByRun[runId] = "UI";
             }
-            WriteRaw($"--- Run Started: {userPrompt ?? string.Empty} ---");
+            WriteRaw($"--- Run Started: {LogRedactor.Sanitize(userPrompt)} ---");
             if (settings != null)
             {
                 var provider = string.IsNullOrWhiteSpace(settings.ProviderPriority) ? "NA" : settings.ProviderPriority;
@@ -59,21 +62,9 @@ namespace AICAD.Services
 
             lock (_lock)
             {
-                if (!_sectionsByRun.TryGetValue(runId, out var sections))
-                {
-                    sections = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    _sectionsByRun[runId] = sections;
-                }
-
-                if (sections.Contains(name))
-                    return;
-
-                sections.Add(name);
+                _currentStageByRun[runId] = name;
             }
-
-            WriteRaw(SectionLine);
-            WriteRaw(name);
-            WriteRaw(SectionLine);
+            WriteRaw($"-- {name} --");
         }
 
         public static void SkipSection(string runId, string name, string reason, string component = "TaskpaneWpf")
@@ -84,7 +75,7 @@ namespace AICAD.Services
 
         public static void FeatureHeader(string runId, int index, string featureType)
         {
-            var label = $"FEATURE {index} — {featureType}";
+            var label = $"FEATURE {index} :: {featureType}";
             WriteRaw(label);
         }
 
@@ -108,7 +99,7 @@ namespace AICAD.Services
             {
                 lock (_lock)
                 {
-                    _sectionsByRun.Remove(runId);
+                    _currentStageByRun.Remove(runId);
                     _startedRuns.Remove(runId);
                 }
             }
@@ -116,15 +107,29 @@ namespace AICAD.Services
 
         public static void LogLine(string runId, string requestId, string component, string level, string message)
         {
-            var ts = DateTime.Now.ToString("HH:mm:ss.fff");
-            var comp = FitFixed(component, ComponentWidth, "-");
             var msg = StripStepPrefix(message ?? string.Empty);
-            var line = string.Format(
-                "{0,-12} | {1,-20} | {2}",
-                FitFixed(ts, TimestampWidth, "00:00:00.000"),
-                comp,
-                msg);
-            AddinStatusLogger.Log(string.Empty, line);
+            var ctx = new LoggingContext
+            {
+                CorrelationId = runId,
+                Operation = component,
+                Provider = component,
+                StartTimeUtc = DateTimeOffset.UtcNow
+            };
+            var extra = new Dictionary<string, object>
+            {
+                ["requestId"] = requestId,
+                ["level"] = level
+            };
+            if (!string.IsNullOrWhiteSpace(runId))
+            {
+                lock (_lock)
+                {
+                    if (_currentStageByRun.TryGetValue(runId, out var st) && !string.IsNullOrWhiteSpace(st))
+                        extra["stage"] = st;
+                }
+            }
+            var logLevel = ParseLevel(level);
+            _logger.LogWithContext(logLevel, ctx, msg, null, extra);
         }
 
         public static string Truncate(string text, int maxLen)
@@ -184,6 +189,18 @@ namespace AICAD.Services
         private static void WriteRaw(string line)
         {
             AddinStatusLogger.Log(string.Empty, line ?? string.Empty);
+        }
+
+        private static LogLevel ParseLevel(string level)
+        {
+            switch ((level ?? string.Empty).ToUpperInvariant())
+            {
+                case "DEBUG": return LogLevel.Debug;
+                case "WARN": return LogLevel.Warning;
+                case "ERROR": return LogLevel.Error;
+                case "CRITICAL": return LogLevel.Critical;
+                default: return LogLevel.Information;
+            }
         }
     }
 }

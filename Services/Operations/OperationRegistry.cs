@@ -109,8 +109,6 @@ namespace AICAD.Services.Operations
             registry.Register("chamfer", new PartFeatures.ChamferHandler());
             registry.Register("hole", new PartFeatures.HoleHandler());
             registry.Register("pocket", new PartFeatures.PocketHandler());
-            registry.Register("u_bolt", new PartFeatures.UBoltHandler());
-            registry.Register("u-bolt", new PartFeatures.UBoltHandler());
 
             return registry;
         }

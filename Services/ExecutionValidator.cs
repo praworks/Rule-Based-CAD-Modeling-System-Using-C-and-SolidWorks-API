@@ -76,9 +76,7 @@ namespace AICAD.Services
                             "boss-extrude",
                             "hole",
                             "sweep",
-                            "loft",
-                            "u_bolt",
-                            "u-bolt"
+                            "loft"
                         };
 
                         if (geomOps.Contains(opName))

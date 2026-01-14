@@ -3,6 +3,7 @@ using System.Linq;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 
 namespace AICAD.Services
@@ -102,6 +103,14 @@ namespace AICAD.Services
         {
             try
             {
+                var localUbTask = TryBuildUbBoltTask(userRequest);
+                if (localUbTask != null)
+                {
+                    var tasks = new JArray { localUbTask };
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "Decompose shortcut: detected U-bolt request, using local task"); } catch { }
+                    return tasks;
+                }
+
                 var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_DECOMPOSE_SYSTEM_PROMPT, userRequest);
                 var sw = Stopwatch.StartNew();
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: decompose");
@@ -140,6 +149,13 @@ namespace AICAD.Services
         {
             try
             {
+                var featureType = featureTask?.Value<string>("feature_type") ?? string.Empty;
+                if (IsUBoltFeature(featureType))
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local U-bolt plan"); } catch { }
+                    return BuildUbBoltPlan(featureTask, modelFacts);
+                }
+
                 var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts, fewShot);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 var sw = Stopwatch.StartNew();
@@ -481,6 +497,196 @@ namespace AICAD.Services
                 cur = cur.InnerException;
             }
             return false;
+        }
+
+        private static JObject TryBuildUbBoltTask(string userRequest)
+        {
+            if (string.IsNullOrWhiteSpace(userRequest)) return null;
+            if (!IsUBoltRequest(userRequest)) return null;
+
+            var task = new JObject
+            {
+                ["feature_type"] = "u_bolt",
+                ["intent"] = "create U-bolt",
+                ["params"] = BuildUbBoltParamsFromText(userRequest)
+            };
+            return task;
+        }
+
+        private static bool IsUBoltRequest(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            return Regex.IsMatch(text, @"\bu[\s-]?bolt\b", RegexOptions.IgnoreCase);
+        }
+
+        private static bool IsUBoltFeature(string featureType)
+        {
+            if (string.IsNullOrWhiteSpace(featureType)) return false;
+            return featureType.Equals("u_bolt", StringComparison.OrdinalIgnoreCase)
+                   || featureType.Equals("u-bolt", StringComparison.OrdinalIgnoreCase)
+                   || featureType.Equals("ubolt", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static FeaturePlanResult BuildUbBoltPlan(JObject featureTask, JObject modelFacts)
+        {
+            var steps = new JArray();
+            if (modelFacts == null)
+            {
+                steps.Add(new JObject { ["op"] = "new_part" });
+            }
+
+            var p = featureTask?["params"] as JObject;
+            var dims = ResolveUbBoltDims(p);
+            var plane = NormalizePlaneName(p?.Value<string>("plane"));
+
+            steps.Add(new JObject { ["op"] = "select_plane", ["name"] = plane });
+            steps.Add(new JObject { ["op"] = "sketch_begin" });
+            steps.Add(new JObject
+            {
+                ["op"] = "line",
+                ["x1"] = -dims.CenterlineRadiusMm,
+                ["y1"] = 0,
+                ["x2"] = -dims.CenterlineRadiusMm,
+                ["y2"] = dims.LegLengthMm
+            });
+            steps.Add(new JObject
+            {
+                ["op"] = "line",
+                ["x1"] = dims.CenterlineRadiusMm,
+                ["y1"] = 0,
+                ["x2"] = dims.CenterlineRadiusMm,
+                ["y2"] = dims.LegLengthMm
+            });
+            steps.Add(new JObject
+            {
+                ["op"] = "arc",
+                ["cx"] = 0,
+                ["cy"] = 0,
+                ["r"] = dims.CenterlineRadiusMm,
+                ["start_angle"] = 180,
+                ["end_angle"] = 360
+            });
+            steps.Add(new JObject { ["op"] = "auto_dimension" });
+            steps.Add(new JObject { ["op"] = "sketch_end" });
+            steps.Add(new JObject
+            {
+                ["op"] = "sweep",
+                ["type"] = "circular",
+                ["diameter"] = dims.RodDiameterMm
+            });
+
+            return new FeaturePlanResult
+            {
+                Steps = steps,
+                Thinking = "Sketch a U-shaped path and sweep a circular profile to form the U-bolt."
+            };
+        }
+
+        private static void CopyParamIfPresent(JObject src, JObject dst, string key)
+        {
+            if (src == null || dst == null || string.IsNullOrWhiteSpace(key)) return;
+            if (src.TryGetValue(key, StringComparison.OrdinalIgnoreCase, out var token) && token != null && token.Type != JTokenType.Null)
+                dst[key] = token;
+        }
+
+        private static JObject BuildUbBoltParamsFromText(string text)
+        {
+            var result = new JObject();
+            if (string.IsNullOrWhiteSpace(text)) return result;
+
+            double? spacing = null;
+            double? insideRadius = null;
+            double? legLength = null;
+            double? rodDiameter = null;
+
+            var dnMatch = Regex.Match(text, @"\bDN\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+            if (dnMatch.Success && double.TryParse(dnMatch.Groups[1].Value, out var dn))
+            {
+                spacing = dn;
+                insideRadius = dn / 2.0;
+            }
+
+            var mMatch = Regex.Match(text, @"\bM\s*(\d+(?:\.\d+)?)", RegexOptions.IgnoreCase);
+            if (mMatch.Success && double.TryParse(mMatch.Groups[1].Value, out var msize))
+            {
+                rodDiameter = msize;
+            }
+
+            var spacingTagged = ExtractTaggedNumber(text, "spacing", "inside", "width");
+            if (spacingTagged.HasValue) spacing = spacingTagged.Value;
+
+            var insideTagged = ExtractTaggedNumber(text, "inside_radius", "inside_bend_radius", "bend_radius", "radius", "r");
+            if (insideTagged.HasValue) insideRadius = insideTagged.Value;
+
+            var lengthTagged = ExtractTaggedNumber(text, "leg_length", "leg", "length", "len");
+            if (lengthTagged.HasValue) legLength = lengthTagged.Value;
+
+            var diameterTagged = ExtractTaggedNumber(text, "rod_diameter", "rod", "diameter", "dia");
+            if (diameterTagged.HasValue) rodDiameter = diameterTagged.Value;
+
+            if (spacing.HasValue && !insideRadius.HasValue)
+                insideRadius = spacing.Value / 2.0;
+            if (insideRadius.HasValue && !spacing.HasValue)
+                spacing = insideRadius.Value * 2.0;
+
+            if (rodDiameter.HasValue) result["rod_diameter"] = rodDiameter.Value;
+            if (legLength.HasValue) result["leg_length"] = legLength.Value;
+            if (spacing.HasValue) result["spacing"] = spacing.Value;
+            if (insideRadius.HasValue) result["inside_bend_radius"] = insideRadius.Value;
+
+            return result;
+        }
+
+        private static double? ExtractTaggedNumber(string text, params string[] tags)
+        {
+            if (string.IsNullOrWhiteSpace(text) || tags == null || tags.Length == 0) return null;
+            foreach (var tag in tags)
+            {
+                if (string.IsNullOrWhiteSpace(tag)) continue;
+                var pattern = $@"\b{Regex.Escape(tag)}\s*[:=]?\s*(\d+(?:\.\d+)?)";
+                var match = Regex.Match(text, pattern, RegexOptions.IgnoreCase);
+                if (!match.Success) continue;
+                if (double.TryParse(match.Groups[1].Value, out var value))
+                    return value;
+            }
+            return null;
+        }
+
+        private static (double RodDiameterMm, double LegLengthMm, double SpacingMm, double InsideRadiusMm, double CenterlineRadiusMm) ResolveUbBoltDims(JObject parameters)
+        {
+            double rodDiameterMm = parameters?.Value<double?>("rod_diameter") ?? 10.0;
+            double legLengthMm = parameters?.Value<double?>("leg_length") ?? 50.0;
+            double spacingMm = parameters?.Value<double?>("spacing") ?? double.NaN;
+            double insideRadiusMm = parameters?.Value<double?>("inside_bend_radius") ?? double.NaN;
+
+            bool spacingProvided = !double.IsNaN(spacingMm) && spacingMm > 0;
+            bool insideProvided = !double.IsNaN(insideRadiusMm) && insideRadiusMm > 0;
+
+            if (!spacingProvided && insideProvided)
+                spacingMm = insideRadiusMm * 2.0;
+            if (!insideProvided && spacingProvided)
+                insideRadiusMm = spacingMm / 2.0;
+            if (!spacingProvided && !insideProvided)
+            {
+                spacingMm = 40.0;
+                insideRadiusMm = spacingMm / 2.0;
+            }
+
+            var centerlineRadiusMm = (spacingMm + rodDiameterMm) / 2.0;
+            return (rodDiameterMm, legLengthMm, spacingMm, insideRadiusMm, centerlineRadiusMm);
+        }
+
+        private static string NormalizePlaneName(string planeName)
+        {
+            if (string.IsNullOrWhiteSpace(planeName)) return "Front Plane";
+            var trimmed = planeName.Trim();
+            if (trimmed.Equals("Top", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Top Plane", StringComparison.OrdinalIgnoreCase))
+                return "Top Plane";
+            if (trimmed.Equals("Right", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Right Plane", StringComparison.OrdinalIgnoreCase))
+                return "Right Plane";
+            if (trimmed.Equals("Front", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Front Plane", StringComparison.OrdinalIgnoreCase))
+                return "Front Plane";
+            return "Front Plane";
         }
 
         private static string AwaitWithTimeout(Func<Task<string>> taskFactory, string provider, int seconds = 120)

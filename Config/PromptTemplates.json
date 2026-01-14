@@ -15,7 +15,7 @@
     },
     {
       "name": "U-Bolt",
-      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a U-bolt (U-shaped rod with two parallel legs).\n- Require rod diameter, inside bend radius, leg length, and spacing; assume mm.\n- If any are missing, select reasonable defaults and proceed.\n- Prefer op:'u_bolt' with rod_diameter, inside_bend_radius, leg_length, spacing, and optional plane.\n- If not using u_bolt, use a sketch path + 'sweep' with circular profile.\n- If threaded legs are requested, create the U-bolt body first, then apply thread as a sub-task on the leg ends.\n- Use 'auto_dimension' for all sketch dimensions.\n\nOutput ONLY the JSON object."
+      "template": "{common_preamble}\n\nUser request: {user_request}\n\nConstraints:\n- Interpret as a U-bolt (U-shaped rod with two parallel legs).\n- Require rod diameter, inside bend radius, leg length, and spacing; assume mm.\n- If any are missing, select reasonable defaults and proceed.\n- Use a sketch path (lines + arc) + 'sweep' with circular profile.\n- If threaded legs are requested, create the U-bolt body first, then apply thread as a sub-task on the leg ends.\n- Use 'auto_dimension' for sketch dimensions when needed.\n\nOutput ONLY the JSON object."
     },
     {
       "name": "Washer",

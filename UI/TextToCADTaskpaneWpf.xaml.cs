@@ -199,6 +199,7 @@ namespace AICAD.UI
         private DataApiService _dataApiService;
         private StatusWindow _statusWindow;
         private ApiConsoleWindow _apiConsoleWindow;
+        private ExchangeWindow _exchangeWindow;
         private ApiEventMonitor _apiEventMonitor;
         private TimeSpan _lastLlm = TimeSpan.Zero;
         private TimeSpan _lastTotal = TimeSpan.Zero;
@@ -518,6 +519,7 @@ namespace AICAD.UI
             btnHistory.Click += BtnHistory_Click;
             btnApi.Checked += BtnApi_Checked;
             btnApi.Unchecked += BtnApi_Unchecked;
+            btnExchange.Click += BtnExchange_Click;
             // Use FindName to avoid field resolution issues during compile
             var btnStatusBtn = FindName("btnStatus") as Button;
             if (btnStatusBtn != null)
@@ -1369,6 +1371,40 @@ namespace AICAD.UI
                 }
             }
             catch { }
+        }
+
+        private void EnsureExchangeWindow()
+        {
+            try
+            {
+                if (_exchangeWindow == null || !_exchangeWindow.IsLoaded)
+                {
+                    _exchangeWindow = new ExchangeWindow();
+                    _exchangeWindow.Owner = Window.GetWindow(this);
+                    _exchangeWindow.Closed += (_, __) =>
+                    {
+                        try { } catch { }
+                        _exchangeWindow = null;
+                    };
+                }
+            }
+            catch { }
+        }
+
+        private void BtnExchange_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                // Independent window from API console
+                EnsureExchangeWindow();
+                _exchangeWindow?.Show();
+                _exchangeWindow?.Activate();
+                AppendStatusLine("[Exchange] Exchange window opened");
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("Exchange", "Failed to open Exchange window", ex);
+            }
         }
 
         private void ApiEventMonitor_OnEventJson(string line)

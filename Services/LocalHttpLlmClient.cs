@@ -3,6 +3,8 @@ using System.Net.Http;
 using System.Text;
 using Newtonsoft.Json.Linq;
 using System.Threading.Tasks;
+using System.Diagnostics;
+using AICAD.Services.Logging;
 
 namespace AICAD.Services
 {
@@ -80,6 +82,8 @@ namespace AICAD.Services
 
         public async Task<string> GenerateAsync(string prompt)
         {
+            var traceId = LlmTraceLogger.GetOrCreateTraceIdFromContext();
+            var sw = Stopwatch.StartNew();
             // If this endpoint was recently marked dead, fail fast to avoid repeated socket attempts
             try
             {
@@ -116,6 +120,8 @@ namespace AICAD.Services
                 AddinStatusLogger.Log("LocalHttpLlmClient", "=====================================");
             }
             catch { }
+
+            LlmTraceLogger.LogSend(traceId, "localhttp", _model, _endpoint, "POST", json, _systemPrompt, prompt);
 
             HttpResponseMessage resp = null;
             // Retries for transient timeouts; don't mark endpoint dead until attempts exhausted
@@ -190,6 +196,10 @@ namespace AICAD.Services
             }
 
             var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+            sw?.Stop();
+            JToken parsedJson = null;
+            try { parsedJson = JToken.Parse(respText); }
+            catch (Exception ex) { try { AddinStatusLogger.Error("LocalHttpLlmClient", "Failed to parse LLM response", ex); } catch { } }
             try
             {
                 var prettyResp = FormatJsonForLog(respText, 5000);
@@ -204,15 +214,20 @@ namespace AICAD.Services
                 // Provide clearer guidance for common local-server errors
                 if (resp.StatusCode == System.Net.HttpStatusCode.BadRequest && respText != null && respText.IndexOf("No models loaded", StringComparison.OrdinalIgnoreCase) >= 0)
                 {
+                    LlmTraceLogger.LogRecv(traceId, "localhttp", _model, _endpoint, (int)resp.StatusCode, respText, null, sw?.ElapsedMilliseconds, parsedJson);
                     throw new InvalidOperationException($"Local LLM returned 400: No models loaded. Please load a model in the local LLM instance or change the configured model. Response: {respText}");
                 }
+                LlmTraceLogger.LogRecv(traceId, "localhttp", _model, _endpoint, (int)resp.StatusCode, respText, null, sw?.ElapsedMilliseconds, parsedJson);
                 throw new InvalidOperationException($"LLM HTTP error {(int)resp.StatusCode}: {respText}");
             }
 
             // Try to parse common OpenAI-style chat response shapes.
+            string assistantText = null;
             try
             {
-                    var j = JObject.Parse(respText);
+                    var j = parsedJson as JObject;
+                    if (j != null)
+                    {
 
                     // Capture the actual model name returned by the server
                     try
@@ -225,27 +240,37 @@ namespace AICAD.Services
                     catch { }
 
                     var choices = j["choices"] as JArray;
-                if (choices != null && choices.Count > 0)
-                {
-                    var first = choices[0] as JObject;
-                    var message = first?["message"] as JObject;
-                    if (message != null && message["content"] != null)
+                    if (choices != null && choices.Count > 0)
                     {
-                        return message["content"].ToString();
+                        var first = choices[0] as JObject;
+                        var message = first?["message"] as JObject;
+                        if (message != null && message["content"] != null)
+                        {
+                            assistantText = message["content"].ToString();
+                        }
+                        else if (first?["text"] != null)
+                        {
+                            assistantText = first["text"].ToString();
+                        }
                     }
-                    if (first?["text"] != null) return first["text"].ToString();
-                }
 
-                if (j["result"] != null && j["result"].Type == JTokenType.String) return j["result"].ToString();
-                if (j["output"] != null && j["output"].Type == JTokenType.String) return j["output"].ToString();
+                    if (assistantText == null && j["result"] != null && j["result"].Type == JTokenType.String) assistantText = j["result"].ToString();
+                    if (assistantText == null && j["output"] != null && j["output"].Type == JTokenType.String) assistantText = j["output"].ToString();
+                }
             }
             catch (Exception ex)
             {
                 AddinStatusLogger.Error("LocalHttpLlmClient", "Failed to parse LLM response", ex);
             }
 
+            if (assistantText == null)
+            {
+                assistantText = respText;
+            }
+            LlmTraceLogger.LogRecv(traceId, "localhttp", _model, _endpoint, (int)resp.StatusCode, respText, assistantText, sw?.ElapsedMilliseconds, parsedJson);
+
             // Fallback: return raw response text
-            return respText;
+            return assistantText;
         }
 
         public async Task StreamAsync(string prompt, Action<string> onDelta, System.Threading.CancellationToken cancellationToken)
@@ -265,6 +290,11 @@ namespace AICAD.Services
 
             if (string.IsNullOrWhiteSpace(prompt)) { onDelta?.Invoke(string.Empty); return; }
 
+            var traceId = LlmTraceLogger.GetOrCreateTraceIdFromContext();
+            var sw = Stopwatch.StartNew();
+            var rawBuilder = new StringBuilder();
+            var assistantBuilder = new StringBuilder();
+
             var messages = new System.Collections.Generic.List<object>();
             if (!string.IsNullOrWhiteSpace(_systemPrompt)) messages.Add(new { role = "system", content = _systemPrompt });
             messages.Add(new { role = "user", content = prompt });
@@ -282,6 +312,8 @@ namespace AICAD.Services
             }
             catch { }
 
+            LlmTraceLogger.LogSend(traceId, "localhttp", _model, _endpoint, "POST", json, _systemPrompt, prompt);
+
             using (var req = new HttpRequestMessage(HttpMethod.Post, _endpoint))
             {
                 req.Content = new StringContent(json, Encoding.UTF8, "application/json");
@@ -292,6 +324,8 @@ namespace AICAD.Services
                 catch (TaskCanceledException tex)
                 {
                     AddinStatusLogger.Error("LocalHttpLlmClient", "Streaming request timed out/canceled", tex);
+                    sw?.Stop();
+                    LlmTraceLogger.LogRecv(traceId, "localhttp", _model, _endpoint, null, "streaming canceled or timed out", null, sw?.ElapsedMilliseconds);
                     onDelta?.Invoke(string.Empty); return;
                 }
 
@@ -299,6 +333,8 @@ namespace AICAD.Services
                 {
                     var txt = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
                     AddinStatusLogger.Error("LocalHttpLlmClient", $"Streaming HTTP {(int)resp.StatusCode}", new Exception(txt));
+                    sw?.Stop();
+                    LlmTraceLogger.LogRecv(traceId, "localhttp", _model, _endpoint, (int)resp.StatusCode, txt, null, sw?.ElapsedMilliseconds);
                     // Fallback to non-streaming
                     var full = await GenerateAsync(prompt).ConfigureAwait(false);
                     onDelta?.Invoke(full ?? string.Empty);
@@ -321,6 +357,7 @@ namespace AICAD.Services
                             {
                                 var payload = line.Substring(5).Trim();
                                 if (payload == "[DONE]") break;
+                                rawBuilder.AppendLine(payload);
                                 try
                                 {
                                     var j = JObject.Parse(payload);
@@ -340,20 +377,32 @@ namespace AICAD.Services
                                     {
                                         delta = j["content"].ToString();
                                     }
-                                    if (!string.IsNullOrEmpty(delta)) onDelta?.Invoke(delta);
+                                    if (!string.IsNullOrEmpty(delta))
+                                    {
+                                        assistantBuilder.Append(delta);
+                                        onDelta?.Invoke(delta);
+                                    }
                                 }
                                 catch
                                 {
                                     // Some servers stream plain text lines instead of JSON chunks
-                                    if (!string.IsNullOrEmpty(payload)) onDelta?.Invoke(payload);
+                                    if (!string.IsNullOrEmpty(payload))
+                                    {
+                                        assistantBuilder.Append(payload);
+                                        onDelta?.Invoke(payload);
+                                    }
                                 }
                             }
                         }
                     }
+                    sw?.Stop();
+                    LlmTraceLogger.LogRecv(traceId, "localhttp", _model, _endpoint, (int)resp.StatusCode, rawBuilder.ToString(), assistantBuilder.ToString(), sw?.ElapsedMilliseconds);
                 }
                 catch (Exception ex)
                 {
                     AddinStatusLogger.Error("LocalHttpLlmClient", "Streaming parse failed; falling back", ex);
+                    sw?.Stop();
+                    LlmTraceLogger.LogRecv(traceId, "localhttp", _model, _endpoint, (int)resp.StatusCode, rawBuilder.ToString(), assistantBuilder.ToString(), sw?.ElapsedMilliseconds);
                     var full = await GenerateAsync(prompt).ConfigureAwait(false);
                     onDelta?.Invoke(full ?? string.Empty);
                 }

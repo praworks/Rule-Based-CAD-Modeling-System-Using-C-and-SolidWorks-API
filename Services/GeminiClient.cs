@@ -1,9 +1,12 @@
 using System;
+using System.Diagnostics;
 using System.Net.Http;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
+using AICAD.Services.Logging;
 
 namespace AICAD.Services
 {
@@ -67,6 +70,8 @@ namespace AICAD.Services
         public async Task<string> GenerateAsync(string prompt)
         {
             if (string.IsNullOrWhiteSpace(prompt)) return string.Empty;
+            var traceId = LlmTraceLogger.GetOrCreateTraceIdFromContext();
+            var userPrompt = prompt;
             // If a system prompt is configured, prepend it to the user prompt so Gemini receives it.
             if (!string.IsNullOrWhiteSpace(_systemPrompt))
             {
@@ -131,22 +136,29 @@ namespace AICAD.Services
                 attempt++;
                 using (var content = new StringContent(jsonBody, Encoding.UTF8, "application/json"))
                 {
+                    var attemptSw = Stopwatch.StartNew();
                     HttpResponseMessage resp = null;
+                    string effectiveUrl = url;
                     if (!string.IsNullOrWhiteSpace(bearer))
                     {
                         var httpReq = new HttpRequestMessage(HttpMethod.Post, url);
                         httpReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", bearer);
                         httpReq.Content = content;
+                        LlmTraceLogger.LogSend(traceId, "gemini", _model, effectiveUrl, "POST", jsonBody, _systemPrompt, userPrompt);
                         resp = await _sharedHttp.SendAsync(httpReq).ConfigureAwait(false);
                     }
                     else
                     {
                         if (string.IsNullOrWhiteSpace(_apiKey)) throw new InvalidOperationException("GEMINI_API_KEY not set and OAuth token unavailable.");
-                        var urlWithKey = url + "?key=" + Uri.EscapeDataString(_apiKey);
-                        resp = await _sharedHttp.PostAsync(urlWithKey, content).ConfigureAwait(false);
+                        effectiveUrl = url + "?key=" + Uri.EscapeDataString(_apiKey);
+                        LlmTraceLogger.LogSend(traceId, "gemini", _model, effectiveUrl, "POST", jsonBody, _systemPrompt, userPrompt);
+                        resp = await _sharedHttp.PostAsync(effectiveUrl, content).ConfigureAwait(false);
                     }
 
                     var respText = await resp.Content.ReadAsStringAsync().ConfigureAwait(false);
+                    attemptSw.Stop();
+                    JToken parsedJson = null;
+                    try { parsedJson = JToken.Parse(respText); } catch { }
                     try
                     {
                         var prettyResp = FormatJsonForLog(respText, 6000);
@@ -163,12 +175,14 @@ namespace AICAD.Services
                             var parsed = (GenerateResponse)respSerializer.ReadObject(ms);
                             var text = parsed?.GetFirstText();
                             try { AddinStatusLogger.Log("GeminiClient", $"GenerateAsync success textLen={text?.Length ?? 0}"); } catch { }
+                            LlmTraceLogger.LogRecv(traceId, "gemini", _model, effectiveUrl, (int)resp.StatusCode, respText, text ?? string.Empty, attemptSw.ElapsedMilliseconds, parsedJson);
                             return text ?? string.Empty;
                         }
                     }
 
                     try { AddinStatusLogger.Error("GeminiClient", $"HTTP {(int)resp.StatusCode} response", new Exception(respText)); } catch { }
                     var status = (int)resp.StatusCode;
+                    LlmTraceLogger.LogRecv(traceId, "gemini", _model, effectiveUrl, status, respText, respText, attemptSw.ElapsedMilliseconds, parsedJson);
 
                     if ((status == 429 || status == 503) && attempt <= maxRetries)
                     {

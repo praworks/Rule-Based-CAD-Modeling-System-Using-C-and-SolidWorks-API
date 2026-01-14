@@ -1,6 +1,9 @@
 using System;
+using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
+using AICAD.Services.Logging;
 
 namespace AICAD.Services
 {
@@ -41,30 +44,41 @@ namespace AICAD.Services
 
         public async Task<string> GenerateAsync(string prompt)
         {
+            var traceId = LlmTraceLogger.GetOrCreateTraceIdFromContext();
+            var sw = Stopwatch.StartNew();
             var ct = CancellationToken.None;
-            // Minimal payload — Groq APIs vary; use 'input' field for simple requests.
+            // Minimal payload - Groq APIs vary; use 'input' field for simple requests.
             var payload = new { input = prompt };
+            string payloadJson = Newtonsoft.Json.JsonConvert.SerializeObject(payload);
+            LlmTraceLogger.LogSend(traceId, "groq", Model, _endpoint, "POST", payloadJson, null, prompt);
             var resp = await _g.SendAsync(_endpoint, payload, ct).ConfigureAwait(false);
+            sw?.Stop();
             if (resp.Success && resp.Json != null)
             {
                 // Try common fields
+                string assistant = null;
                 try
                 {
                     if (resp.Json["output"] != null)
                     {
-                        return resp.Json["output"].ToString();
+                        assistant = resp.Json["output"].ToString();
                     }
-                    if (resp.Json["text"] != null) return resp.Json["text"].ToString();
-                    if (resp.Json["choices"] != null)
+                    else if (resp.Json["text"] != null)
+                    {
+                        assistant = resp.Json["text"].ToString();
+                    }
+                    else if (resp.Json["choices"] != null)
                     {
                         var ch = resp.Json["choices"];
-                        if (ch.HasValues && ch[0]["message"] != null) return ch[0]["message"].ToString();
+                        if (ch.HasValues && ch[0]["message"] != null) assistant = ch[0]["message"].ToString();
                     }
                 }
                 catch { }
-                // fallback to raw body
-                return resp.Body ?? string.Empty;
+                if (string.IsNullOrEmpty(assistant)) assistant = resp.Body ?? string.Empty;
+                LlmTraceLogger.LogRecv(traceId, "groq", Model, _endpoint, resp.StatusCode, resp.Body, assistant, sw?.ElapsedMilliseconds, resp.Json);
+                return assistant;
             }
+            LlmTraceLogger.LogRecv(traceId, "groq", Model, _endpoint, resp?.StatusCode, resp?.Body, null, sw?.ElapsedMilliseconds, resp?.Json);
             throw new InvalidOperationException("Groq request failed: " + (resp?.ErrorMessage ?? "unknown"));
         }
 

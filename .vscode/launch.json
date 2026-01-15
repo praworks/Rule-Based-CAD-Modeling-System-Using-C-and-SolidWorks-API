@@ -1,0 +1,18 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Run AI-CAD (Debug)",
+      "type": "coreclr",
+      "request": "launch",
+      "preLaunchTask": "Build AI-CAD-December Project",
+      "program": "${workspaceFolder}/bin/Debug/net7.0/AI-CAD-December.exe",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "AICAD_DEV_LLM_TRACE": "1"
+      },
+      "console": "integratedTerminal"
+    }
+  ]
+}

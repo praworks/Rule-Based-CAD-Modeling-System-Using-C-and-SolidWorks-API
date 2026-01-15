@@ -12,6 +12,11 @@
 				"/p:Configuration=Debug",
 				"/p:Platform=\"Any CPU\""
 			],
+			"options": {
+				"env": {
+					"AICAD_DEV_LLM_TRACE": "1"
+				}
+			},
 			"dependsOn": "Restore NuGet packages",
 			"group": {
 				"kind": "build",
@@ -34,7 +39,10 @@
 			"type": "process",
 			"command": "${workspaceFolder}\\BuildAndRegister.bat",
 			"options": {
-				"cwd": "${workspaceFolder}"
+				"cwd": "${workspaceFolder}",
+				"env": {
+					"AICAD_DEV_LLM_TRACE": "1"
+				}
 			},
 			"problemMatcher": []
 		}

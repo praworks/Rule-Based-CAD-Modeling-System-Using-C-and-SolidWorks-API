@@ -30,6 +30,8 @@ namespace AICAD.Services
             var logger = Logging.LoggerFactoryBuilder.Factory.CreateLogger("GroqLlmClient");
             var ctx = Logging.LoggingContext.Current ?? new Logging.LoggingContext { CorrelationId = "-", Operation = "LLM", Provider = "groq", Stage = "EXECUTE" };
             logger.LogWithContext(Microsoft.Extensions.Logging.LogLevel.Information, ctx, $"LLM_SEND groq promptLen={prompt?.Length ?? 0} promptHash={Logging.LogRedactor.StableHash(prompt ?? string.Empty)} promptPreview={Logging.LogRedactor.Truncate(prompt, 200)}");
+            var traceId = LlmTraceLogger.GetOrCreateTraceIdFromContext();
+            var startTime = DateTime.UtcNow;
 
             // If Groq is busy/anti-burst triggered, wait and retry automatically.
             // Configurable maximum total wait (seconds) via GROQ_MAX_WAIT_SECONDS (default 120s).
@@ -42,7 +44,7 @@ namespace AICAD.Services
             }
 
             var totalWait = TimeSpan.Zero;
-            var startTime = DateTime.UtcNow;
+            var endpoint = "https://api.groq.com/openai/v1/chat/completions";
 
             while (true)
             {
@@ -90,7 +92,11 @@ namespace AICAD.Services
                 stream = false
             };
 
-            var response = await _client.SendAsync("https://api.groq.com/openai/v1/chat/completions", payload, CancellationToken.None).ConfigureAwait(false);
+            string payloadJson = null;
+            try { payloadJson = Newtonsoft.Json.JsonConvert.SerializeObject(payload); } catch { }
+            LlmTraceLogger.LogSend(traceId, "groq", _model, endpoint, "POST", payloadJson, _systemPrompt, prompt);
+
+            var response = await _client.SendAsync(endpoint, payload, CancellationToken.None).ConfigureAwait(false);
 
             // Record successful request for rate limiting
             if (response.Success)
@@ -105,11 +111,21 @@ namespace AICAD.Services
                 {
                     var content = choices[0]["message"]?["content"]?.ToString();
                     logger.LogWithContext(Microsoft.Extensions.Logging.LogLevel.Information, ctx, $"LLM_RECV groq status=200 elapsedMs={(DateTime.UtcNow-startTime).TotalMilliseconds:F0} replyLen={content?.Length ?? 0} replyHash={Logging.LogRedactor.StableHash(content ?? string.Empty)} replyPreview={Logging.LogRedactor.Truncate(content,200)}");
+                    try
+                    {
+                        LlmTraceLogger.LogRecv(traceId, "groq", _model, endpoint, response.StatusCode, response.Body, content, (long?)(DateTime.UtcNow - startTime).TotalMilliseconds, response.Json);
+                    }
+                    catch { }
                     return content;
                 }
             }
 
             logger.LogWithContext(Microsoft.Extensions.Logging.LogLevel.Error, ctx, $"LLM_RECV groq status={(response.Success ? "200" : "error")} elapsedMs={(DateTime.UtcNow-startTime).TotalMilliseconds:F0} error={response.ErrorMessage}");
+            try
+            {
+                LlmTraceLogger.LogRecv(traceId, "groq", _model, endpoint, response?.StatusCode, response?.Body, response?.Body, (long?)(DateTime.UtcNow - startTime).TotalMilliseconds, response?.Json);
+            }
+            catch { }
             throw new Exception(response.ErrorMessage ?? "Groq generation failed");
         }
 

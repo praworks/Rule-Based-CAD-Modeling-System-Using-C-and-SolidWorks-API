@@ -50,9 +50,14 @@ namespace AICAD.Services.Logging
 
         public static void LogSend(string traceId, string provider, string model, string url, string method, string payloadText, string systemPrompt, string userPrompt, string requestId = null)
         {
-            if (!ShouldLog(traceId)) return;
+            if (!Enabled) return;
             try
             {
+                if (string.IsNullOrWhiteSpace(traceId))
+                {
+                    traceId = GetOrCreateTraceIdFromContext();
+                    if (string.IsNullOrWhiteSpace(traceId)) traceId = Guid.NewGuid().ToString("N").Substring(0, 12);
+                }
                 var ts = DateTime.UtcNow;
                 var ctx = LoggingContext.Current;
                 var evt = new LlmTraceEvent
@@ -70,6 +75,8 @@ namespace AICAD.Services.Logging
                     Method = method,
                     PayloadJson = payloadText
                 };
+                // Attach captured prompts to the in-memory event so UI/live subscribers can show them
+                try { evt.SystemPrompt = systemPrompt; evt.UserPrompt = userPrompt; } catch { }
 
                 BufferAndEmit(evt);
                 AppendJsonLine(evt);
@@ -84,9 +91,14 @@ namespace AICAD.Services.Logging
 
         public static void LogRecv(string traceId, string provider, string model, string url, int? statusCode, string responseText, string assistantText, long? elapsedMs, JToken responseJson = null, string requestId = null)
         {
-            if (!ShouldLog(traceId)) return;
+            if (!Enabled) return;
             try
             {
+                if (string.IsNullOrWhiteSpace(traceId))
+                {
+                    traceId = GetOrCreateTraceIdFromContext();
+                    if (string.IsNullOrWhiteSpace(traceId)) traceId = Guid.NewGuid().ToString("N").Substring(0, 12);
+                }
                 var ts = DateTime.UtcNow;
                 var ctx = LoggingContext.Current;
                 var evt = new LlmTraceEvent
@@ -187,6 +199,8 @@ namespace AICAD.Services.Logging
                 ResponseText = evt.ResponseText,
                 ResponseJson = evt.ResponseJson,
                 AssistantText = evt.AssistantText
+                    , SystemPrompt = evt.SystemPrompt
+                    , UserPrompt = evt.UserPrompt
             };
         }
 
@@ -364,6 +378,8 @@ namespace AICAD.Services.Logging
                 if (evt.StatusCode.HasValue) j["statusCode"] = evt.StatusCode.Value;
                 if (evt.ElapsedMs.HasValue) j["elapsedMs"] = evt.ElapsedMs.Value;
                 if (!string.IsNullOrEmpty(evt.PayloadJson)) j["payloadJson"] = evt.PayloadJson;
+                if (!string.IsNullOrEmpty(evt.SystemPrompt)) j["systemPrompt"] = evt.SystemPrompt;
+                if (!string.IsNullOrEmpty(evt.UserPrompt)) j["userPrompt"] = evt.UserPrompt;
                 if (!string.IsNullOrEmpty(evt.ResponseText)) j["responseText"] = evt.ResponseText;
                 if (!string.IsNullOrEmpty(evt.AssistantText)) j["assistantText"] = evt.AssistantText;
                 var http = BuildHttp(evt.Url, evt.Method, evt.StatusCode);
@@ -412,7 +428,7 @@ namespace AICAD.Services.Logging
 
         private static bool ShouldLog(string traceId)
         {
-            return Enabled && !string.IsNullOrWhiteSpace(traceId) && !string.IsNullOrWhiteSpace(BaseDir);
+            return Enabled;
         }
 
         private static string InitBaseDir()

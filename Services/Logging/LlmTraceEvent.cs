@@ -24,5 +24,8 @@ namespace AICAD.Services.Logging
         public string ResponseText { get; set; }
         public object ResponseJson { get; set; }
         public string AssistantText { get; set; }
+        // Optional captured prompts (when available) so UI can display exact user/system turns
+        public string SystemPrompt { get; set; }
+        public string UserPrompt { get; set; }
     }
 }

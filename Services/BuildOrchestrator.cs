@@ -137,11 +137,10 @@ namespace AICAD.Services
                             DiagnosticLogWriter.FeatureHeader(effectiveRunId, ti, featureType);
                             _logger.LogWithContext(LogLevel.Information, featureCtx, $"Feature start index={ti} feature_type={featureType} intent={LogRedactor.Sanitize(intent)}");
 
-                            var fewShot = fewShotEnabled ? FewShotSelector.SelectFeatureFewShot(task, _goodStore, _stepStore, maxFewShotCount) : null;
-                            _logger.LogWithContext(LogLevel.Debug, featureCtx, $"FewShot selected length={(fewShot ?? string.Empty).Length}");
+                            _logger.LogWithContext(LogLevel.Debug, featureCtx, $"FewShot disabled for plan stage");
 
                             _logger.LogWithContext(LogLevel.Information, featureCtx, $"Build prompt model_state={(modelFacts != null)}");
-                            var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, fewShot, effectiveRunId, reqId, expandTimeout);
+                            var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, effectiveRunId, reqId, expandTimeout);
                             if (plan == null || plan.Steps == null || plan.Steps.Count == 0)
                             {
                                 result.Success = false;

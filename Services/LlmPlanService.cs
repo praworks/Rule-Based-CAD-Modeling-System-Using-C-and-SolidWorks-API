@@ -67,7 +67,7 @@ namespace AICAD.Services
                 var sw = Stopwatch.StartNew();
                 LogLlmSend(logger, ctx, "classify", "priority", prompt);
 
-                var reply = GenerateWithPriority(prompt, 120, runId, requestId);
+                var reply = GenerateWithPriority(prompt, "CLASSIFY", 120, runId, requestId);
                 sw.Stop();
                 if (string.IsNullOrWhiteSpace(reply))
                 {
@@ -118,7 +118,7 @@ namespace AICAD.Services
                 var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = "decompose", StartTimeUtc = DateTimeOffset.UtcNow };
                 var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
                 LogLlmSend(logger, ctx, "decompose", "priority", prompt);
-                var reply = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
+                var reply = GenerateWithPriority(prompt, "DECOMPOSE", timeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                 {
                     LogLlmRecv(logger, ctx, "decompose", "priority", string.Empty, sw.ElapsedMilliseconds, 0, "empty");
@@ -147,7 +147,7 @@ namespace AICAD.Services
             }
         }
 
-        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null, string fewShot = null, string runId = null, string requestId = null, int timeoutSeconds = 120)
+        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null, string runId = null, string requestId = null, int timeoutSeconds = 120)
         {
             try
             {
@@ -158,7 +158,7 @@ namespace AICAD.Services
                     return BuildUbBoltPlan(featureTask, modelFacts);
                 }
 
-                var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts, fewShot);
+                var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 var sw = Stopwatch.StartNew();
                 var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = label, StartTimeUtc = DateTimeOffset.UtcNow };
@@ -173,7 +173,7 @@ namespace AICAD.Services
                         effectiveTimeoutSeconds = secs;
                 }
                 catch { }
-                var reply = GenerateWithPriority(prompt, effectiveTimeoutSeconds, runId, requestId);
+                var reply = GenerateWithPriority(prompt, "EXECUTE", effectiveTimeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(reply))
                 {
                     LogLlmRecv(logger, ctx, $"expand-{label}", "priority", string.Empty, sw.ElapsedMilliseconds, 0, "empty");
@@ -228,7 +228,7 @@ namespace AICAD.Services
                 var sw = Stopwatch.StartNew();
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "LLM request start: classify");
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", "Prompt: " + DiagnosticLogWriter.Truncate(prompt, 1200));
-                var response = GenerateWithPriority(prompt, timeoutSeconds, runId, requestId);
+                var response = GenerateWithPriority(prompt, "CLASSIFY", timeoutSeconds, runId, requestId);
                 if (string.IsNullOrWhiteSpace(response))
                 {
                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"LLM request end: classify empty_reply elapsedMs={sw.ElapsedMilliseconds}");
@@ -262,7 +262,7 @@ namespace AICAD.Services
             }
         }
 
-        public static string GenerateWithPriority(string prompt, int timeoutSeconds = 120, string runId = null, string requestId = null)
+        public static string GenerateWithPriority(string prompt, string stage, int timeoutSeconds = 120, string runId = null, string requestId = null)
         {
             try
             {
@@ -270,6 +270,8 @@ namespace AICAD.Services
 
                 Exception lastEx = null;
                 var promptText = prompt;
+                var normalizedStage = NormalizeStage(stage);
+                var stageKey = string.IsNullOrWhiteSpace(normalizedStage) ? "EXECUTE" : normalizedStage.ToUpperInvariant();
                 foreach (var provider in priority)
                 {
                     try
@@ -287,8 +289,7 @@ namespace AICAD.Services
                                 var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
-                                var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var systemPrompt = GetLocalSystemPromptForStage(stageKey);
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -311,9 +312,7 @@ namespace AICAD.Services
                                 var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                                ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                                ?? "gemini-1.5-flash";
-                                var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                     ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var gemSystemPrompt = GetRemoteSystemPromptForStage(stageKey);
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -335,9 +334,7 @@ namespace AICAD.Services
                                 var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
-                                var groqSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                      ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var groqSystemPrompt = GetRemoteSystemPromptForStage(stageKey);
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)
                                 {
@@ -477,6 +474,67 @@ namespace AICAD.Services
                 default:
                     return last;
             }
+        }
+
+        private static string GetStageDefaultSystemPrompt(string stageKey)
+        {
+            if (string.IsNullOrWhiteSpace(stageKey))
+                return PromptHandler.DEFAULT_SYSTEM_PROMPT;
+
+            switch (stageKey.ToUpperInvariant())
+            {
+                case "CLASSIFY":
+                    return PromptHandler.CLASSIFY_SYSTEM_PROMPT;
+                case "DECOMPOSE":
+                    return PromptHandler.DEFAULT_DECOMPOSE_SYSTEM_PROMPT;
+                case "EXECUTE":
+                    return PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                default:
+                    return PromptHandler.DEFAULT_SYSTEM_PROMPT;
+            }
+        }
+
+        private static string GetLocalSystemPromptForStage(string stageKey)
+        {
+            var key = string.IsNullOrWhiteSpace(stageKey) ? "EXECUTE" : stageKey.ToUpperInvariant();
+            var stagePrompt = TryGetEnvironmentVariable($"LOCAL_LLM_{key}_SYSTEM_PROMPT");
+            if (!string.IsNullOrWhiteSpace(stagePrompt))
+                return stagePrompt;
+
+            var general = TryGetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT");
+            if (!string.IsNullOrWhiteSpace(general))
+                return general;
+
+            return GetStageDefaultSystemPrompt(key);
+        }
+
+        private static string GetRemoteSystemPromptForStage(string stageKey)
+        {
+            var key = string.IsNullOrWhiteSpace(stageKey) ? "EXECUTE" : stageKey.ToUpperInvariant();
+            var stagePrompt = TryGetEnvironmentVariable($"AICAD_{key}_SYSTEM_PROMPT");
+            if (!string.IsNullOrWhiteSpace(stagePrompt))
+                return stagePrompt;
+
+            if (key == "EXECUTE" || key == "DECOMPOSE")
+            {
+                var general = TryGetEnvironmentVariable("AICAD_SYSTEM_PROMPT");
+                if (!string.IsNullOrWhiteSpace(general))
+                    return general;
+            }
+
+            return GetStageDefaultSystemPrompt(key);
+        }
+
+        private static string TryGetEnvironmentVariable(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+            var fromUser = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.User);
+            if (!string.IsNullOrWhiteSpace(fromUser))
+                return fromUser;
+            var fromProcess = Environment.GetEnvironmentVariable(name, EnvironmentVariableTarget.Process);
+            if (!string.IsNullOrWhiteSpace(fromProcess))
+                return fromProcess;
+            return null;
         }
 
         private static LocalHttpLlmClient GetLocalClient(string endpoint, string model, string systemPrompt)

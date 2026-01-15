@@ -89,33 +89,98 @@ namespace AICAD.Services.Logging
             }
         }
 
+        private const int PayloadMaxLength = 50_000;
+
         private static string BuildSendBody(LlmTraceEvent evt)
         {
-            if (string.IsNullOrWhiteSpace(evt?.PayloadJson)) return string.Empty;
+            var sb = new StringBuilder();
             try
             {
-                var token = JToken.Parse(evt.PayloadJson);
-                var messages = token["messages"] as JArray;
-                if (messages != null && messages.Count > 0)
+                var payload = evt?.PayloadJson;
+                var parsedPayload = TryParsePayload(payload);
+
+                if (!string.IsNullOrWhiteSpace(evt?.SystemPrompt))
                 {
-                    var sb = new StringBuilder();
-                    foreach (var msg in messages)
-                    {
-                        var role = msg?["role"]?.ToString() ?? "user";
-                        var content = ExtractContentText(msg?["content"]);
-                        sb.AppendLine(role.ToUpperInvariant() + ":");
-                        sb.AppendLine(content);
-                        sb.AppendLine();
-                    }
-                    return sb.ToString().TrimEnd();
+                    sb.AppendLine("SYSTEM:");
+                    sb.AppendLine(evt.SystemPrompt);
+                    sb.AppendLine();
                 }
 
-                return token.ToString(Formatting.Indented);
+                if (!string.IsNullOrWhiteSpace(evt?.UserPrompt))
+                {
+                    sb.AppendLine("USER:");
+                    sb.AppendLine(evt.UserPrompt);
+                    sb.AppendLine();
+                }
+
+                var messageSnippet = TryFormatMessages(parsedPayload);
+                if (!string.IsNullOrWhiteSpace(messageSnippet))
+                {
+                    sb.AppendLine(messageSnippet);
+                    sb.AppendLine();
+                }
+
+                var payloadSection = FormatPayloadSection(payload, parsedPayload);
+                if (!string.IsNullOrWhiteSpace(payloadSection))
+                {
+                    sb.AppendLine(payloadSection);
+                }
+
+                return sb.ToString().TrimEnd();
             }
             catch
             {
-                return evt.PayloadJson;
+                return evt?.PayloadJson ?? string.Empty;
             }
+        }
+
+        private static JToken TryParsePayload(string payload)
+        {
+            if (string.IsNullOrWhiteSpace(payload)) return null;
+            try
+            {
+                return JToken.Parse(payload);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string TryFormatMessages(JToken payload)
+        {
+            if (payload == null) return null;
+            var messages = payload["messages"] as JArray;
+            if (messages == null || messages.Count == 0) return null;
+            var sb = new StringBuilder();
+            foreach (var msg in messages)
+            {
+                var role = msg?["role"]?.ToString() ?? "user";
+                var content = ExtractContentText(msg?["content"]);
+                sb.AppendLine(role.ToUpperInvariant() + ":");
+                sb.AppendLine(content);
+                sb.AppendLine();
+            }
+            return sb.ToString().TrimEnd();
+        }
+
+        private static string FormatPayloadSection(string payload, JToken parsedPayload)
+        {
+            if (string.IsNullOrWhiteSpace(payload)) return null;
+            var builder = new StringBuilder();
+            builder.AppendLine("PAYLOAD JSON:");
+            var formatted = parsedPayload != null
+                ? parsedPayload.ToString(Formatting.Indented)
+                : payload;
+            builder.AppendLine(TruncateWithNotice(formatted, PayloadMaxLength));
+            return builder.ToString().TrimEnd();
+        }
+
+        private static string TruncateWithNotice(string text, int maxLength)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            if (text.Length <= maxLength) return text;
+            return text.Substring(0, maxLength) + "\n... (truncated)";
         }
 
         private static string BuildRecvBody(LlmTraceEvent evt)

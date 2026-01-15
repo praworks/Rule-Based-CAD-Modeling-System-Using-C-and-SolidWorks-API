@@ -83,5 +83,10 @@
     <EmbeddedResource Include="PromptPreset.json" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="Config\PromptCatalog.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
   </ItemGroup>
 </Project>

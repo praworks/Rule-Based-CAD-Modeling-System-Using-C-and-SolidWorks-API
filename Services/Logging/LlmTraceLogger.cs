@@ -75,6 +75,13 @@ namespace AICAD.Services.Logging
                     Method = method,
                     PayloadJson = payloadText
                 };
+                var metadata = ctx?.PromptMetadata;
+                if (metadata != null)
+                {
+                    evt.SystemPromptKey = metadata.SystemPromptKey;
+                    evt.TemplateKey = metadata.TemplateKey;
+                    if (string.IsNullOrWhiteSpace(evt.Stage)) evt.Stage = metadata.Stage;
+                }
                 // Attach captured prompts to the in-memory event so UI/live subscribers can show them
                 try { evt.SystemPrompt = systemPrompt; evt.UserPrompt = userPrompt; } catch { }
 
@@ -120,6 +127,13 @@ namespace AICAD.Services.Logging
                     ResponseJson = responseJson,
                     AssistantText = assistantText
                 };
+                var metadata = ctx?.PromptMetadata;
+                if (metadata != null)
+                {
+                    evt.SystemPromptKey = metadata.SystemPromptKey;
+                    evt.TemplateKey = metadata.TemplateKey;
+                    if (string.IsNullOrWhiteSpace(evt.Stage)) evt.Stage = metadata.Stage;
+                }
 
                 BufferAndEmit(evt);
                 AppendJsonLine(evt);
@@ -198,9 +212,11 @@ namespace AICAD.Services.Logging
                 PayloadJson = evt.PayloadJson,
                 ResponseText = evt.ResponseText,
                 ResponseJson = evt.ResponseJson,
-                AssistantText = evt.AssistantText
-                    , SystemPrompt = evt.SystemPrompt
-                    , UserPrompt = evt.UserPrompt
+                AssistantText = evt.AssistantText,
+                SystemPrompt = evt.SystemPrompt,
+                UserPrompt = evt.UserPrompt,
+                SystemPromptKey = evt.SystemPromptKey,
+                TemplateKey = evt.TemplateKey
             };
         }
 

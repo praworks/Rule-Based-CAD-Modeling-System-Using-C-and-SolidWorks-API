@@ -27,5 +27,7 @@ namespace AICAD.Services.Logging
         // Optional captured prompts (when available) so UI can display exact user/system turns
         public string SystemPrompt { get; set; }
         public string UserPrompt { get; set; }
+        public string SystemPromptKey { get; set; }
+        public string TemplateKey { get; set; }
     }
 }

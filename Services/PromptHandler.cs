@@ -10,7 +10,22 @@ namespace AICAD.Services
     {
         public const string DefaultTemplatePath = "Config/PromptTemplates.json";
         public static string DEFAULT_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("default");
+        public const string DEFAULT_SYSTEM_PROMPT_KEY = "systemPrompts.default";
         public static string EXECUTE_SYSTEM_PROMPT => DEFAULT_SYSTEM_PROMPT;
+        public static string EXECUTE_BASE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("executeBaseFeatures");
+        public static string EXECUTE_REFERENCE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("executeReferenceFeatures");
+        public static string EXECUTE_DEPENDENT_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentFeatures");
+        public static string EXECUTE_DEPENDENT_CHAMFER_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentChamfer");
+        public static string EXECUTE_DEPENDENT_FILLET_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentFillet");
+        public static string EXECUTE_DEPENDENT_EXTRUDED_CUT_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentExtrudedCut");
+        public static string EXECUTE_DEPENDENT_REVOLVED_CUT_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentRevolvedCut");
+        public static string EXECUTE_DEPENDENT_HOLE_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentHole");
+        public static string EXECUTE_DEPENDENT_POCKET_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentPocket");
+        public static string EXECUTE_DEPENDENT_THREAD_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentThread");
+        public static string EXECUTE_DEPENDENT_SHELL_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentShell");
+        public static string EXECUTE_DEPENDENT_DRAFT_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentDraft");
+        public static string EXECUTE_DEPENDENT_PATTERN_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentPattern");
+        public static string EXECUTE_DEPENDENT_MIRROR_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentMirror");
         public static string CLASSIFY_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("classify");
         public static string DEFAULT_DECOMPOSE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("decompose");
 
@@ -244,6 +259,109 @@ namespace AICAD.Services
             return FormatTemplate("featurePlanPrompt",
                 ("factsSection", factsSection),
                 ("featureTask", taskJson));
+        }
+
+        public static string GetExecuteSystemPromptForFeatureType(string featureType)
+        {
+            if (string.IsNullOrWhiteSpace(featureType))
+                return DEFAULT_SYSTEM_PROMPT;
+            var normalized = featureType.Trim().ToLowerInvariant();
+            if (ContainsAnyKeyword(normalized, ReferenceFeatureKeywords))
+                return EXECUTE_REFERENCE_SYSTEM_PROMPT;
+            if (ContainsAnyKeyword(normalized, BaseFeatureKeywords))
+                return EXECUTE_BASE_SYSTEM_PROMPT;
+            var dependentPrompt = ResolveDependentSystemPrompt(normalized);
+            if (!string.IsNullOrWhiteSpace(dependentPrompt))
+                return dependentPrompt;
+            if (ContainsAnyKeyword(normalized, DependentFeatureKeywords))
+                return EXECUTE_DEPENDENT_SYSTEM_PROMPT;
+            return DEFAULT_SYSTEM_PROMPT;
+        }
+
+        private static string ResolveDependentSystemPrompt(string normalized)
+        {
+            if (MatchesKeyword(normalized, new[] { "chamfer" }))
+                return EXECUTE_DEPENDENT_CHAMFER_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "fillet" }))
+                return EXECUTE_DEPENDENT_FILLET_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "extrudedcut", "extrude cut", "cut" }))
+                return EXECUTE_DEPENDENT_EXTRUDED_CUT_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "revolvedcut", "revolve cut" }))
+                return EXECUTE_DEPENDENT_REVOLVED_CUT_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "hole", "hole wizard" }))
+                return EXECUTE_DEPENDENT_HOLE_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "pocket" }))
+                return EXECUTE_DEPENDENT_POCKET_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "thread" }))
+                return EXECUTE_DEPENDENT_THREAD_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "shell" }))
+                return EXECUTE_DEPENDENT_SHELL_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "draft" }))
+                return EXECUTE_DEPENDENT_DRAFT_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "pattern", "linear pattern", "circular pattern" }))
+                return EXECUTE_DEPENDENT_PATTERN_PROMPT;
+            if (MatchesKeyword(normalized, new[] { "mirror" }))
+                return EXECUTE_DEPENDENT_MIRROR_PROMPT;
+            return string.Empty;
+        }
+
+        private static bool MatchesKeyword(string normalized, IEnumerable<string> keywords)
+        {
+            foreach (var keyword in keywords)
+            {
+                if (string.IsNullOrWhiteSpace(keyword)) continue;
+                if (normalized.Contains(keyword))
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool ContainsAnyKeyword(string normalized, string[] keywords)
+        {
+            if (string.IsNullOrWhiteSpace(normalized))
+                return false;
+            foreach (var keyword in keywords)
+            {
+                if (string.IsNullOrWhiteSpace(keyword)) continue;
+                if (normalized.Contains(keyword))
+                    return true;
+            }
+            return false;
+        }
+
+        private static readonly string[] BaseFeatureKeywords = new[]
+        {
+            "base", "part", "extrude", "boss", "revolve", "sweep", "loft", "sheet", "flange", "plate"
+        };
+
+        private static readonly string[] ReferenceFeatureKeywords = new[]
+        {
+            "reference", "plane", "axis"
+        };
+
+        private static readonly string[] DependentFeatureKeywords = new[]
+        {
+            "fillet", "chamfer", "cut", "hole", "pocket", "thread", "shell", "draft", "pattern", "mirror"
+        };
+
+        public static bool IsExecuteSystemPrompt(string prompt)
+        {
+            if (string.IsNullOrWhiteSpace(prompt))
+                return false;
+            foreach (var candidate in GetExecuteSystemPromptCandidates())
+            {
+                if (string.Equals(prompt, candidate, StringComparison.Ordinal))
+                    return true;
+            }
+            return false;
+        }
+
+        private static IEnumerable<string> GetExecuteSystemPromptCandidates()
+        {
+            yield return DEFAULT_SYSTEM_PROMPT;
+            yield return EXECUTE_BASE_SYSTEM_PROMPT;
+            yield return EXECUTE_REFERENCE_SYSTEM_PROMPT;
+            yield return EXECUTE_DEPENDENT_SYSTEM_PROMPT;
         }
     }
 

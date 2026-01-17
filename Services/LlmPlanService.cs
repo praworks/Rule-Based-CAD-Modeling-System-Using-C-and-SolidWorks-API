@@ -160,10 +160,9 @@ namespace AICAD.Services
 
                 var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
-                var sw = Stopwatch.StartNew();
+                var systemPromptOverride = PromptHandler.GetExecuteSystemPromptForFeatureType(featureType);
                 var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = label, StartTimeUtc = DateTimeOffset.UtcNow };
                 var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
-                LogLlmSend(logger, ctx, $"expand-{label}", "priority", prompt);
                 int effectiveTimeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 120;
                 try
                 {
@@ -173,41 +172,39 @@ namespace AICAD.Services
                         effectiveTimeoutSeconds = secs;
                 }
                 catch { }
-                var reply = GenerateWithPriority(prompt, "EXECUTE", effectiveTimeoutSeconds, runId, requestId);
+
+                var reply = SendFeaturePlanAttempt(logger, ctx, label, prompt, effectiveTimeoutSeconds, runId, requestId, systemPromptOverride);
                 if (string.IsNullOrWhiteSpace(reply))
-                {
-                    LogLlmRecv(logger, ctx, $"expand-{label}", "priority", string.Empty, sw.ElapsedMilliseconds, 0, "empty");
                     return null;
-                }
-                sw.Stop();
-                LogLlmRecv(logger, ctx, $"expand-{label}", "priority", reply, sw.ElapsedMilliseconds, 200);
-                var extracted = ExtractJsonArray(reply);
-                if (extracted != null && extracted.Count > 0)
+
+                var planResult = TryExtractFeaturePlan(reply);
+                if (PlanNeedsCorrection(planResult))
                 {
-                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thinking=<none> steps={extracted.Count}");
-                    return new FeaturePlanResult { Steps = extracted };
-                }
-                try
-                {
-                    var obj = ExtractJsonObject(reply);
-                    if (obj != null && obj["steps"] is JArray arr && arr.Count > 0)
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARNING", "Feature plan schema validation failed; retrying with schema correction instructions.");
+                    var correctedPrompt = prompt + SchemaCorrectionSuffix;
+                    reply = SendFeaturePlanAttempt(logger, ctx, label, correctedPrompt, effectiveTimeoutSeconds, runId, requestId, systemPromptOverride);
+                    if (string.IsNullOrWhiteSpace(reply))
+                        return null;
+                    planResult = TryExtractFeaturePlan(reply);
+                    if (PlanNeedsCorrection(planResult))
                     {
-                        var thinking = obj.Value<string>("thinking") ?? string.Empty;
-                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thinking={DiagnosticLogWriter.Truncate(thinking, 400)} steps={arr.Count}");
-                        return new FeaturePlanResult
-                        {
-                            Steps = arr,
-                            Thinking = thinking
-                        };
+                        LogPlanParseFailure(runId, requestId, reply);
+                        return null;
                     }
                 }
-                catch { }
-                try
+
+                if (planResult?.Steps != null && planResult.Steps.Count > 0)
                 {
-                    var truncated = reply.Length > 800 ? reply.Substring(0, 800) + "..." : reply;
-                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "Feature plan parse failed; reply=" + DiagnosticLogWriter.Truncate(truncated, 800));
+                    var thinkingPreview = DiagnosticLogWriter.Truncate(planResult.Thinking ?? string.Empty, 400);
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thinking={thinkingPreview} steps={planResult.Steps.Count}");
+                    return new FeaturePlanResult
+                    {
+                        Steps = planResult.Steps,
+                        Thinking = planResult.Thinking
+                    };
                 }
-                catch { }
+
+                LogPlanParseFailure(runId, requestId, reply);
                 return null;
             }
             catch (Exception ex)
@@ -215,6 +212,81 @@ namespace AICAD.Services
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "PlanFeatureSubtask failed: " + ex.Message);
                 return null;
             }
+        }
+
+        private const string SchemaCorrectionSuffix = "\n\nSchema correction: Return JSON with keys 'thinking' and 'steps'. Each step must use the 'op' field (never 'command').";
+
+        private static string SendFeaturePlanAttempt(ILogger logger, LoggingContext ctx, string label, string prompt, int timeoutSeconds, string runId, string requestId, string systemPromptOverride)
+        {
+            var sw = Stopwatch.StartNew();
+            LogLlmSend(logger, ctx, $"expand-{label}", "priority", prompt);
+            var reply = GenerateWithPriority(prompt, "EXECUTE", timeoutSeconds, runId, requestId, systemPromptOverride);
+            sw.Stop();
+            if (string.IsNullOrWhiteSpace(reply))
+            {
+                LogLlmRecv(logger, ctx, $"expand-{label}", "priority", string.Empty, sw.ElapsedMilliseconds, 0, "empty");
+                return null;
+            }
+            LogLlmRecv(logger, ctx, $"expand-{label}", "priority", reply, sw.ElapsedMilliseconds, 200);
+            return reply;
+        }
+
+        private static FeaturePlanResult TryExtractFeaturePlan(string reply)
+        {
+            if (string.IsNullOrWhiteSpace(reply))
+                return null;
+            try
+            {
+                var array = ExtractJsonArray(reply);
+                if (array != null && array.Count > 0)
+                    return new FeaturePlanResult { Steps = array };
+                var obj = ExtractJsonObject(reply);
+                if (obj == null)
+                    return null;
+                if (obj["steps"] is JArray arr && arr.Count > 0)
+                {
+                    var thinking = obj.Value<string>("thinking") ?? string.Empty;
+                    return new FeaturePlanResult
+                    {
+                        Steps = arr,
+                        Thinking = thinking
+                    };
+                }
+            }
+            catch { }
+            return null;
+        }
+
+        private static bool PlanNeedsCorrection(FeaturePlanResult planResult)
+        {
+            if (planResult?.Steps == null || planResult.Steps.Count == 0)
+                return true;
+            foreach (var token in planResult.Steps)
+            {
+                if (!(token is JObject stepObj))
+                    return true;
+                if (stepObj["command"] != null)
+                    return true;
+                var opToken = stepObj["op"];
+                if (opToken == null || string.IsNullOrWhiteSpace(opToken.ToString()))
+                    return true;
+            }
+            return false;
+        }
+
+        private static void LogPlanParseFailure(string runId, string requestId, string reply)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(reply))
+                {
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "Feature plan parse failed; reply empty");
+                    return;
+                }
+                var truncated = reply.Length > 800 ? reply.Substring(0, 800) + "..." : reply;
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "Feature plan parse failed; reply=" + DiagnosticLogWriter.Truncate(truncated, 800));
+            }
+            catch { }
         }
 
         public static ClassifyResult ClassifyAndDescribe(string userPrompt, IReadOnlyCollection<string> categories, string runId = null, string requestId = null, int timeoutSeconds = 25)
@@ -262,7 +334,7 @@ namespace AICAD.Services
             }
         }
 
-        public static string GenerateWithPriority(string prompt, string stage, int timeoutSeconds = 120, string runId = null, string requestId = null)
+        public static string GenerateWithPriority(string prompt, string stage, int timeoutSeconds = 120, string runId = null, string requestId = null, string systemPromptOverride = null)
         {
             try
             {
@@ -289,9 +361,9 @@ namespace AICAD.Services
                                 var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
-                                var systemPrompt = GetLocalSystemPromptForStage(stageKey);
-
-                                var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
+                                var localPrompt = GetLocalSystemPromptForStage(stageKey, systemPromptOverride);
+                                PromptSelectionValidator.Validate(stageKey, localPrompt);
+                                var localClient = GetLocalClient(localEndpoint, preferredModel, localPrompt);
                                 if (localClient != null)
                                 {
                                     var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
@@ -312,7 +384,8 @@ namespace AICAD.Services
                                 var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                                ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                                ?? "gemini-1.5-flash";
-                                var gemSystemPrompt = GetRemoteSystemPromptForStage(stageKey);
+                                var gemSystemPrompt = GetRemoteSystemPromptForStage(stageKey, systemPromptOverride);
+                                PromptSelectionValidator.Validate(stageKey, gemSystemPrompt);
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -334,7 +407,8 @@ namespace AICAD.Services
                                 var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
-                                var groqSystemPrompt = GetRemoteSystemPromptForStage(stageKey);
+                                var groqSystemPrompt = GetRemoteSystemPromptForStage(stageKey, systemPromptOverride);
+                                PromptSelectionValidator.Validate(stageKey, groqSystemPrompt);
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)
                                 {
@@ -476,7 +550,7 @@ namespace AICAD.Services
             }
         }
 
-        private static string GetStageDefaultSystemPrompt(string stageKey)
+        internal static string GetDefaultSystemPromptForStage(string stageKey)
         {
             if (string.IsNullOrWhiteSpace(stageKey))
                 return PromptHandler.DEFAULT_SYSTEM_PROMPT;
@@ -494,35 +568,30 @@ namespace AICAD.Services
             }
         }
 
-        private static string GetLocalSystemPromptForStage(string stageKey)
+        private static string GetLocalSystemPromptForStage(string stageKey, string overridePrompt)
         {
+            if (!string.IsNullOrWhiteSpace(overridePrompt))
+                return overridePrompt;
+
             var key = string.IsNullOrWhiteSpace(stageKey) ? "EXECUTE" : stageKey.ToUpperInvariant();
             var stagePrompt = TryGetEnvironmentVariable($"LOCAL_LLM_{key}_SYSTEM_PROMPT");
             if (!string.IsNullOrWhiteSpace(stagePrompt))
                 return stagePrompt;
 
-            var general = TryGetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT");
-            if (!string.IsNullOrWhiteSpace(general))
-                return general;
-
-            return GetStageDefaultSystemPrompt(key);
+            return GetDefaultSystemPromptForStage(key);
         }
 
-        private static string GetRemoteSystemPromptForStage(string stageKey)
+        private static string GetRemoteSystemPromptForStage(string stageKey, string overridePrompt)
         {
+            if (!string.IsNullOrWhiteSpace(overridePrompt))
+                return overridePrompt;
+
             var key = string.IsNullOrWhiteSpace(stageKey) ? "EXECUTE" : stageKey.ToUpperInvariant();
             var stagePrompt = TryGetEnvironmentVariable($"AICAD_{key}_SYSTEM_PROMPT");
             if (!string.IsNullOrWhiteSpace(stagePrompt))
                 return stagePrompt;
 
-            if (key == "EXECUTE" || key == "DECOMPOSE")
-            {
-                var general = TryGetEnvironmentVariable("AICAD_SYSTEM_PROMPT");
-                if (!string.IsNullOrWhiteSpace(general))
-                    return general;
-            }
-
-            return GetStageDefaultSystemPrompt(key);
+            return GetDefaultSystemPromptForStage(key);
         }
 
         private static string TryGetEnvironmentVariable(string name)

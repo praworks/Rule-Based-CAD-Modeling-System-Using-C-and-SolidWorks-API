@@ -22,6 +22,7 @@ namespace AICAD.Services.Logging
         public string Operation { get; set; }
         public string Provider { get; set; }
         public string Stage { get; set; }
+        public PromptMetadata PromptMetadata { get; set; }
         public string ParentId { get; set; }
         public bool? Retry { get; set; }
         public bool? Fallback { get; set; }

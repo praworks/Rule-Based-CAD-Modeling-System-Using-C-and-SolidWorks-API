@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using System.IO;
 using Newtonsoft.Json.Linq;
 
@@ -33,19 +35,60 @@ namespace AICAD.Services
         private static JObject LoadCatalog()
         {
             var path = LocateCatalogPath();
-            if (string.IsNullOrWhiteSpace(path))
-                return new JObject();
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                try
+                {
+                    var content = File.ReadAllText(path);
+                    var parsed = JObject.Parse(content);
+                    ValidateSystemPrompts(parsed);
+                    return parsed;
+                }
+                catch (Exception ex)
+                {
+                    AddinStatusLogger.Error("PromptCatalog", $"Failed to load PromptCatalog from '{path}'", ex);
+                    throw new InvalidOperationException($"Failed to load PromptCatalog from '{path}': {ex.Message}", ex);
+                }
+            }
 
+            var embedded = LoadEmbeddedCatalog();
+            if (embedded != null)
+                return embedded;
+
+            AddinStatusLogger.Log("PromptCatalog", "PromptCatalog.json not found on disk or as embedded resource. Using empty catalog.");
+            return new JObject();
+        }
+
+        private static JObject LoadEmbeddedCatalog()
+        {
             try
             {
-                var content = File.ReadAllText(path);
-                var parsed = JObject.Parse(content);
-                ValidateSystemPrompts(parsed);
-                return parsed;
+                var asm = Assembly.GetExecutingAssembly();
+                var resourceName = asm.GetManifestResourceNames()
+                    .FirstOrDefault(name => name.EndsWith("Config.PromptCatalog.json", StringComparison.OrdinalIgnoreCase)
+                                            || name.EndsWith("PromptCatalog.json", StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrWhiteSpace(resourceName))
+                    return null;
+
+                using (var stream = asm.GetManifestResourceStream(resourceName))
+                using (var reader = new StreamReader(stream ?? Stream.Null))
+                {
+                    var content = reader.ReadToEnd();
+                    if (string.IsNullOrWhiteSpace(content))
+                    {
+                        AddinStatusLogger.Log("PromptCatalog", $"Embedded PromptCatalog resource '{resourceName}' was empty.");
+                        return null;
+                    }
+                    var parsed = JObject.Parse(content);
+                    ValidateSystemPrompts(parsed);
+                    AddinStatusLogger.Log("PromptCatalog", $"Loaded embedded PromptCatalog resource '{resourceName}'.");
+                    return parsed;
+                }
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException($"Failed to load PromptCatalog from '{path}': {ex.Message}", ex);
+                AddinStatusLogger.Error("PromptCatalog", "Failed to load embedded PromptCatalog resource", ex);
+                return null;
             }
         }
 

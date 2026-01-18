@@ -89,6 +89,7 @@
     <None Include="Config\PromptCatalog.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+    <EmbeddedResource Include="Config\PromptCatalog.json" />
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>

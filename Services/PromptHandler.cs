@@ -8,10 +8,10 @@ namespace AICAD.Services
 {
     public static class PromptHandler
     {
-        public const string DefaultTemplatePath = "Config/PromptTemplates.json";
+        public const string DefaultTemplatePath = "Config/PromptCatalog.json";
         public static string DEFAULT_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("default");
         public const string DEFAULT_SYSTEM_PROMPT_KEY = "systemPrompts.default";
-        public static string EXECUTE_SYSTEM_PROMPT => DEFAULT_SYSTEM_PROMPT;
+        public static string EXECUTE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("execute_system");
         public static string EXECUTE_BASE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("executeBaseFeatures");
         public static string EXECUTE_REFERENCE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("executeReferenceFeatures");
         public static string EXECUTE_DEPENDENT_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentFeatures");
@@ -26,8 +26,8 @@ namespace AICAD.Services
         public static string EXECUTE_DEPENDENT_DRAFT_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentDraft");
         public static string EXECUTE_DEPENDENT_PATTERN_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentPattern");
         public static string EXECUTE_DEPENDENT_MIRROR_PROMPT => PromptCatalog.GetSystemPrompt("executeDependentMirror");
-        public static string CLASSIFY_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("classify");
-        public static string DEFAULT_DECOMPOSE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("decompose");
+        public static string CLASSIFY_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("classify_system");
+        public static string DEFAULT_DECOMPOSE_SYSTEM_PROMPT => PromptCatalog.GetSystemPrompt("decompose_system");
 
         public static string BuildRefineSystemPrompt()
         {
@@ -51,7 +51,7 @@ namespace AICAD.Services
         public static string BuildClassificationAndDescriptionPrompt(string userPrompt, IEnumerable<string> categories)
         {
             var list = categories == null ? string.Empty : string.Join(", ", categories);
-            return FormatTemplate("classificationWithDescriptionPrompt",
+            return FormatTemplate("classify_template",
                 ("categories", list),
                 ("userPrompt", userPrompt ?? string.Empty));
         }
@@ -93,10 +93,11 @@ namespace AICAD.Services
             {
                 var json = File.ReadAllText(path);
                 var root = JObject.Parse(json);
+                var classificationRoot = root["classificationTemplates"] as JObject ?? root;
                 var cfg = new PromptTemplateConfig();
-                cfg.CommonPreamble = root.Value<string>("common_preamble") ?? string.Empty;
-                cfg.UnknownTemplate = root.Value<string>("unknown_template") ?? string.Empty;
-                var arr = root["categories"] as JArray;
+                cfg.CommonPreamble = classificationRoot.Value<string>("common_preamble") ?? string.Empty;
+                cfg.UnknownTemplate = classificationRoot.Value<string>("unknown_template") ?? string.Empty;
+                var arr = classificationRoot["categories"] as JArray ?? root["categories"] as JArray;
                 if (arr != null)
                 {
                     foreach (var item in arr)
@@ -247,16 +248,19 @@ namespace AICAD.Services
         {
             var activePrompt = string.IsNullOrWhiteSpace(systemPrompt) ? DEFAULT_DECOMPOSE_SYSTEM_PROMPT : systemPrompt;
             var systemBlock = activePrompt + "\n\n";
-            return FormatTemplate("featureDecomposePrompt",
+            return FormatTemplate("decompose_template",
                 ("systemPrompt", systemBlock),
                 ("userRequest", userRequest ?? string.Empty));
         }
 
         public static string BuildFeaturePlanPrompt(string systemPrompt, JObject featureTask, JObject facts)
         {
+            var activePrompt = string.IsNullOrWhiteSpace(systemPrompt) ? EXECUTE_SYSTEM_PROMPT : systemPrompt;
+            var systemBlock = (activePrompt ?? string.Empty).TrimEnd() + "\n\n";
             var factsSection = BuildFactsSection(facts);
             var taskJson = featureTask == null ? "{}" : featureTask.ToString();
-            return FormatTemplate("featurePlanPrompt",
+            return FormatTemplate("execute_template",
+                ("systemPrompt", systemBlock),
                 ("factsSection", factsSection),
                 ("featureTask", taskJson));
         }
@@ -266,6 +270,15 @@ namespace AICAD.Services
             if (string.IsNullOrWhiteSpace(featureType))
                 return DEFAULT_SYSTEM_PROMPT;
             var normalized = featureType.Trim().ToLowerInvariant();
+            // First attempt: explicit mapping in PromptCatalog (e.g. systemPromptsByFeature.execute_extrude)
+            try
+            {
+                var byKey = "execute_" + normalized;
+                var mapped = PromptCatalog.GetSystemPromptForFeature(byKey);
+                if (!string.IsNullOrWhiteSpace(mapped))
+                    return mapped;
+            }
+            catch { }
             if (ContainsAnyKeyword(normalized, ReferenceFeatureKeywords))
                 return EXECUTE_REFERENCE_SYSTEM_PROMPT;
             if (ContainsAnyKeyword(normalized, BaseFeatureKeywords))
@@ -275,7 +288,7 @@ namespace AICAD.Services
                 return dependentPrompt;
             if (ContainsAnyKeyword(normalized, DependentFeatureKeywords))
                 return EXECUTE_DEPENDENT_SYSTEM_PROMPT;
-            return DEFAULT_SYSTEM_PROMPT;
+            return EXECUTE_SYSTEM_PROMPT;
         }
 
         private static string ResolveDependentSystemPrompt(string normalized)
@@ -358,6 +371,7 @@ namespace AICAD.Services
 
         private static IEnumerable<string> GetExecuteSystemPromptCandidates()
         {
+            yield return EXECUTE_SYSTEM_PROMPT;
             yield return DEFAULT_SYSTEM_PROMPT;
             yield return EXECUTE_BASE_SYSTEM_PROMPT;
             yield return EXECUTE_REFERENCE_SYSTEM_PROMPT;

@@ -73,53 +73,60 @@ namespace AICAD.Services
                 {
                     try
                     {
-                        try
-                        {
-                            var providerPriority = settings?.ProviderPriority ?? string.Join(",", ProviderRouter.GetFallbackOrder());
-                            _logger.LogWithContext(LogLevel.Information, context, $"Settings loaded provider_priority={providerPriority} classify_timeout={classifyTimeout}s decompose_timeout={decomposeTimeout}s expand_timeout={expandTimeout}s few_shot={fewShotEnabled}");
-                        }
-                        catch { }
-                context.Stage = "CLASSIFY";
-                var classifyReqId = Guid.NewGuid().ToString("N");
-                DiagnosticLogWriter.StartSection(effectiveRunId, "CLASSIFY");
-                var classifyCtx = context.CloneForChild("Classify");
-                LlmPlanService.ClassifyResult classifyResult = null;
-                using (_logger.BeginScope(classifyCtx.ToScopeDictionary()))
+                try
                 {
-                            var classifyOp = OperationLogger.Start(_logger, _telemetry, classifyCtx, "Classify");
-                            _logger.LogWithContext(LogLevel.Information, classifyCtx, "Classify start");
-                            classifyResult = LlmPlanService.ClassifyAndDescribe(userPrompt, categories, effectiveRunId, classifyReqId, classifyTimeout);
-                            classifyOp.MarkSuccess();
-                            result.Category = classifyResult?.Category ?? "Unknown";
-                            result.Description = classifyResult?.Description ?? string.Empty;
-                        }
-                        result.Category = result.Category ?? "Unknown";
-                        result.Description = result.Description ?? string.Empty;
-
+                    var providerPriority = settings?.ProviderPriority ?? string.Join(",", ProviderRouter.GetFallbackOrder());
+                    _logger.LogWithContext(LogLevel.Information, context, $"Settings loaded provider_priority={providerPriority} classify_timeout={classifyTimeout}s decompose_timeout={decomposeTimeout}s expand_timeout={expandTimeout}s few_shot={fewShotEnabled}");
+                }
+                catch { }
                 context.Stage = "DECOMPOSE";
                 var decomposeReqId = Guid.NewGuid().ToString("N");
                 DiagnosticLogWriter.StartSection(effectiveRunId, "DECOMPOSE");
                 var decomposeCtx = context.CloneForChild("Decompose");
-                        JArray tasks;
-                        using (_logger.BeginScope(decomposeCtx.ToScopeDictionary()))
-                        {
-                            var decomposeOp = OperationLogger.Start(_logger, _telemetry, decomposeCtx, "Decompose");
-                            _logger.LogWithContext(LogLevel.Information, decomposeCtx, "Decompose start");
-                            tasks = LlmPlanService.DecomposeByFeature(userPrompt, effectiveRunId, decomposeReqId, decomposeTimeout);
-                            decomposeOp.MarkSuccess();
-                        }
-                        if (tasks == null || tasks.Count == 0)
-                        {
-                            result.Success = false;
-                            result.Error = "Decompose returned no tasks";
-                            result.FeatureTasks = tasks ?? new JArray();
-                            _logger.LogWithContext(LogLevel.Error, decomposeCtx, "Decompose returned no tasks");
-                            result.LlmMs = llmSw.ElapsedMilliseconds;
-                            buildOp.MarkFailure(null, result.Error, userVisible: true);
-                            return result;
-                        }
+                LlmPlanService.DecomposeResult decomposeResult = null;
+                using (_logger.BeginScope(decomposeCtx.ToScopeDictionary()))
+                {
+                    var decomposeOp = OperationLogger.Start(_logger, _telemetry, decomposeCtx, "Decompose");
+                    _logger.LogWithContext(LogLevel.Information, decomposeCtx, "Decompose start");
+                    decomposeResult = LlmPlanService.DecomposeByFeature(userPrompt, effectiveRunId, decomposeReqId, decomposeTimeout);
+                    decomposeOp.MarkSuccess();
+                }
+                if (decomposeResult == null)
+                {
+                    result.Success = false;
+                    result.Error = "Decompose returned no data";
+                    result.FeatureTasks = new JArray();
+                    _logger.LogWithContext(LogLevel.Error, decomposeCtx, "Decompose returned no data");
+                    result.LlmMs = llmSw.ElapsedMilliseconds;
+                    buildOp.MarkFailure(null, result.Error, userVisible: true);
+                    return result;
+                }
+                if (decomposeResult.NeedsDescription)
+                {
+                    result.Success = false;
+                    var question = string.IsNullOrWhiteSpace(decomposeResult.Question) ? "Provide a short description of the request." : decomposeResult.Question;
+                    result.Error = question;
+                    result.FeatureTasks = new JArray();
+                    _logger.LogWithContext(LogLevel.Warning, decomposeCtx, "Decompose requested clarification: " + question);
+                    result.LlmMs = llmSw.ElapsedMilliseconds;
+                    buildOp.MarkFailure(null, result.Error, userVisible: true);
+                    return result;
+                }
+                var tasks = decomposeResult.Features ?? new JArray();
+                if (tasks.Count == 0)
+                {
+                    result.Success = false;
+                    result.Error = "Decompose returned no tasks";
+                    result.FeatureTasks = tasks;
+                    _logger.LogWithContext(LogLevel.Error, decomposeCtx, "Decompose returned no tasks");
+                    result.LlmMs = llmSw.ElapsedMilliseconds;
+                    buildOp.MarkFailure(null, result.Error, userVisible: true);
+                    return result;
+                }
 
-                        result.FeatureTasks = tasks;
+                result.FeatureTasks = tasks;
+                result.Description = decomposeResult.Description ?? string.Empty;
+                result.Category = "Unknown";
                 context.Stage = "EXECUTE";
                 DiagnosticLogWriter.StartSection(effectiveRunId, "EXECUTE");
                         JObject modelFacts = null;
@@ -140,37 +147,59 @@ namespace AICAD.Services
                             _logger.LogWithContext(LogLevel.Debug, featureCtx, $"FewShot disabled for plan stage");
 
                             _logger.LogWithContext(LogLevel.Information, featureCtx, $"Build prompt model_state={(modelFacts != null)}");
-                            var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, effectiveRunId, reqId, expandTimeout);
-                            if (plan == null || plan.Steps == null || plan.Steps.Count == 0)
-                            {
-                                result.Success = false;
-                                result.Error = "Feature task expansion failed";
-                                result.FailedTaskIndex = ti;
-                                _logger.LogWithContext(LogLevel.Error, featureCtx, "Feature task expansion failed");
-                                result.LlmMs = llmSw.ElapsedMilliseconds;
-                                buildOp.MarkFailure(null, result.Error, userVisible: true);
-                                return result;
-                            }
+                        var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, effectiveRunId, reqId, expandTimeout);
+                        if (plan == null)
+                        {
+                            result.Success = false;
+                            result.Error = "Feature task expansion failed";
+                            result.FailedTaskIndex = ti;
+                            _logger.LogWithContext(LogLevel.Error, featureCtx, "Feature task expansion failed");
+                            result.LlmMs = llmSw.ElapsedMilliseconds;
+                            buildOp.MarkFailure(null, result.Error, userVisible: true);
+                            return result;
+                        }
+                        if (plan.ClarificationNeeded)
+                        {
+                            var clarification = plan.Clarification ?? new JObject();
+                            result.Success = false;
+                            result.Error = BuildClarificationMessage(clarification) ?? "Clarification required for feature.";
+                            result.Execution = new StepExecutionResult { Success = false, Clarification = clarification };
+                            result.FailedTaskIndex = ti;
+                            _logger.LogWithContext(LogLevel.Warning, featureCtx, "Clarification needed for feature index=" + ti);
+                            result.LlmMs = llmSw.ElapsedMilliseconds;
+                            buildOp.MarkFailure(null, result.Error, userVisible: true);
+                            return result;
+                        }
+                        if (plan.Steps == null || plan.Steps.Count == 0)
+                        {
+                            result.Success = false;
+                            result.Error = "Feature task expansion returned no steps";
+                            result.FailedTaskIndex = ti;
+                            _logger.LogWithContext(LogLevel.Error, featureCtx, "Feature task expansion returned no steps");
+                            result.LlmMs = llmSw.ElapsedMilliseconds;
+                            buildOp.MarkFailure(null, result.Error, userVisible: true);
+                            return result;
+                        }
 
-                            var perPlan = new JObject
-                            {
-                                ["steps"] = plan.Steps,
-                                ["__llm_prompt"] = "feature_plan",
-                                ["__llm_raw"] = string.Empty,
-                                ["__user_prompt"] = userPrompt ?? string.Empty
-                            };
+                        var perPlan = new JObject
+                        {
+                            ["steps"] = plan.Steps,
+                            ["__llm_prompt"] = "feature_plan",
+                            ["__llm_raw"] = string.Empty,
+                            ["__user_prompt"] = userPrompt ?? string.Empty
+                        };
 
-                            _logger.LogWithContext(LogLevel.Information, featureCtx, "Execute start");
-                            var exec = executePlan?.Invoke(perPlan, effectiveRunId, reqId);
-                            result.Execution = exec;
-                            if (exec == null || !exec.Success)
-                            {
-                                PopulateFailureContext(result, exec, ti, effectiveRunId);
-                                _logger.LogWithContext(LogLevel.Error, featureCtx, "Gate proceed=false reason=execution failed");
-                                result.LlmMs = llmSw.ElapsedMilliseconds;
-                                buildOp.MarkFailure(null, "Execution failed", userVisible: true);
-                                return result;
-                            }
+                        _logger.LogWithContext(LogLevel.Information, featureCtx, "Execute start");
+                        var exec = executePlan?.Invoke(perPlan, effectiveRunId, reqId);
+                        result.Execution = exec;
+                        if (exec == null || !exec.Success)
+                        {
+                            PopulateFailureContext(result, exec, ti, effectiveRunId);
+                            _logger.LogWithContext(LogLevel.Error, featureCtx, "Gate proceed=false reason=execution failed");
+                            result.LlmMs = llmSw.ElapsedMilliseconds;
+                            buildOp.MarkFailure(null, "Execution failed", userVisible: true);
+                            return result;
+                        }
 
                             // Gate Task0 before proceeding to Task1+
                             if (ti == 0)
@@ -305,6 +334,26 @@ namespace AICAD.Services
             {
                 return "unknown_doc";
             }
+        }
+
+        private static string BuildClarificationMessage(JObject clarification)
+        {
+            if (clarification == null) return null;
+            try
+            {
+                var questions = clarification["questions"] as JArray;
+                if (questions != null && questions.Count > 0)
+                    return string.Join(" ", questions.Values<string>());
+            }
+            catch { }
+            try
+            {
+                var question = clarification.Value<string>("question");
+                if (!string.IsNullOrWhiteSpace(question))
+                    return question;
+            }
+            catch { }
+            return clarification.ToString();
         }
     }
 }

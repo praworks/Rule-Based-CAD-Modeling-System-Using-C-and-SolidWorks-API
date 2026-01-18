@@ -53,6 +53,8 @@ namespace AICAD.Services.Logging
                     Provider = evt.Provider,
                     Model = evt.Model,
                     Stage = evt.Stage,
+                    TemplateKey = evt.TemplateKey,
+                    SystemPromptKey = evt.SystemPromptKey,
                     Operation = evt.Operation,
                     RequestId = evt.RequestId,
                     StatusCode = evt.StatusCode,
@@ -75,7 +77,12 @@ namespace AICAD.Services.Logging
                 var providerModel = $"{(string.IsNullOrWhiteSpace(evt.Provider) ? "-" : evt.Provider)} / {(string.IsNullOrWhiteSpace(evt.Model) ? "-" : evt.Model)}";
                 parts.Add(providerModel);
                 if (!string.IsNullOrWhiteSpace(evt.Operation)) parts.Add("op=" + evt.Operation);
-                if (!string.IsNullOrWhiteSpace(evt.Stage)) parts.Add("stage=" + evt.Stage);
+                if (!string.IsNullOrWhiteSpace(evt.Stage))
+                {
+                    parts.Add("stage=" + evt.Stage);
+                }
+                if (!string.IsNullOrWhiteSpace(evt.TemplateKey)) parts.Add("tpl=" + evt.TemplateKey);
+                if (!string.IsNullOrWhiteSpace(evt.SystemPromptKey)) parts.Add("sys=" + evt.SystemPromptKey);
                 if (!string.IsNullOrWhiteSpace(evt.CorrelationId)) parts.Add("corr=" + evt.CorrelationId);
                 if (!string.IsNullOrWhiteSpace(evt.TraceId)) parts.Add("trace=" + evt.TraceId);
                 if (!string.IsNullOrWhiteSpace(evt.RequestId)) parts.Add("req=" + evt.RequestId);

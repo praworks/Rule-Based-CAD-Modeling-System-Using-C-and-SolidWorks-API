@@ -17,6 +17,8 @@ namespace AICAD.UI.Models
         public string Provider { get; set; }
         public string Model { get; set; }
         public string Stage { get; set; }
+        public string TemplateKey { get; set; }
+        public string SystemPromptKey { get; set; }
         public string Operation { get; set; }
         public string RequestId { get; set; }
         public int? StatusCode { get; set; }

@@ -11,6 +11,23 @@ namespace AICAD.Services
 
         public static string GetSystemPrompt(string key) => GetString("systemPrompts", key);
 
+        public static string GetSystemPromptForFeature(string featureKey)
+        {
+            try
+            {
+                var node = Catalog.Value;
+                var byFeature = node?["systemPromptsByFeature"] as JObject;
+                if (byFeature == null) return string.Empty;
+                var token = byFeature[featureKey];
+                if (token == null) return string.Empty;
+                return token.Value<string>() ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
         public static string GetTemplate(string key) => GetString("templates", key);
 
         private static JObject LoadCatalog()
@@ -22,11 +39,73 @@ namespace AICAD.Services
             try
             {
                 var content = File.ReadAllText(path);
-                return JObject.Parse(content);
+                var parsed = JObject.Parse(content);
+                ValidateSystemPrompts(parsed);
+                return parsed;
             }
-            catch
+            catch (Exception ex)
             {
-                return new JObject();
+                throw new InvalidOperationException($"Failed to load PromptCatalog from '{path}': {ex.Message}", ex);
+            }
+        }
+
+        private static void ValidateSystemPrompts(JObject catalog)
+        {
+            if (catalog == null)
+                return;
+
+            var sys = catalog["systemPrompts"] as JObject;
+            if (sys == null)
+                return;
+
+            string Get(string k)
+            {
+                try
+                {
+                    var t = sys[k];
+                    return t?.Value<string>() ?? string.Empty;
+                }
+                catch
+                {
+                    return string.Empty;
+                }
+            }
+
+            var decompose = Get("decompose_system").Trim();
+            var execute = Get("execute_system").Trim();
+
+            // decompose: must NOT contain steps/op/thinking and should reference feature task contract
+            var decompLower = decompose.ToLowerInvariant();
+            if (decompLower.Contains("\"steps\"") || decompLower.Contains("\"op\"") || decompLower.Contains("thinking"))
+            {
+                throw new InvalidOperationException("PromptCatalog validation failed: 'decompose_system' contains executor tokens (\"steps\", \"op\", or 'thinking'). Decompose prompt must stay schematic.");
+            }
+            if (!decompLower.Contains("\"features\"") || !decompLower.Contains("needs_description") || !decompLower.Contains("\"question\""))
+            {
+                throw new InvalidOperationException("PromptCatalog validation failed: 'decompose_system' must reference 'features', 'needs_description', and 'question'.");
+            }
+
+            // execute: must contain steps and op, must not request feature_type inside steps
+            var execLower = execute.ToLowerInvariant();
+            if (!execLower.Contains("\"steps\""))
+            {
+                throw new InvalidOperationException("PromptCatalog validation failed: 'execute_system' must mention \"steps\" in its contract.");
+            }
+            if (!execLower.Contains("\"op\"") && !execLower.Contains(" op\""))
+            {
+                throw new InvalidOperationException("PromptCatalog validation failed: 'execute_system' must require steps use the \"op\" field (never use 'command').");
+            }
+            if (!execLower.Contains("clarification_needed"))
+            {
+                throw new InvalidOperationException("PromptCatalog validation failed: 'execute_system' must describe the clarification flow (clarification_needed).");
+            }
+            if (!execLower.Contains("\"feature_index\"") || !execLower.Contains("\"feature_type\"") || !execLower.Contains("\"questions\""))
+            {
+                throw new InvalidOperationException("PromptCatalog validation failed: 'execute_system' must mention feature_index, feature_type, and questions for clarifications.");
+            }
+            if (execLower.Contains("\"command\""))
+            {
+                throw new InvalidOperationException("PromptCatalog validation failed: 'execute_system' must use field name 'op' and must not use 'command'.");
             }
         }
 

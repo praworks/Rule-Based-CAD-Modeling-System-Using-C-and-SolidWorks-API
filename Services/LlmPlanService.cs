@@ -16,6 +16,15 @@ namespace AICAD.Services
         {
             public JArray Steps { get; set; }
             public string Thinking { get; set; }
+            public bool ClarificationNeeded { get; set; }
+            public JObject Clarification { get; set; }
+        }
+        public class DecomposeResult
+        {
+            public string Description { get; set; }
+            public bool NeedsDescription { get; set; }
+            public string Question { get; set; }
+            public JArray Features { get; set; }
         }
         public class ClassifyResult
         {
@@ -101,7 +110,7 @@ namespace AICAD.Services
             }
         }
 
-        public static JArray DecomposeByFeature(string userRequest, string runId = null, string requestId = null, int timeoutSeconds = 120)
+        public static DecomposeResult DecomposeByFeature(string userRequest, string runId = null, string requestId = null, int timeoutSeconds = 120)
         {
             try
             {
@@ -110,7 +119,11 @@ namespace AICAD.Services
                 {
                     var tasks = new JArray { localUbTask };
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "Decompose shortcut: detected U-bolt request, using local task"); } catch { }
-                    return tasks;
+                    return new DecomposeResult
+                    {
+                        Description = "U-bolt",
+                        Features = tasks
+                    };
                 }
 
                 var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_DECOMPOSE_SYSTEM_PROMPT, userRequest);
@@ -126,14 +139,15 @@ namespace AICAD.Services
                 }
                 sw.Stop();
                 LogLlmRecv(logger, ctx, "decompose", "priority", reply, sw.ElapsedMilliseconds, 200);
-                var extracted = ExtractJsonArray(reply);
-                if (extracted != null && extracted.Count > 0)
+                var extracted = TryExtractDecomposeResult(reply);
+                if (extracted != null)
                 {
-                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Parsed tasks count={extracted.Count}");
-                    for (int i = 0; i < extracted.Count; i++)
+                    var count = extracted.Features?.Count ?? 0;
+                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Parsed tasks count={count} needs_description={extracted.NeedsDescription}");
+                    for (int i = 0; i < count; i++)
                     {
                         var taskJson = string.Empty;
-                        try { taskJson = Newtonsoft.Json.JsonConvert.SerializeObject(extracted[i], Newtonsoft.Json.Formatting.None); } catch { }
+                        try { taskJson = Newtonsoft.Json.JsonConvert.SerializeObject(extracted.Features[i], Newtonsoft.Json.Formatting.None); } catch { }
                         DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", $"Task[{i}]: " + DiagnosticLogWriter.Truncate(taskJson, 800));
                     }
                     return extracted;
@@ -178,21 +192,25 @@ namespace AICAD.Services
                     return null;
 
                 var planResult = TryExtractFeaturePlan(reply);
-                if (PlanNeedsCorrection(planResult))
-                {
-                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARNING", "Feature plan schema validation failed; retrying with schema correction instructions.");
-                    var correctedPrompt = prompt + SchemaCorrectionSuffix;
-                    reply = SendFeaturePlanAttempt(logger, ctx, label, correctedPrompt, effectiveTimeoutSeconds, runId, requestId, systemPromptOverride);
-                    if (string.IsNullOrWhiteSpace(reply))
-                        return null;
-                    planResult = TryExtractFeaturePlan(reply);
-                    if (PlanNeedsCorrection(planResult))
-                    {
-                        LogPlanParseFailure(runId, requestId, reply);
-                        return null;
-                    }
-                }
+                            if (PlanNeedsCorrection(planResult))
+                            {
+                                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARNING", "Feature plan schema validation failed; retrying with schema correction instructions.");
+                                var correctedPrompt = prompt + SchemaCorrectionSuffix;
+                                reply = SendFeaturePlanAttempt(logger, ctx, label, correctedPrompt, effectiveTimeoutSeconds, runId, requestId, systemPromptOverride);
+                                if (string.IsNullOrWhiteSpace(reply))
+                                    return null;
+                                planResult = TryExtractFeaturePlan(reply);
+                                if (PlanNeedsCorrection(planResult))
+                                {
+                                    LogPlanParseFailure(runId, requestId, reply);
+                                    return null;
+                                }
+                            }
 
+                if (planResult?.ClarificationNeeded == true)
+                {
+                    return planResult;
+                }
                 if (planResult?.Steps != null && planResult.Steps.Count > 0)
                 {
                     var thinkingPreview = DiagnosticLogWriter.Truncate(planResult.Thinking ?? string.Empty, 400);
@@ -237,20 +255,32 @@ namespace AICAD.Services
                 return null;
             try
             {
+                var obj = ExtractJsonObject(reply);
+                if (obj != null)
+                {
+                    if (obj.Value<bool?>("clarification_needed") == true)
+                    {
+                        return new FeaturePlanResult
+                        {
+                            ClarificationNeeded = true,
+                            Clarification = obj,
+                            Thinking = obj.Value<string>("thinking") ?? string.Empty
+                        };
+                    }
+                    if (obj["steps"] is JArray arr && arr.Count > 0)
+                    {
+                        var thinking = obj.Value<string>("thinking") ?? string.Empty;
+                        return new FeaturePlanResult
+                        {
+                            Steps = arr,
+                            Thinking = thinking
+                        };
+                    }
+                }
                 var array = ExtractJsonArray(reply);
                 if (array != null && array.Count > 0)
-                    return new FeaturePlanResult { Steps = array };
-                var obj = ExtractJsonObject(reply);
-                if (obj == null)
-                    return null;
-                if (obj["steps"] is JArray arr && arr.Count > 0)
                 {
-                    var thinking = obj.Value<string>("thinking") ?? string.Empty;
-                    return new FeaturePlanResult
-                    {
-                        Steps = arr,
-                        Thinking = thinking
-                    };
+                    return new FeaturePlanResult { Steps = array };
                 }
             }
             catch { }
@@ -259,6 +289,8 @@ namespace AICAD.Services
 
         private static bool PlanNeedsCorrection(FeaturePlanResult planResult)
         {
+            if (planResult?.ClarificationNeeded == true)
+                return false;
             if (planResult?.Steps == null || planResult.Steps.Count == 0)
                 return true;
             foreach (var token in planResult.Steps)
@@ -344,6 +376,10 @@ namespace AICAD.Services
                 var promptText = prompt;
                 var normalizedStage = NormalizeStage(stage);
                 var stageKey = string.IsNullOrWhiteSpace(normalizedStage) ? "EXECUTE" : normalizedStage.ToUpperInvariant();
+                var promptKeys = PromptStageRouter.GetKeys(stageKey);
+                var currentCtx = LoggingContext.Current;
+                if (currentCtx != null)
+                    currentCtx.PromptMetadata = new PromptMetadata(promptKeys.Stage, promptKeys.SystemPromptKey, promptKeys.TemplateKey);
                 foreach (var provider in priority)
                 {
                     try
@@ -497,6 +533,45 @@ namespace AICAD.Services
             {
                 return null;
             }
+        }
+
+        private static DecomposeResult TryExtractDecomposeResult(string reply)
+        {
+            if (string.IsNullOrWhiteSpace(reply))
+                return null;
+            try
+            {
+                var obj = ExtractJsonObject(reply);
+                if (obj != null)
+                {
+                    var features = obj["features"] as JArray;
+                    if (features == null)
+                        features = ExtractJsonArray(reply);
+                    if (features == null)
+                        features = new JArray();
+                    var needs = obj.Value<bool?>("needs_description") ?? false;
+                    return new DecomposeResult
+                    {
+                        Description = obj.Value<string>("description") ?? string.Empty,
+                        NeedsDescription = needs,
+                        Question = obj.Value<string>("question") ?? string.Empty,
+                        Features = features
+                    };
+                }
+            }
+            catch { }
+            var arr = ExtractJsonArray(reply);
+            if (arr != null)
+            {
+                return new DecomposeResult
+                {
+                    Description = string.Empty,
+                    NeedsDescription = false,
+                    Question = string.Empty,
+                    Features = arr
+                };
+            }
+            return null;
         }
 
         private static void LogLlmSend(ILogger logger, LoggingContext ctx, string name, string provider, string prompt)

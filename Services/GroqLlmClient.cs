@@ -19,11 +19,14 @@ namespace AICAD.Services
         {
             _client = new GroqClient(apiKey);
             _model = !string.IsNullOrWhiteSpace(model) ? model : "llama-3.3-70b-versatile";
-            // Prefer explicit argument, then AICAD_SYSTEM_PROMPT env var, then hard-coded default
-            var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                            ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
-            _systemPrompt = !string.IsNullOrWhiteSpace(systemPrompt) ? systemPrompt
-                           : (!string.IsNullOrWhiteSpace(envPrompt) ? envPrompt : PromptHandler.DEFAULT_SYSTEM_PROMPT);
+                // Prefer explicit argument, then PromptCatalog default, then AICAD_SYSTEM_PROMPT env var as a last resort.
+                // This enforces the catalog (`Config/PromptCatalog.json`) as the single source of truth by default.
+                var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
+                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
+                var catalogDefault = PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                _systemPrompt = !string.IsNullOrWhiteSpace(systemPrompt) ? systemPrompt
+                                    : (!string.IsNullOrWhiteSpace(catalogDefault) ? catalogDefault
+                                        : (!string.IsNullOrWhiteSpace(envPrompt) ? envPrompt : string.Empty));
 
             // Warn if the resolved system prompt is empty to help diagnose missing catalog/env issues
             if (string.IsNullOrWhiteSpace(_systemPrompt))

@@ -248,6 +248,12 @@ namespace AICAD.Services
         {
             var activePrompt = string.IsNullOrWhiteSpace(systemPrompt) ? DEFAULT_DECOMPOSE_SYSTEM_PROMPT : systemPrompt;
             var systemBlock = activePrompt + "\n\n";
+            var template = PromptCatalog.GetTemplate("decompose_template");
+            if (string.IsNullOrWhiteSpace(template))
+            {
+                try { System.Diagnostics.Trace.TraceWarning("BuildFeatureDecomposePrompt: missing 'decompose_template' in PromptCatalog; falling back to simple prompt."); } catch { }
+                return systemBlock + "USER REQUEST:\n" + (userRequest ?? string.Empty) + "\n\nReturn the decomposition JSON object now.";
+            }
             return FormatTemplate("decompose_template",
                 ("systemPrompt", systemBlock),
                 ("userRequest", userRequest ?? string.Empty));

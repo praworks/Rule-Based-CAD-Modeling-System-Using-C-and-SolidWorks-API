@@ -31,9 +31,7 @@
   </ItemGroup>
   <!-- legacy WinForms taskpane removed; no explicit Compile entry required -->
     <ItemGroup>
-    <Reference Include="Newtonsoft.Json">
-      <HintPath>bin\Debug\Newtonsoft.Json.dll</HintPath>
-    </Reference>
+    <!-- Newtonsoft.Json provided by PackageReference above; remove legacy HintPath reference to avoid cross-target conflicts -->
     <!-- Use NuGet PackageReferences for Newtonsoft, MongoDB and SQLite to avoid runtime binding conflicts -->
     <Reference Include="SolidWorks.Interop.sldworks">
       <HintPath>References\SolidWorks.Interop.sldworks.dll</HintPath>
@@ -77,6 +75,12 @@
     <Compile Remove="scripts\**\*.cs" />
     <EmbeddedResource Remove="scripts\**\*" />
     <None Remove="scripts\**\*" />
+    <Compile Remove="Tools\**\*.cs" />
+    <EmbeddedResource Remove="Tools\**\*" />
+    <None Remove="Tools\**\*" />
+    <Compile Remove=".tools\**\*.cs" />
+    <EmbeddedResource Remove=".tools\**\*" />
+    <None Remove=".tools\**\*" />
   </ItemGroup>
   <!-- Ensure runtime presets are copied to the add-in output directory so the WPF taskpane can load them -->
   <ItemGroup>

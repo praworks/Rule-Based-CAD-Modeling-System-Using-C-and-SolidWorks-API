@@ -380,6 +380,12 @@ namespace AICAD.Services
                 var currentCtx = LoggingContext.Current;
                 if (currentCtx != null)
                     currentCtx.PromptMetadata = new PromptMetadata(promptKeys.Stage, promptKeys.SystemPromptKey, promptKeys.TemplateKey);
+                // Detect and abort early if the assembled user prompt is empty to avoid sending empty payloads
+                if (string.IsNullOrWhiteSpace(promptText))
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Empty user prompt for stage={stageKey} templateKey={promptKeys.TemplateKey}. Resolving keys {promptKeys.SystemPromptKey}/{promptKeys.TemplateKey}."); } catch { }
+                    return null;
+                }
                 foreach (var provider in priority)
                 {
                     try
@@ -444,6 +450,19 @@ namespace AICAD.Services
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
                                 var groqSystemPrompt = GetRemoteSystemPromptForStage(stageKey, systemPromptOverride);
+                                // If the resolved system prompt is empty, log and abort to avoid sending an empty 'system' message.
+                                if (string.IsNullOrWhiteSpace(groqSystemPrompt))
+                                {
+                                    try
+                                    {
+                                        var templatesPath = System.Environment.GetEnvironmentVariable("AICAD_PROMPT_TEMPLATES", System.EnvironmentVariableTarget.Process)
+                                                            ?? System.Environment.GetEnvironmentVariable("AICAD_PROMPT_TEMPLATES", System.EnvironmentVariableTarget.User)
+                                                            ?? "Config/PromptCatalog.json";
+                                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Resolved system prompt empty for provider=groq stage={stageKey} systemPromptKey={promptKeys.SystemPromptKey}. Env vars checked: AICAD_{stageKey}_SYSTEM_PROMPT,AICAD_SYSTEM_PROMPT; templates={templatesPath}");
+                                    }
+                                    catch { }
+                                    return null;
+                                }
                                 PromptSelectionValidator.Validate(stageKey, groqSystemPrompt);
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)

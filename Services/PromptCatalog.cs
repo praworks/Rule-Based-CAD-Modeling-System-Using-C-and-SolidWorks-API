@@ -134,7 +134,15 @@ namespace AICAD.Services
                 var node = Catalog.Value;
                 var token = node?[section]?[key];
                 if (token == null)
+                {
+                    try
+                    {
+                        var path = LocateCatalogPath();
+                        System.Diagnostics.Trace.TraceWarning($"PromptCatalog missing key: section={section} key={key} catalogPath={(path ?? "not found")}");
+                    }
+                    catch { }
                     return string.Empty;
+                }
                 return token.Value<string>() ?? string.Empty;
             }
             catch

@@ -78,6 +78,10 @@ if not defined MSBUILD (
 
 echo Found MSBuild: "%MSBUILD%"
 
+REM --- Enable LLM tracing for developer diagnostics ---
+set "AICAD_DEV_LLM_TRACE=1"
+REM PromptCatalog.json in the repository is the authoritative source of prompts
+
 REM --- 5. BUILD SOLUTION ---
 echo.
 REM FIX: Replaced pipe '|' with dash '-' to prevent crash

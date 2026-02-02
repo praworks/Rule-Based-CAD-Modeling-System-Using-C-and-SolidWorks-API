@@ -200,7 +200,10 @@ namespace AICAD.Services
                                 if (!string.IsNullOrWhiteSpace(hint)) DiagnosticLogWriter.LogLine(runId, requestId, "FeatureAdvice", "INFO", hint);
                             }
                             catch { }
-                            throw new Exception($"Unknown op '{op}' (not registered)");
+                            var allowedPreview = string.Join(", ", _operationRegistry.GetRegisteredOperations().Take(30));
+                            var ex = new Exception($"Unknown op '{op}' (not registered). Allowed ops (first 30): {allowedPreview}");
+                            ex.Data["llm_prompt"] = "Allowed ops preview: " + allowedPreview;
+                            throw ex;
                         }
 
                         // Execute the operation through its handler

@@ -36,6 +36,7 @@ namespace AICAD
 
             // Install global exception handlers to capture unhandled managed exceptions and task errors
             InstallGlobalExceptionHandlers();
+            try { PromptCatalog.StartupSelfCheck(); } catch { }
 
             try
             {

@@ -150,6 +150,15 @@ namespace AICAD.Services.Logging
             }
             catch
             {
+                // Some callers double-serialize the payload (JSON string inside a JSON string).
+                // Try to unescape once and parse again so the Exchange view can pretty-print it.
+                try
+                {
+                    var unescaped = JsonConvert.DeserializeObject<string>(payload);
+                    if (!string.IsNullOrWhiteSpace(unescaped))
+                        return JToken.Parse(unescaped);
+                }
+                catch { }
                 return null;
             }
         }
@@ -178,9 +187,21 @@ namespace AICAD.Services.Logging
             builder.AppendLine("PAYLOAD JSON:");
             var formatted = parsedPayload != null
                 ? parsedPayload.ToString(Formatting.Indented)
-                : payload;
+                : TryUnescape(payload);
             builder.AppendLine(TruncateWithNotice(formatted, PayloadMaxLength));
             return builder.ToString().TrimEnd();
+        }
+
+        private static string TryUnescape(string payload)
+        {
+            try
+            {
+                var unescaped = JsonConvert.DeserializeObject<string>(payload);
+                if (!string.IsNullOrWhiteSpace(unescaped))
+                    return unescaped;
+            }
+            catch { }
+            return payload;
         }
 
         private static string TruncateWithNotice(string text, int maxLength)

@@ -7,6 +7,7 @@ using System.Text.RegularExpressions;
 using Newtonsoft.Json.Linq;
 using Microsoft.Extensions.Logging;
 using AICAD.Services.Logging;
+using AICAD.Services.Operations;
 
 namespace AICAD.Services
 {
@@ -39,11 +40,14 @@ namespace AICAD.Services
         private static GeminiClient _geminiClient;
         private static string _geminiKey;
         private static string _geminiModel;
+        private static string _geminiSystemPrompt;
         private static GroqLlmClient _groqClient;
         private static string _groqKey;
         private static string _groqModel;
+        private static string _groqSystemPrompt;
         private static readonly object _rateLimitLock = new object();
         private static readonly Dictionary<string, DateTime> _lastProviderCall = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        internal static Func<string, string> OpRepairResponder; // test hook: if set, used instead of LLM during op repair
 
         private static void EnforceProviderPacing(string provider, int minIntervalMs)
         {
@@ -172,9 +176,12 @@ namespace AICAD.Services
                     return BuildUbBoltPlan(featureTask, modelFacts);
                 }
 
-                var prompt = PromptHandler.BuildFeaturePlanPrompt(PromptHandler.DEFAULT_SYSTEM_PROMPT, featureTask, modelFacts);
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 var systemPromptOverride = PromptHandler.GetExecuteSystemPromptForFeatureType(featureType);
+                var resolvedSystemPrompt = string.IsNullOrWhiteSpace(systemPromptOverride)
+                    ? (string.IsNullOrWhiteSpace(PromptHandler.EXECUTE_SYSTEM_PROMPT) ? PromptHandler.DEFAULT_SYSTEM_PROMPT : PromptHandler.EXECUTE_SYSTEM_PROMPT)
+                    : systemPromptOverride;
+                var prompt = PromptHandler.BuildFeaturePlanPrompt(resolvedSystemPrompt, featureTask, modelFacts);
                 var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = label, StartTimeUtc = DateTimeOffset.UtcNow };
                 var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
                 int effectiveTimeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 120;
@@ -187,25 +194,35 @@ namespace AICAD.Services
                 }
                 catch { }
 
-                var reply = SendFeaturePlanAttempt(logger, ctx, label, prompt, effectiveTimeoutSeconds, runId, requestId, systemPromptOverride);
+                LogPromptSelection(runId, requestId, "EXECUTE", PromptStageRouter.GetKeys("EXECUTE"), resolvedSystemPrompt, PromptCatalog.GetTemplate("execute_template"));
+
+                var reply = SendFeaturePlanAttempt(logger, ctx, label, prompt, effectiveTimeoutSeconds, runId, requestId, resolvedSystemPrompt);
                 if (string.IsNullOrWhiteSpace(reply))
                     return null;
 
                 var planResult = TryExtractFeaturePlan(reply);
                             if (PlanNeedsCorrection(planResult))
                             {
-                                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARNING", "Feature plan schema validation failed; retrying with schema correction instructions.");
+                                var reason = DescribePlanSchemaIssue(planResult);
+                                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARNING", $"Feature plan schema validation failed; retrying with schema correction instructions. reason={reason}");
                                 var correctedPrompt = prompt + SchemaCorrectionSuffix;
-                                reply = SendFeaturePlanAttempt(logger, ctx, label, correctedPrompt, effectiveTimeoutSeconds, runId, requestId, systemPromptOverride);
+                                reply = SendFeaturePlanAttempt(logger, ctx, label, correctedPrompt, effectiveTimeoutSeconds, runId, requestId, resolvedSystemPrompt);
                                 if (string.IsNullOrWhiteSpace(reply))
                                     return null;
                                 planResult = TryExtractFeaturePlan(reply);
                                 if (PlanNeedsCorrection(planResult))
                                 {
+                                    var secondReason = DescribePlanSchemaIssue(planResult);
+                                    try { AddinStatusLogger.Error("LlmPlanService", $"EXECUTE schema invalid after retry: {secondReason}"); } catch { }
+                                    DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Feature plan schema invalid after retry: {secondReason}");
                                     LogPlanParseFailure(runId, requestId, reply);
                                     return null;
                                 }
                             }
+
+                planResult = ValidateAndRepairUnknownOps(planResult, label, prompt, resolvedSystemPrompt, effectiveTimeoutSeconds, runId, requestId);
+                if (planResult == null)
+                    return null;
 
                 if (planResult?.ClarificationNeeded == true)
                 {
@@ -232,7 +249,7 @@ namespace AICAD.Services
             }
         }
 
-        private const string SchemaCorrectionSuffix = "\n\nSchema correction: Return JSON with keys 'thinking' and 'steps'. Each step must use the 'op' field (never 'command').";
+        private const string SchemaCorrectionSuffix = "\n\nSchema correction: Return JSON with a 'steps' array only. Each step must include an 'op' field (never 'command') and may include 'params'. Do not include description/features/needs_description/question.";
 
         private static string SendFeaturePlanAttempt(ILogger logger, LoggingContext ctx, string label, string prompt, int timeoutSeconds, string runId, string requestId, string systemPromptOverride)
         {
@@ -304,6 +321,125 @@ namespace AICAD.Services
                     return true;
             }
             return false;
+        }
+
+        private static string DescribePlanSchemaIssue(FeaturePlanResult planResult)
+        {
+            if (planResult == null)
+                return "plan result is null";
+            if (planResult.ClarificationNeeded)
+                return "received clarification payload instead of execution steps";
+            if (planResult.Steps == null || planResult.Steps.Count == 0)
+                return "missing or empty steps array";
+            int index = 0;
+            foreach (var token in planResult.Steps)
+            {
+                if (!(token is JObject stepObj))
+                    return $"step[{index}] is not an object";
+                if (stepObj["command"] != null)
+                    return $"step[{index}] uses forbidden 'command' field";
+                var opToken = stepObj["op"];
+                if (opToken == null || string.IsNullOrWhiteSpace(opToken.ToString()))
+                    return $"step[{index}] missing 'op'";
+                index++;
+            }
+            return "unknown schema mismatch";
+        }
+
+        private static FeaturePlanResult ValidateAndRepairUnknownOps(FeaturePlanResult planResult, string label, string originalPrompt, string resolvedSystemPrompt, int timeoutSeconds, string runId, string requestId)
+        {
+            var allowedOps = new HashSet<string>(OperationRegistry.CreateDefault().GetRegisteredOperations(), StringComparer.OrdinalIgnoreCase);
+            var unknown = FindUnknownOps(planResult?.Steps, allowedOps);
+            if (unknown.Count == 0)
+                return planResult;
+
+            var allowedPreview = string.Join(", ", allowedOps.Take(30));
+            try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARNING", $"Unknown ops detected in EXECUTE plan: {string.Join(", ", unknown)}. Allowed (first 30): {allowedPreview}"); } catch { }
+            try { AddinStatusLogger.Log("ExecutePlan", $"WARNING: Unknown ops in plan: {string.Join(", ", unknown)}. Allowed: {allowedPreview}"); } catch { }
+
+            var repairPrompt = BuildOpRepairPrompt(originalPrompt, unknown, allowedOps);
+            var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = label + "-repair", StartTimeUtc = DateTimeOffset.UtcNow };
+            var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
+            string reply;
+            if (OpRepairResponder != null)
+            {
+                reply = OpRepairResponder(repairPrompt);
+            }
+            else
+            {
+                reply = SendFeaturePlanAttempt(logger, ctx, label + "-repair", repairPrompt, timeoutSeconds, runId, requestId, resolvedSystemPrompt);
+            }
+            if (string.IsNullOrWhiteSpace(reply))
+                return null;
+
+            var repaired = TryExtractFeaturePlan(reply);
+            if (PlanNeedsCorrection(repaired))
+            {
+                var reason = DescribePlanSchemaIssue(repaired);
+                try { AddinStatusLogger.Error("ExecutePlan", $"Op-repair schema invalid: {reason}"); } catch { }
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Op-repair schema invalid: {reason}");
+                LogPlanParseFailure(runId, requestId, reply);
+                return null;
+            }
+
+            var remainingUnknown = FindUnknownOps(repaired?.Steps, allowedOps);
+            if (remainingUnknown.Count > 0)
+            {
+                var remPreview = string.Join(", ", remainingUnknown);
+                try { AddinStatusLogger.Error("ExecutePlan", $"Op-repair failed; still unknown ops: {remPreview}. Allowed: {allowedPreview}"); } catch { }
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Op-repair failed; unknown ops remain: {remPreview}");
+                return null;
+            }
+
+            return repaired;
+        }
+
+        internal static FeaturePlanResult ValidateAndRepairOpsForTest(FeaturePlanResult planResult, string originalPrompt, string resolvedSystemPrompt, string label, int timeoutSeconds, string runId, string requestId)
+        {
+            return ValidateAndRepairUnknownOps(planResult, label, originalPrompt, resolvedSystemPrompt, timeoutSeconds, runId, requestId);
+        }
+
+        private static List<string> FindUnknownOps(JArray steps, HashSet<string> allowedOps)
+        {
+            var unknown = new List<string>();
+            if (steps == null) return unknown;
+            foreach (var token in steps)
+            {
+                if (token is JObject obj)
+                {
+                    var op = obj.Value<string>("op") ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(op) && !allowedOps.Contains(op))
+                    {
+                        unknown.Add(op);
+                    }
+                }
+            }
+            return unknown.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static string BuildOpRepairPrompt(string originalPrompt, IList<string> unknownOps, HashSet<string> allowedOps)
+        {
+            var allowedList = string.Join(", ", allowedOps);
+            var unknownList = string.Join(", ", unknownOps);
+            var guidance = string.Empty;
+            if (unknownOps.Any(o => o.Equals("create_cube", StringComparison.OrdinalIgnoreCase) || o.Equals("create_box", StringComparison.OrdinalIgnoreCase)))
+            {
+                guidance = "For cubes/boxes, use: select_plane -> sketch_begin -> rectangle_center -> dimension -> sketch_end -> extrude.";
+            }
+            return originalPrompt + "\n\nREPAIR REQUEST:\nThe previous plan used unknown ops: " + unknownList +
+                   ". Allowed ops (use only these, do NOT invent new ops): " + allowedList + ". " + guidance +
+                   "\nRegenerate the steps JSON as { \"steps\": [ { \"op\": \"...\", \"params\": { ... } } ] } using only allowed ops.";
+        }
+
+        private static void LogPromptSelection(string runId, string requestId, string stageKey, StagePromptKeys promptKeys, string systemPrompt, string templateBody)
+        {
+            try
+            {
+                var sysPreview = DiagnosticLogWriter.Truncate(systemPrompt ?? string.Empty, 80);
+                var tplPreview = DiagnosticLogWriter.Truncate(templateBody ?? string.Empty, 80);
+                DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "DEBUG", $"Prompt selection stage={stageKey} sysKey={promptKeys.SystemPromptKey} tplKey={promptKeys.TemplateKey} sysPreview={sysPreview} tplPreview={tplPreview}");
+            }
+            catch { }
         }
 
         private static void LogPlanParseFailure(string runId, string requestId, string reply)
@@ -380,11 +516,32 @@ namespace AICAD.Services
                 var currentCtx = LoggingContext.Current;
                 if (currentCtx != null)
                     currentCtx.PromptMetadata = new PromptMetadata(promptKeys.Stage, promptKeys.SystemPromptKey, promptKeys.TemplateKey);
+                var resolvedLogPrompt = !string.IsNullOrWhiteSpace(systemPromptOverride)
+                    ? systemPromptOverride
+                    : GetDefaultSystemPromptForStage(stageKey);
+                var templateBody = PromptCatalog.GetTemplate(promptKeys.TemplateKey);
+                if (string.IsNullOrWhiteSpace(templateBody))
+                {
+                    if (string.Equals(stageKey, "DECOMPOSE", StringComparison.OrdinalIgnoreCase))
+                        templateBody = PromptCatalog.FALLBACK_DECOMPOSE_TEMPLATE;
+                    else if (string.Equals(stageKey, "EXECUTE", StringComparison.OrdinalIgnoreCase))
+                        templateBody = PromptCatalog.FALLBACK_EXECUTE_TEMPLATE;
+                }
+                LogPromptSelection(runId, requestId, stageKey, promptKeys, resolvedLogPrompt, templateBody);
                 // Detect and abort early if the assembled user prompt is empty to avoid sending empty payloads
                 if (string.IsNullOrWhiteSpace(promptText))
                 {
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Empty user prompt for stage={stageKey} templateKey={promptKeys.TemplateKey}. Resolving keys {promptKeys.SystemPromptKey}/{promptKeys.TemplateKey}."); } catch { }
-                    return null;
+                    if (string.Equals(stageKey, "EXECUTE", StringComparison.OrdinalIgnoreCase))
+                    {
+                        promptText = BuildFallbackExecuteUserPrompt();
+                        if (!string.IsNullOrWhiteSpace(promptText))
+                        {
+                            try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "Using fallback execute_template because assembled EXECUTE prompt was empty."); } catch { }
+                        }
+                    }
+                    if (string.IsNullOrWhiteSpace(promptText))
+                        return null;
                 }
                 foreach (var provider in priority)
                 {
@@ -450,7 +607,7 @@ namespace AICAD.Services
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
                                 var groqSystemPrompt = GetRemoteSystemPromptForStage(stageKey, systemPromptOverride);
-                                // If the resolved system prompt is empty, log and abort to avoid sending an empty 'system' message.
+                                // If the resolved system prompt is empty, log and use fallback default prompt instead
                                 if (string.IsNullOrWhiteSpace(groqSystemPrompt))
                                 {
                                     try
@@ -458,10 +615,17 @@ namespace AICAD.Services
                                         var templatesPath = System.Environment.GetEnvironmentVariable("AICAD_PROMPT_TEMPLATES", System.EnvironmentVariableTarget.Process)
                                                             ?? System.Environment.GetEnvironmentVariable("AICAD_PROMPT_TEMPLATES", System.EnvironmentVariableTarget.User)
                                                             ?? "Config/PromptCatalog.json";
-                                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Resolved system prompt empty for provider=groq stage={stageKey} systemPromptKey={promptKeys.SystemPromptKey}. Env vars checked: AICAD_{stageKey}_SYSTEM_PROMPT,AICAD_SYSTEM_PROMPT; templates={templatesPath}");
+                                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", $"Resolved system prompt empty for provider=groq stage={stageKey} systemPromptKey={promptKeys.SystemPromptKey}. Falling back to default prompt. Env vars checked: AICAD_{stageKey}_SYSTEM_PROMPT,AICAD_SYSTEM_PROMPT; templates={templatesPath}");
                                     }
                                     catch { }
-                                    return null;
+                                    // Use the hardcoded/default prompt for this stage so we don't abort the provider chain.
+                                    groqSystemPrompt = GetDefaultSystemPromptForStage(stageKey);
+                                    if (string.IsNullOrWhiteSpace(groqSystemPrompt))
+                                    {
+                                        groqSystemPrompt = string.Equals(stageKey, "DECOMPOSE", StringComparison.OrdinalIgnoreCase)
+                                            ? PromptCatalog.FALLBACK_DECOMPOSE_SYSTEM_PROMPT
+                                            : PromptCatalog.FALLBACK_EXECUTE_SYSTEM_PROMPT;
+                                    }
                                 }
                                 PromptSelectionValidator.Validate(stageKey, groqSystemPrompt);
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
@@ -656,7 +820,7 @@ namespace AICAD.Services
                 case "DECOMPOSE":
                     return PromptHandler.DEFAULT_DECOMPOSE_SYSTEM_PROMPT;
                 case "EXECUTE":
-                    return PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                    return PromptHandler.EXECUTE_SYSTEM_PROMPT;
                 default:
                     return PromptHandler.DEFAULT_SYSTEM_PROMPT;
             }
@@ -668,10 +832,8 @@ namespace AICAD.Services
                 return overridePrompt;
 
             var key = string.IsNullOrWhiteSpace(stageKey) ? "EXECUTE" : stageKey.ToUpperInvariant();
-            var stagePrompt = TryGetEnvironmentVariable($"LOCAL_LLM_{key}_SYSTEM_PROMPT");
-            if (!string.IsNullOrWhiteSpace(stagePrompt))
-                return stagePrompt;
-
+            // Enforce PromptCatalog.json as the single source of truth for system prompts.
+            // Do not consult environment variables for local system prompts.
             return GetDefaultSystemPromptForStage(key);
         }
 
@@ -681,10 +843,8 @@ namespace AICAD.Services
                 return overridePrompt;
 
             var key = string.IsNullOrWhiteSpace(stageKey) ? "EXECUTE" : stageKey.ToUpperInvariant();
-            var stagePrompt = TryGetEnvironmentVariable($"AICAD_{key}_SYSTEM_PROMPT");
-            if (!string.IsNullOrWhiteSpace(stagePrompt))
-                return stagePrompt;
-
+            // Enforce PromptCatalog.json as the single source of truth for system prompts.
+            // Do not consult environment variables for remote system prompts.
             return GetDefaultSystemPromptForStage(key);
         }
 
@@ -726,12 +886,13 @@ namespace AICAD.Services
             {
                 var same = _geminiClient != null
                            && string.Equals(_geminiKey, key, StringComparison.Ordinal)
-                           && string.Equals(_geminiModel, model, StringComparison.OrdinalIgnoreCase);
+                           && string.Equals(_geminiModel, model, StringComparison.OrdinalIgnoreCase)
+                           && string.Equals(_geminiSystemPrompt ?? string.Empty, systemPrompt ?? string.Empty, StringComparison.Ordinal);
                 if (!same)
                 {
                     try { (_geminiClient as IDisposable)?.Dispose(); } catch { }
                     _geminiClient = new GeminiClient(key, model, systemPrompt);
-                    _geminiKey = key; _geminiModel = model;
+                    _geminiKey = key; _geminiModel = model; _geminiSystemPrompt = systemPrompt ?? string.Empty;
                 }
                 return _geminiClient;
             }
@@ -744,12 +905,13 @@ namespace AICAD.Services
             {
                 var same = _groqClient != null
                            && string.Equals(_groqKey, key, StringComparison.Ordinal)
-                           && string.Equals(_groqModel, model, StringComparison.OrdinalIgnoreCase);
+                           && string.Equals(_groqModel, model, StringComparison.OrdinalIgnoreCase)
+                           && string.Equals(_groqSystemPrompt ?? string.Empty, systemPrompt ?? string.Empty, StringComparison.Ordinal);
                 if (!same)
                 {
                     try { (_groqClient as IDisposable)?.Dispose(); } catch { }
                     _groqClient = new GroqLlmClient(key, model, systemPrompt);
-                    _groqKey = key; _groqModel = model;
+                    _groqKey = key; _groqModel = model; _groqSystemPrompt = systemPrompt ?? string.Empty;
                 }
                 return _groqClient;
             }
@@ -971,6 +1133,22 @@ namespace AICAD.Services
             if (!completed)
                 throw new TimeoutException($"LLM {provider} timed out after {seconds}s");
             return task.Result;
+        }
+
+        private static string BuildFallbackExecuteUserPrompt()
+        {
+            var template = PromptCatalog.GetTemplate("execute_template");
+            if (string.IsNullOrWhiteSpace(template))
+                template = PromptCatalog.FALLBACK_EXECUTE_TEMPLATE;
+
+            var systemBlock = (PromptCatalog.FALLBACK_EXECUTE_SYSTEM_PROMPT ?? string.Empty) + "\n\n";
+            var allowedOps = string.Join(", ", OperationRegistry.CreateDefault().GetRegisteredOperations());
+            return (template ?? string.Empty)
+                .Replace("{systemPrompt}", systemBlock)
+                .Replace("{factsSection}", string.Empty)
+                .Replace("{featureTask}", "{}")
+                .Replace("{featureIndex}", string.Empty)
+                .Replace("{allowedOps}", allowedOps);
         }
     }
 }

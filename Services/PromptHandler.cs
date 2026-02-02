@@ -83,8 +83,8 @@ namespace AICAD.Services
 
         public static PromptTemplateConfig LoadTemplateConfig()
         {
-            var path = Environment.GetEnvironmentVariable("AICAD_PROMPT_TEMPLATES")
-                       ?? DefaultTemplatePath;
+            // Use the repository template path as the single source of truth for prompt templates.
+            var path = DefaultTemplatePath;
 
             if (!File.Exists(path))
                 return PromptTemplateConfig.Empty;
@@ -265,10 +265,24 @@ namespace AICAD.Services
             var systemBlock = (activePrompt ?? string.Empty).TrimEnd() + "\n\n";
             var factsSection = BuildFactsSection(facts);
             var taskJson = featureTask == null ? "{}" : featureTask.ToString();
-            return FormatTemplate("execute_template",
+            var featureIndex = featureTask?.Value<int?>("index")?.ToString() ?? "0";
+            var allowedOps = string.Join(", ", Operations.OperationRegistry.CreateDefault().GetRegisteredOperations());
+            var rendered = FormatTemplate("execute_template",
                 ("systemPrompt", systemBlock),
                 ("factsSection", factsSection),
-                ("featureTask", taskJson));
+                ("featureTask", taskJson),
+                ("featureIndex", featureIndex),
+                ("allowedOps", allowedOps));
+            if (!string.IsNullOrWhiteSpace(rendered))
+                return rendered;
+
+            var fallback = PromptCatalog.FALLBACK_EXECUTE_TEMPLATE;
+            return (fallback ?? string.Empty)
+                .Replace("{systemPrompt}", systemBlock)
+                .Replace("{factsSection}", factsSection)
+                .Replace("{featureTask}", taskJson)
+                .Replace("{featureIndex}", featureIndex)
+                .Replace("{allowedOps}", allowedOps);
         }
 
         public static string GetExecuteSystemPromptForFeatureType(string featureType)

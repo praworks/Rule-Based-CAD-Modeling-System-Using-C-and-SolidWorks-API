@@ -160,6 +160,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
+                if (IsPromptCatalogFatal(ex)) throw;
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "DecomposeByFeature failed: " + ex.Message);
                 return null;
             }
@@ -244,12 +245,13 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
+                if (IsPromptCatalogFatal(ex)) throw;
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "PlanFeatureSubtask failed: " + ex.Message);
                 return null;
             }
         }
 
-        private const string SchemaCorrectionSuffix = "\n\nSchema correction: Return JSON with a 'steps' array only. Each step must include an 'op' field (never 'command') and may include 'params'. Do not include description/features/needs_description/question.";
+        private const string SchemaCorrectionSuffix = "\n\nSchema correction: Return JSON with a 'steps' array only. Each step must include an 'op' field (never 'command') and list operation parameters as top-level keys (no nested 'params'). Do not include description/features/needs_description/question.";
 
         private static string SendFeaturePlanAttempt(ILogger logger, LoggingContext ctx, string label, string prompt, int timeoutSeconds, string runId, string requestId, string systemPromptOverride)
         {
@@ -428,7 +430,7 @@ namespace AICAD.Services
             }
             return originalPrompt + "\n\nREPAIR REQUEST:\nThe previous plan used unknown ops: " + unknownList +
                    ". Allowed ops (use only these, do NOT invent new ops): " + allowedList + ". " + guidance +
-                   "\nRegenerate the steps JSON as { \"steps\": [ { \"op\": \"...\", \"params\": { ... } } ] } using only allowed ops.";
+                   "\nRegenerate the steps JSON as { \"steps\": [ { \"op\": \"...\", \"<param>\": <value> } ] } using only allowed ops. Do NOT use nested \"params\" objects.";
         }
 
         private static void LogPromptSelection(string runId, string requestId, string stageKey, StagePromptKeys promptKeys, string systemPrompt, string templateBody)
@@ -520,28 +522,11 @@ namespace AICAD.Services
                     ? systemPromptOverride
                     : GetDefaultSystemPromptForStage(stageKey);
                 var templateBody = PromptCatalog.GetTemplate(promptKeys.TemplateKey);
-                if (string.IsNullOrWhiteSpace(templateBody))
-                {
-                    if (string.Equals(stageKey, "DECOMPOSE", StringComparison.OrdinalIgnoreCase))
-                        templateBody = PromptCatalog.FALLBACK_DECOMPOSE_TEMPLATE;
-                    else if (string.Equals(stageKey, "EXECUTE", StringComparison.OrdinalIgnoreCase))
-                        templateBody = PromptCatalog.FALLBACK_EXECUTE_TEMPLATE;
-                }
                 LogPromptSelection(runId, requestId, stageKey, promptKeys, resolvedLogPrompt, templateBody);
                 // Detect and abort early if the assembled user prompt is empty to avoid sending empty payloads
                 if (string.IsNullOrWhiteSpace(promptText))
                 {
-                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", $"Empty user prompt for stage={stageKey} templateKey={promptKeys.TemplateKey}. Resolving keys {promptKeys.SystemPromptKey}/{promptKeys.TemplateKey}."); } catch { }
-                    if (string.Equals(stageKey, "EXECUTE", StringComparison.OrdinalIgnoreCase))
-                    {
-                        promptText = BuildFallbackExecuteUserPrompt();
-                        if (!string.IsNullOrWhiteSpace(promptText))
-                        {
-                            try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "Using fallback execute_template because assembled EXECUTE prompt was empty."); } catch { }
-                        }
-                    }
-                    if (string.IsNullOrWhiteSpace(promptText))
-                        return null;
+                    throw new InvalidOperationException($"Assembled prompt text was empty for stage={stageKey} using templateKey={promptKeys.TemplateKey}.");
                 }
                 foreach (var provider in priority)
                 {
@@ -607,25 +592,9 @@ namespace AICAD.Services
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
                                 var groqSystemPrompt = GetRemoteSystemPromptForStage(stageKey, systemPromptOverride);
-                                // If the resolved system prompt is empty, log and use fallback default prompt instead
                                 if (string.IsNullOrWhiteSpace(groqSystemPrompt))
                                 {
-                                    try
-                                    {
-                                        var templatesPath = System.Environment.GetEnvironmentVariable("AICAD_PROMPT_TEMPLATES", System.EnvironmentVariableTarget.Process)
-                                                            ?? System.Environment.GetEnvironmentVariable("AICAD_PROMPT_TEMPLATES", System.EnvironmentVariableTarget.User)
-                                                            ?? "Config/PromptCatalog.json";
-                                        DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", $"Resolved system prompt empty for provider=groq stage={stageKey} systemPromptKey={promptKeys.SystemPromptKey}. Falling back to default prompt. Env vars checked: AICAD_{stageKey}_SYSTEM_PROMPT,AICAD_SYSTEM_PROMPT; templates={templatesPath}");
-                                    }
-                                    catch { }
-                                    // Use the hardcoded/default prompt for this stage so we don't abort the provider chain.
-                                    groqSystemPrompt = GetDefaultSystemPromptForStage(stageKey);
-                                    if (string.IsNullOrWhiteSpace(groqSystemPrompt))
-                                    {
-                                        groqSystemPrompt = string.Equals(stageKey, "DECOMPOSE", StringComparison.OrdinalIgnoreCase)
-                                            ? PromptCatalog.FALLBACK_DECOMPOSE_SYSTEM_PROMPT
-                                            : PromptCatalog.FALLBACK_EXECUTE_SYSTEM_PROMPT;
-                                    }
+                                    throw new InvalidOperationException($"Resolved system prompt empty for provider=groq stage={stageKey} systemPromptKey={promptKeys.SystemPromptKey}.");
                                 }
                                 PromptSelectionValidator.Validate(stageKey, groqSystemPrompt);
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
@@ -660,6 +629,7 @@ namespace AICAD.Services
             }
             catch (Exception ex)
             {
+                if (IsPromptCatalogFatal(ex)) throw;
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "GenerateWithPriority failed: " + ex.Message);
             }
             return null;
@@ -1135,20 +1105,14 @@ namespace AICAD.Services
             return task.Result;
         }
 
-        private static string BuildFallbackExecuteUserPrompt()
+        private static bool IsPromptCatalogFatal(Exception ex)
         {
-            var template = PromptCatalog.GetTemplate("execute_template");
-            if (string.IsNullOrWhiteSpace(template))
-                template = PromptCatalog.FALLBACK_EXECUTE_TEMPLATE;
-
-            var systemBlock = (PromptCatalog.FALLBACK_EXECUTE_SYSTEM_PROMPT ?? string.Empty) + "\n\n";
-            var allowedOps = string.Join(", ", OperationRegistry.CreateDefault().GetRegisteredOperations());
-            return (template ?? string.Empty)
-                .Replace("{systemPrompt}", systemBlock)
-                .Replace("{factsSection}", string.Empty)
-                .Replace("{featureTask}", "{}")
-                .Replace("{featureIndex}", string.Empty)
-                .Replace("{allowedOps}", allowedOps);
+            for (var cur = ex; cur != null; cur = cur.InnerException)
+            {
+                if (cur is InvalidOperationException || cur is System.IO.FileNotFoundException)
+                    return true;
+            }
+            return false;
         }
     }
 }

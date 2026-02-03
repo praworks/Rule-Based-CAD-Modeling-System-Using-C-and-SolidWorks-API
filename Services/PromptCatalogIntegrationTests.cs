@@ -9,33 +9,32 @@ namespace AICAD.Services
     public class PromptCatalogIntegrationTests
     {
         [TestMethod]
-        public void PromptCatalog_Loads_FromTempWorkingDirectory_And_Provides_DecomposePrompt()
+        public void PromptCatalog_Loads_FromExplicitPath()
         {
-            var orig = Directory.GetCurrentDirectory();
-            var tmp = Path.Combine(Path.GetTempPath(), "aicad_test_" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tmp);
+            var tmp = Path.Combine(Path.GetTempPath(), "aicad_integration_" + Guid.NewGuid().ToString("N"));
+            var cfgDir = Path.Combine(tmp, "Config");
+            Directory.CreateDirectory(cfgDir);
+            var path = Path.Combine(cfgDir, "PromptCatalog.json");
+            var json = @"{
+  ""systemPrompts"": {
+    ""decompose_system"": ""Return JSON with features, needs_description, question; no steps."",
+    ""execute_system"": ""Return steps array with op; include clarification_needed, feature_index, feature_type, questions; never command.""
+  },
+  ""templates"": {
+    ""decompose_template"": ""{systemPrompt} {userRequest}"",
+    ""execute_template"": ""{systemPrompt} {featureTask}""
+  }
+}";
+            File.WriteAllText(path, json);
             try
             {
-                Directory.SetCurrentDirectory(tmp);
-
-                // Ensure no Config folder exists in the temp directory
-                var cfg = Path.Combine(tmp, "Config");
-                if (Directory.Exists(cfg))
-                    Directory.Delete(cfg, true);
-
-                // PromptCatalog should load from embedded resource or other fallbacks
-                var decompose = PromptCatalog.GetSystemPrompt("decompose_system");
-                Assert.IsFalse(string.IsNullOrWhiteSpace(decompose), "decompose_system prompt must be present even when working directory lacks Config files");
-
-                // Ensure LlmPlanService default resolution for DECOMPOSE is also non-empty
-                var method = typeof(LlmPlanService).GetMethod("GetDefaultSystemPromptForStage", BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.FlattenHierarchy | BindingFlags.Public);
-                Assert.IsNotNull(method, "GetDefaultSystemPromptForStage method expected");
-                var result = method.Invoke(null, new object[] { "DECOMPOSE" }) as string;
-                Assert.IsFalse(string.IsNullOrWhiteSpace(result), "LlmPlanService default DECOMPOSE system prompt must be non-empty");
+                PromptCatalog.ResetForTests(path);
+                PromptCatalog.EnsureCatalogLoaded();
+                Assert.IsFalse(string.IsNullOrWhiteSpace(PromptCatalog.GetSystemPrompt("decompose_system")), "decompose_system should load from explicit path");
             }
             finally
             {
-                try { Directory.SetCurrentDirectory(orig); } catch { }
+                PromptCatalog.ResetForTests();
                 try { Directory.Delete(tmp, true); } catch { }
             }
         }

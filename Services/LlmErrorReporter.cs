@@ -30,7 +30,7 @@ namespace AICAD.Services
                         var endpoint = Environment.GetEnvironmentVariable(EnvEndpoint, EnvironmentVariableTarget.User)
                                        ?? Environment.GetEnvironmentVariable(EnvEndpoint)
                                        ?? "http://localhost:1234/v1/chat/completions";
-                        // Prefer the configured AICAD_SYSTEM_PROMPT (if any) rather than hard-coding a different system prompt here.
+                        // Use PromptCatalog.json defaults rather than hard-coding a different system prompt here.
                         using (var client = new LocalHttpLlmClient(endpoint, "gpt-3.5-mini"))
                         {
                             var fallbackResp = await client.GenerateAsync(prompt).ConfigureAwait(false);

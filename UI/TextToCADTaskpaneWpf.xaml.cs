@@ -1862,9 +1862,7 @@ namespace AICAD.UI
                                 var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? fallbackModel;
-                                var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                   ?? "";
+                                var systemPrompt = AICAD.Services.PromptHandler.BuildTaskpaneLocalSystemPrompt();
                                 _client = new LocalHttpLlmClient(localEndpoint, preferredModel, systemPrompt);
                                 var dispName = GetEndpointDisplayName(localEndpoint);
                                 AppendStatusLine("[LLM] " + dispName + " client constructed; endpoint=" + localEndpoint + " model=" + preferredModel);
@@ -2071,8 +2069,7 @@ namespace AICAD.UI
                             var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                  ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                  ?? "local-model";
-                            var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                            ?? AICAD.Services.PromptHandler.BuildTaskpaneLocalSystemPrompt();
+                            var systemPrompt = AICAD.Services.PromptHandler.BuildTaskpaneLocalSystemPrompt();
                             
                             var dispTry = GetEndpointDisplayName(localEndpoint);
                             AppendStatusLine("[LLM] Trying " + dispTry + ": " + localEndpoint);
@@ -2937,8 +2934,7 @@ namespace AICAD.UI
                             var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                  ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                  ?? "local-model";
-                            var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                            ?? AICAD.Services.PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                            var systemPrompt = AICAD.Services.PromptHandler.BuildTaskpaneLocalSystemPrompt();
 
                             AppendStatusLine("[LLM] Streaming from Local endpoint");
                             StartProgressPhase("awaiting_response");

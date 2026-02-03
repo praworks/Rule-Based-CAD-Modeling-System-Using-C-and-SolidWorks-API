@@ -39,10 +39,10 @@ namespace AICAD.Services
                     _endpoint += "/v1/chat/completions";
             }
             _model = model ?? throw new ArgumentNullException(nameof(model));
-            // Prefer explicit systemPrompt, then AICAD_SYSTEM_PROMPT env var
-            var envPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                            ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process);
-            _systemPrompt = systemPrompt ?? envPrompt;
+            // Prefer explicit systemPrompt, otherwise use PromptCatalog.json (single source of truth)
+            _systemPrompt = !string.IsNullOrWhiteSpace(systemPrompt)
+                ? systemPrompt
+                : PromptHandler.DEFAULT_SYSTEM_PROMPT;
             // Shared HttpClient already configured with a sensible timeout.
         }
 

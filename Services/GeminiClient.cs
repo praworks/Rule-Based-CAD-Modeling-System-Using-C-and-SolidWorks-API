@@ -32,7 +32,7 @@ namespace AICAD.Services
             catch { }
         }
 
-        // Added optional systemPrompt. If omitted, prefer AICAD_SYSTEM_PROMPT env var.
+        // Added optional systemPrompt. If omitted, use PromptCatalog.json (single source of truth).
         public GeminiClient(string apiKey, string model = null, string systemPrompt = null)
         {
             var envKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User)
@@ -53,9 +53,9 @@ namespace AICAD.Services
             _model = !string.IsNullOrWhiteSpace(envModel) ? envModel.Trim()
                      : (!string.IsNullOrWhiteSpace(model) ? model.Trim() : "gemini-1.0");
 
-            var envPrompt = Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", EnvironmentVariableTarget.User)
-                            ?? Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", EnvironmentVariableTarget.Process);
-            _systemPrompt = systemPrompt ?? envPrompt;
+            _systemPrompt = !string.IsNullOrWhiteSpace(systemPrompt)
+                ? systemPrompt
+                : PromptHandler.DEFAULT_SYSTEM_PROMPT;
 
             try { AddinStatusLogger.Log("GeminiClient", $"Ctor model={_model} apiKeySource={(string.IsNullOrEmpty(_apiKey) ? "none" : "env/ctor")}" ); } catch { }
         }

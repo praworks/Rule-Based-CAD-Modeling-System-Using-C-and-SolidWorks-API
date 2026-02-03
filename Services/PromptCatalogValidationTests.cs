@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Reflection;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
 
@@ -7,9 +8,13 @@ namespace AICAD.Services
     [TestClass]
     public class PromptCatalogValidationTests
     {
+        [TestCleanup]
+        public void ResetCatalog() => PromptCatalog.ResetForTests();
+
         [TestMethod]
         public void ExecutePrompt_EncodesClarificationAndOps()
         {
+            PromptCatalog.EnsureCatalogLoaded();
             var execute = PromptCatalog.GetSystemPrompt("execute_system");
             var decompose = PromptCatalog.GetSystemPrompt("decompose_system");
 
@@ -27,6 +32,7 @@ namespace AICAD.Services
         [TestMethod]
         public void DecomposePrompt_ReturnsDescriptionAndFeatures()
         {
+            PromptCatalog.EnsureCatalogLoaded();
             var decompose = PromptCatalog.GetSystemPrompt("decompose_system");
             Assert.IsFalse(string.IsNullOrWhiteSpace(decompose), "decompose_system prompt must be present");
             Assert.IsTrue(decompose.Contains("needs_description"), "decompose_system must mention needs_description");
@@ -38,6 +44,7 @@ namespace AICAD.Services
         [TestMethod]
         public void ExecuteStage_UsesExecutePrompts_NotDecompose()
         {
+            PromptCatalog.EnsureCatalogLoaded();
             var execute = PromptCatalog.GetSystemPrompt("execute_system");
             var decompose = PromptCatalog.GetSystemPrompt("decompose_system");
             var template = PromptCatalog.GetTemplate("execute_template");
@@ -51,6 +58,117 @@ namespace AICAD.Services
             var defaultExecute = method.Invoke(null, new object[] { "EXECUTE" }) as string;
             Assert.IsFalse(string.IsNullOrWhiteSpace(defaultExecute), "Default EXECUTE system prompt must resolve to a non-empty value");
             Assert.AreEqual(execute, defaultExecute, "Default EXECUTE prompt should resolve to execute_system prompt, not decompose_system");
+        }
+
+        [TestMethod]
+        public void MissingFile_ThrowsFatal()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "aicad_test_missing_" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            var path = Path.Combine(dir, "Config", "PromptCatalog.json");
+            try
+            {
+                PromptCatalog.ResetForTests(path);
+                Assert.ThrowsException<InvalidOperationException>(() => PromptCatalog.EnsureCatalogLoaded(), "Missing PromptCatalog.json should throw");
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [TestMethod]
+        public void InvalidJson_ThrowsFatal()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "aicad_test_invalid_" + Guid.NewGuid().ToString("N"));
+            var cfgDir = Path.Combine(dir, "Config");
+            Directory.CreateDirectory(cfgDir);
+            var path = Path.Combine(cfgDir, "PromptCatalog.json");
+            File.WriteAllText(path, "{ \"systemPrompts\": ");
+            try
+            {
+                PromptCatalog.ResetForTests(path);
+                Assert.ThrowsException<InvalidOperationException>(() => PromptCatalog.EnsureCatalogLoaded(), "Invalid JSON must throw");
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [TestMethod]
+        public void MissingRequiredKey_ThrowsFatal()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "aicad_test_missingkey_" + Guid.NewGuid().ToString("N"));
+            var cfgDir = Path.Combine(dir, "Config");
+            Directory.CreateDirectory(cfgDir);
+            var path = Path.Combine(cfgDir, "PromptCatalog.json");
+            var json = "{ \"systemPrompts\": { \"decompose_system\": \"needs_description features question\" }, \"templates\": { \"decompose_template\": \"{systemPrompt}\", \"execute_template\": \"{systemPrompt}\" } }";
+            File.WriteAllText(path, json);
+            try
+            {
+                PromptCatalog.ResetForTests(path);
+                Assert.ThrowsException<InvalidOperationException>(() => PromptCatalog.EnsureCatalogLoaded(), "Missing execute_system must throw");
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [TestMethod]
+        public void EmptyPromptString_ThrowsFatal()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "aicad_test_empty_" + Guid.NewGuid().ToString("N"));
+            var cfgDir = Path.Combine(dir, "Config");
+            Directory.CreateDirectory(cfgDir);
+            var path = Path.Combine(cfgDir, "PromptCatalog.json");
+            var json = "{ \"systemPrompts\": { \"decompose_system\": \"needs_description features question\", \"execute_system\": \"\" }, \"templates\": { \"decompose_template\": \"{systemPrompt}\", \"execute_template\": \"{systemPrompt}\" } }";
+            File.WriteAllText(path, json);
+            try
+            {
+                PromptCatalog.ResetForTests(path);
+                Assert.ThrowsException<InvalidOperationException>(() => PromptCatalog.EnsureCatalogLoaded(), "Empty execute_system must throw");
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch { }
+            }
+        }
+
+        [TestMethod]
+        public void ValidFile_LoadsSuccessfully()
+        {
+            var dir = Path.Combine(Path.GetTempPath(), "aicad_test_valid_" + Guid.NewGuid().ToString("N"));
+            var cfgDir = Path.Combine(dir, "Config");
+            Directory.CreateDirectory(cfgDir);
+            var path = Path.Combine(cfgDir, "PromptCatalog.json");
+            var json = @"{
+  ""systemPrompts"": {
+    ""decompose_system"": ""Return JSON with features, needs_description, question; no steps or op."",
+    ""execute_system"": ""Return steps array with op; include clarification_needed, feature_index, feature_type, questions; never command.""
+  },
+  ""systemPromptsByFeature"": {
+    ""execute_extrude"": ""Extrude prompt with steps and op only.""
+  },
+  ""templates"": {
+    ""decompose_template"": ""{systemPrompt} {userRequest}"",
+    ""execute_template"": ""{systemPrompt} {allowedOps} {featureTask}""
+  }
+}";
+            File.WriteAllText(path, json);
+            try
+            {
+                PromptCatalog.ResetForTests(path);
+                PromptCatalog.EnsureCatalogLoaded();
+                Assert.IsFalse(string.IsNullOrWhiteSpace(PromptCatalog.GetSystemPrompt("decompose_system")));
+                Assert.IsFalse(string.IsNullOrWhiteSpace(PromptCatalog.GetSystemPrompt("execute_system")));
+                Assert.IsFalse(string.IsNullOrWhiteSpace(PromptCatalog.GetTemplate("execute_template")));
+            }
+            finally
+            {
+                try { Directory.Delete(dir, true); } catch { }
+            }
         }
     }
 }

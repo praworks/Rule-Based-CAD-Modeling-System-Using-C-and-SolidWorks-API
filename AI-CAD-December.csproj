@@ -94,8 +94,6 @@
     <None Update="Config\**\*">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
-    <!-- Embed the primary PromptCatalog so we can fall back to an assembly resource if the file is not present on disk -->
-    <EmbeddedResource Include="Config\PromptCatalog.json" />
   </ItemGroup>
   <ItemGroup>
   </ItemGroup>

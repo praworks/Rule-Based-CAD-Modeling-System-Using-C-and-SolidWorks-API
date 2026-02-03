@@ -101,8 +101,7 @@ namespace AICAD.Services
                                 var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
-                                var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? PromptHandler.BuildClarificationLocalSystemPrompt();
+                                var systemPrompt = PromptHandler.BuildClarificationLocalSystemPrompt();
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -134,9 +133,7 @@ namespace AICAD.Services
                                 var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                                ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                                ?? "gemini-1.5-flash";
-                                var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                     ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var gemSystemPrompt = PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -282,8 +279,7 @@ namespace AICAD.Services
                                 var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
-                                var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? PromptHandler.BuildClarificationLocalSystemPrompt();
+                                var systemPrompt = PromptHandler.BuildClarificationLocalSystemPrompt();
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -307,9 +303,7 @@ namespace AICAD.Services
                                 var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                                ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                                ?? "gemini-1.5-flash";
-                                var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                     ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var gemSystemPrompt = PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -332,9 +326,7 @@ namespace AICAD.Services
                                 var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
-                                var groqSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                      ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var groqSystemPrompt = PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)
                                 {
@@ -558,8 +550,7 @@ namespace AICAD.Services
                                 var preferredModel = System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.User)
                                                      ?? System.Environment.GetEnvironmentVariable("LOCAL_LLM_MODEL", System.EnvironmentVariableTarget.Process)
                                                      ?? "local-model";
-                                var systemPrompt = System.Environment.GetEnvironmentVariable("LOCAL_LLM_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                   ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var systemPrompt = PromptHandler.DEFAULT_SYSTEM_PROMPT;
 
                                 var localClient = GetLocalClient(localEndpoint, preferredModel, systemPrompt);
                                 if (localClient != null)
@@ -590,9 +581,7 @@ namespace AICAD.Services
                                 var gemModel = System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.User)
                                                ?? System.Environment.GetEnvironmentVariable("GEMINI_MODEL", System.EnvironmentVariableTarget.Process)
                                                ?? "gemini-1.5-flash";
-                                var gemSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                     ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                     ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var gemSystemPrompt = PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var gemClient = GetGeminiClient(gemKey, gemModel, gemSystemPrompt);
                                 if (gemClient != null)
                                 {
@@ -622,9 +611,7 @@ namespace AICAD.Services
                                 var groqModel = System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.User)
                                                 ?? System.Environment.GetEnvironmentVariable("GROQ_MODEL", System.EnvironmentVariableTarget.Process)
                                                 ?? "llama-3.3-70b-versatile";
-                                var groqSystemPrompt = System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.User)
-                                                      ?? System.Environment.GetEnvironmentVariable("AICAD_SYSTEM_PROMPT", System.EnvironmentVariableTarget.Process)
-                                                      ?? PromptHandler.DEFAULT_SYSTEM_PROMPT;
+                                var groqSystemPrompt = PromptHandler.DEFAULT_SYSTEM_PROMPT;
                                 var groqClient = GetGroqClient(groqKey, groqModel, groqSystemPrompt);
                                 if (groqClient != null)
                                 {

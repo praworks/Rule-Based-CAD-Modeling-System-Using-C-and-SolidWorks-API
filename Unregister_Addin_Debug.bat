@@ -2,7 +2,7 @@
 setlocal
 REM Run as Administrator
 set REGASM64="C:\Windows\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
-set DLL_PATH="%~dp0bin\Debug\AI-CAD-December.dll"
+set DLL_PATH="%~dp0bin\Debug\net48\AI-CAD-December.dll"
 set CURRENT_GUID={D5B8E2F9-2F3E-4D44-907F-2B983D32AF37}
 
 if not exist %REGASM64% (

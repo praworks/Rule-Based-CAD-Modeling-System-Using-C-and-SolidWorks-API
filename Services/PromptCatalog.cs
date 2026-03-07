@@ -122,13 +122,14 @@ namespace AICAD.Services
             if (templates == null)
                 throw new InvalidOperationException($"PromptCatalog.json at '{path}' is missing the 'templates' object.");
 
-            RequireNonEmpty(sys, "decompose_system", path);
-            RequireNonEmpty(sys, "execute_system", path);
-            RequireNonEmpty(templates, "decompose_template", path);
-            RequireNonEmpty(templates, "execute_template", path);
+            // Ensure required keys exist and resolve their content (file or literal)
+            EnsureNonEmptyResolved(catalog, "systemPrompts", "decompose_system", path);
+            EnsureNonEmptyResolved(catalog, "systemPrompts", "execute_system", path);
+            EnsureNonEmptyResolved(catalog, "templates", "decompose_template", path);
+            EnsureNonEmptyResolved(catalog, "templates", "execute_template", path);
 
-            var decompose = (sys.Value<string>("decompose_system") ?? string.Empty).Trim();
-            var execute = (sys.Value<string>("execute_system") ?? string.Empty).Trim();
+            var decompose = ResolveString(catalog, "systemPrompts", "decompose_system").Trim();
+            var execute = ResolveString(catalog, "systemPrompts", "execute_system").Trim();
 
             var decompLower = decompose.ToLowerInvariant();
             if (decompLower.Contains("\"steps\"") || decompLower.Contains("\"op\"") || decompLower.Contains("thinking"))
@@ -167,8 +168,8 @@ namespace AICAD.Services
             {
                 foreach (var prop in byFeature.Properties())
                 {
-                    var val = prop.Value?.Value<string>() ?? string.Empty;
-                    if (string.IsNullOrWhiteSpace(val))
+                    var resolved = ResolveString(catalog, "systemPromptsByFeature", prop.Name);
+                    if (string.IsNullOrWhiteSpace(resolved))
                     {
                         throw new InvalidOperationException($"PromptCatalog validation failed: systemPromptsByFeature.{prop.Name} must be non-empty.");
                     }
@@ -212,10 +213,63 @@ namespace AICAD.Services
         private static string GetString(string section, string key)
         {
             var node = _catalog.Value;
+            return ResolveString(node, section, key);
+        }
+
+        private static string ResolveString(JObject node, string section, string key)
+        {
             var token = node?[section]?[key];
             if (token == null)
                 return string.Empty;
-            return token.Value<string>() ?? string.Empty;
+            var raw = token.Value<string>() ?? string.Empty;
+            if (IsPathLike(raw))
+            {
+                // Resolve relative to the repository root (parent of Config folder where PromptCatalog.json lives)
+                var catalogDir = Path.GetDirectoryName(_catalogPathUsed) ?? AppContext.BaseDirectory;
+                var repoRoot = Path.GetFullPath(Path.Combine(catalogDir, ".."));
+                var candidate = raw;
+                if (!Path.IsPathRooted(candidate))
+                    candidate = Path.GetFullPath(Path.Combine(repoRoot, raw.Replace('/', Path.DirectorySeparatorChar)));
+
+                if (!File.Exists(candidate))
+                {
+                    var message = $"Prompt file for key '{section}.{key}' not found at '{candidate}'.";
+                    TryLogFatal(message, null);
+                    throw new FileNotFoundException(message, candidate);
+                }
+
+                try
+                {
+                    return File.ReadAllText(candidate);
+                }
+                catch (Exception ex)
+                {
+                    var message = $"Failed to read prompt file for key '{section}.{key}' at '{candidate}': {ex.Message}";
+                    TryLogFatal(message, ex);
+                    throw new InvalidOperationException(message, ex);
+                }
+            }
+            return raw;
+        }
+
+        private static bool IsPathLike(string s)
+        {
+            if (string.IsNullOrWhiteSpace(s)) return false;
+            var t = s.Trim();
+            var lower = t.ToLowerInvariant();
+            if (lower.EndsWith(".txt") || lower.EndsWith(".md")) return true;
+            if (lower.StartsWith("prompts/") || lower.StartsWith("prompts\\")) return true;
+            if (Path.IsPathRooted(t)) return true;
+            return false;
+        }
+
+        private static void EnsureNonEmptyResolved(JObject catalog, string section, string key, string path)
+        {
+            var value = ResolveString(catalog, section, key);
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new InvalidOperationException($"PromptCatalog.json at '{path}' is missing required key '{section}.{key}' or the referenced file is empty.");
+            }
         }
 
         internal static void StartupSelfCheck()

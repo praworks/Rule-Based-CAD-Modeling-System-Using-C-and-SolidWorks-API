@@ -96,5 +96,11 @@
     </None>
   </ItemGroup>
   <ItemGroup>
+    <!-- Copy the prompts folder into the add-in output so PromptCatalog can resolve referenced files at runtime -->
+    <None Include="prompts\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
   </ItemGroup>
 </Project>

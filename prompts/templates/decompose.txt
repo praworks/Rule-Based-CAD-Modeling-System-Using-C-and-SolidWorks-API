@@ -1,0 +1,4 @@
+USER REQUEST:
+{userRequest}
+
+Return only the DECOMPOSE JSON object (no markdown, no prose).

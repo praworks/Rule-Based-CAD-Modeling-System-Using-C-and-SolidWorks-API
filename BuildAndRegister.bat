@@ -115,8 +115,13 @@ echo [STEP 4] Registering COM Add-in...
 if exist "Register_Addin_Debug.bat" (
     REM FIX: Uses cmd /c to prevent Register script from killing this window
     cmd /c call "Register_Addin_Debug.bat"
-    REM Note: RegAsm returns non-zero even on success (warning about unsigned assembly)
-    REM So we ignore the exit code and proceed to launch
+    if %ERRORLEVEL% NEQ 0 (
+        color 4F
+        echo.
+        echo [ERROR] Add-in registration failed.
+        echo Run Register_Addin_Debug.bat manually as Administrator and retry.
+        exit /b %ERRORLEVEL%
+    )
 ) else (
     echo [WARNING] Register_Addin_Debug.bat not found. Skipping...
 )

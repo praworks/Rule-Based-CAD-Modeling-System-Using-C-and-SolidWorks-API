@@ -209,6 +209,7 @@ namespace AICAD.UI
         private string _lastDbStatus;
         private bool? _lastDbLogged;
         private string _lastRunId;
+        private string _lastThinkingSignature;
         private string _pendingRunId;
         private bool _isBuilding = false;
         private System.Threading.CancellationTokenSource _buildCts;
@@ -238,6 +239,7 @@ namespace AICAD.UI
         {
             InitializeComponent();
             _swApp = swApp;
+            try { AICAD.Services.LlmPlanService.ThinkingUpdated += OnThinkingUpdated; } catch { }
 
             // Initialize the background key-log flush timer only if key logging is enabled via env var.
             try
@@ -315,6 +317,7 @@ namespace AICAD.UI
                         source?.RemoveHook(ChildHwndSourceHook);
                     }
                     catch { }
+                    try { AICAD.Services.LlmPlanService.ThinkingUpdated -= OnThinkingUpdated; } catch { }
                 };
                 // If user clicks anywhere in the WPF control, try to move focus into the clicked TextBox
                 // (handles tricky host focus capture when hosted inside SolidWorks WinForms panes).
@@ -2385,6 +2388,7 @@ namespace AICAD.UI
                 {
                     ThinkingContainer.Visibility = Visibility.Visible;
                     ThinkingText.Text = "Reasoning about planes, coordinates, and constraints…";
+                    _lastThinkingSignature = null;
                 }
                 catch { }
                 // Run quick LLM provider health-check and report status before showing communicating state
@@ -3881,6 +3885,50 @@ namespace AICAD.UI
         {
             // Disabled: user requested stopping temporary mirror logging to disk.
             return;
+        }
+
+        private void OnThinkingUpdated(string runId, string featureType, string thinking)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(thinking))
+                    return;
+
+                var activeRun = _lastRunId ?? string.Empty;
+                var incomingRun = runId ?? string.Empty;
+                if (!string.IsNullOrWhiteSpace(activeRun) && !string.IsNullOrWhiteSpace(incomingRun)
+                    && !string.Equals(activeRun, incomingRun, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                var feature = string.IsNullOrWhiteSpace(featureType) ? "feature" : featureType.Trim();
+                var cleanThinking = thinking.Trim();
+                var signature = (incomingRun + "|" + feature + "|" + cleanThinking).ToLowerInvariant();
+                if (string.Equals(signature, _lastThinkingSignature, StringComparison.Ordinal))
+                    return;
+                _lastThinkingSignature = signature;
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        ThinkingContainer.Visibility = Visibility.Visible;
+                        var prefix = "[" + feature + "] ";
+                        if (string.IsNullOrWhiteSpace(ThinkingText.Text)
+                            || ThinkingText.Text.StartsWith("Reasoning about planes", StringComparison.OrdinalIgnoreCase))
+                        {
+                            ThinkingText.Text = prefix + cleanThinking;
+                        }
+                        else
+                        {
+                            ThinkingText.Text = ThinkingText.Text + System.Environment.NewLine + System.Environment.NewLine + prefix + cleanThinking;
+                        }
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
         }
 
         private void AppendDetailedStatus(string category, string message, Exception ex)

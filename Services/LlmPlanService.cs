@@ -13,6 +13,8 @@ namespace AICAD.Services
 {
     internal static class LlmPlanService
     {
+        internal static event Action<string, string, string> ThinkingUpdated;
+
         public class FeaturePlanResult
         {
             public JArray Steps { get; set; }
@@ -227,10 +229,12 @@ namespace AICAD.Services
 
                 if (planResult?.ClarificationNeeded == true)
                 {
+                    EmitThinkingUpdated(runId, label, planResult.Thinking);
                     return planResult;
                 }
                 if (planResult?.Steps != null && planResult.Steps.Count > 0)
                 {
+                    EmitThinkingUpdated(runId, label, planResult.Thinking);
                     var thinkingPreview = DiagnosticLogWriter.Truncate(planResult.Thinking ?? string.Empty, 400);
                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", $"Thinking={thinkingPreview} steps={planResult.Steps.Count}");
                     return new FeaturePlanResult
@@ -249,6 +253,13 @@ namespace AICAD.Services
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "PlanFeatureSubtask failed: " + ex.Message);
                 return null;
             }
+        }
+
+        private static void EmitThinkingUpdated(string runId, string featureType, string thinking)
+        {
+            if (string.IsNullOrWhiteSpace(thinking))
+                return;
+            try { ThinkingUpdated?.Invoke(runId, featureType ?? string.Empty, thinking); } catch { }
         }
 
         private const string SchemaCorrectionSuffix = "\n\nSchema correction: Return JSON with a 'steps' array only. Each step must include an 'op' field (never 'command') and list operation parameters as top-level keys (no nested 'params'). Do not include description/features/needs_description/question.";

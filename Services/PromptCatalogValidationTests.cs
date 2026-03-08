@@ -45,6 +45,36 @@ namespace AICAD.Services
         }
 
         [TestMethod]
+        public void FilletFeaturePromptPath_IsResolvedToPromptBody()
+        {
+            PromptCatalog.EnsureCatalogLoaded();
+            var filletPrompt = PromptCatalog.GetSystemPromptForFeature("execute_fillet");
+
+            Assert.IsFalse(string.IsNullOrWhiteSpace(filletPrompt), "execute_fillet prompt must be present");
+            Assert.IsFalse(
+                filletPrompt.Trim().Equals("prompts/execute/fillet.txt", StringComparison.OrdinalIgnoreCase),
+                "Feature prompt lookup must resolve file paths to file content.");
+            Assert.IsTrue(
+                filletPrompt.IndexOf("\"feature_type\": \"fillet\"", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Resolved execute_fillet prompt should include the fillet clarification contract.");
+        }
+
+        [TestMethod]
+        public void ChamferFeaturePromptPath_IsResolvedToPromptBody()
+        {
+            PromptCatalog.EnsureCatalogLoaded();
+            var chamferPrompt = PromptCatalog.GetSystemPromptForFeature("execute_chamfer");
+
+            Assert.IsFalse(string.IsNullOrWhiteSpace(chamferPrompt), "execute_chamfer prompt must be present");
+            Assert.IsFalse(
+                chamferPrompt.Trim().Equals("prompts/execute/chamfer.txt", StringComparison.OrdinalIgnoreCase),
+                "Feature prompt lookup must resolve file paths to file content.");
+            Assert.IsTrue(
+                chamferPrompt.IndexOf("\"feature_type\": \"chamfer\"", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Resolved execute_chamfer prompt should include the chamfer clarification contract.");
+        }
+
+        [TestMethod]
         public void DecomposePrompt_ReturnsDescriptionAndFeatures()
         {
             PromptCatalog.EnsureCatalogLoaded();

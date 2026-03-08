@@ -30,6 +30,21 @@ namespace AICAD.Services
         }
 
         [TestMethod]
+        public void FeaturePromptPath_IsResolvedToPromptBody()
+        {
+            PromptCatalog.EnsureCatalogLoaded();
+            var featurePrompt = PromptCatalog.GetSystemPromptForFeature("execute_extrude");
+
+            Assert.IsFalse(string.IsNullOrWhiteSpace(featurePrompt), "execute_extrude prompt must be present");
+            Assert.IsFalse(
+                featurePrompt.Trim().Equals("prompts/execute/extrude.txt", StringComparison.OrdinalIgnoreCase),
+                "Feature prompt lookup must resolve file paths to file content.");
+            Assert.IsTrue(
+                featurePrompt.IndexOf("clarification_needed", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Resolved execute_extrude prompt should include the clarification contract.");
+        }
+
+        [TestMethod]
         public void DecomposePrompt_ReturnsDescriptionAndFeatures()
         {
             PromptCatalog.EnsureCatalogLoaded();

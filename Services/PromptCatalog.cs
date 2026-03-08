@@ -21,12 +21,10 @@ namespace AICAD.Services
 
         public static string GetSystemPromptForFeature(string featureKey)
         {
+            if (string.IsNullOrWhiteSpace(featureKey))
+                return string.Empty;
             var node = _catalog.Value;
-            var byFeature = node?["systemPromptsByFeature"] as JObject;
-            if (byFeature == null) return string.Empty;
-            var token = byFeature[featureKey];
-            if (token == null) return string.Empty;
-            return token.Value<string>() ?? string.Empty;
+            return ResolveString(node, "systemPromptsByFeature", featureKey);
         }
 
         public static string GetTemplate(string key)

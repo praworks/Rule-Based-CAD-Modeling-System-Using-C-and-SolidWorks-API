@@ -9,7 +9,8 @@
     "execute_sweep": "prompts/execute/sweep.txt",
     "execute_hole": "prompts/execute/hole.txt",
     "execute_fillet": "prompts/execute/fillet.txt",
-    "execute_chamfer": "prompts/execute/chamfer.txt"
+    "execute_chamfer": "prompts/execute/chamfer.txt",
+    "execute_material": "prompts/execute/material.txt"
   },
   "templates": {
     "decompose_template": "prompts/templates/decompose.txt",

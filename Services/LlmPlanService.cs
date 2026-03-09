@@ -178,6 +178,11 @@ namespace AICAD.Services
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local U-bolt plan"); } catch { }
                     return BuildUbBoltPlan(featureTask, modelFacts);
                 }
+                if (IsMaterialFeature(featureType))
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local material plan"); } catch { }
+                    return BuildMaterialPlan(featureTask, modelFacts);
+                }
 
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 var systemPromptOverride = PromptHandler.GetExecuteSystemPromptForFeatureType(featureType);
@@ -944,6 +949,13 @@ namespace AICAD.Services
                    || featureType.Equals("ubolt", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsMaterialFeature(string featureType)
+        {
+            if (string.IsNullOrWhiteSpace(featureType)) return false;
+            return featureType.Equals("material", StringComparison.OrdinalIgnoreCase)
+                   || featureType.Equals("set_material", StringComparison.OrdinalIgnoreCase);
+        }
+
         private static FeaturePlanResult BuildUbBoltPlan(JObject featureTask, JObject modelFacts)
         {
             var steps = new JArray();
@@ -996,6 +1008,48 @@ namespace AICAD.Services
             {
                 Steps = steps,
                 Thinking = "Sketch a U-shaped path and sweep a circular profile to form the U-bolt."
+            };
+        }
+
+        private static FeaturePlanResult BuildMaterialPlan(JObject featureTask, JObject modelFacts)
+        {
+            var material = featureTask?.Value<string>("material") ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(material))
+            {
+                var intent = featureTask?.Value<string>("intent") ?? string.Empty;
+                MaterialIntentParser.TryExtractMaterial(intent, out material);
+            }
+
+            if (string.IsNullOrWhiteSpace(material))
+            {
+                return new FeaturePlanResult
+                {
+                    ClarificationNeeded = true,
+                    Clarification = new JObject
+                    {
+                        ["clarification_needed"] = true,
+                        ["feature_index"] = featureTask?.Value<int?>("index") ?? 0,
+                        ["feature_type"] = "material",
+                        ["questions"] = new JArray("What material should be applied?")
+                    },
+                    Thinking = "Material name is missing."
+                };
+            }
+
+            var steps = new JArray();
+            if (modelFacts == null)
+                steps.Add(new JObject { ["op"] = "new_part" });
+
+            steps.Add(new JObject
+            {
+                ["op"] = "set_material",
+                ["material"] = material
+            });
+
+            return new FeaturePlanResult
+            {
+                Steps = steps,
+                Thinking = $"Apply material '{material}' to the active part."
             };
         }
 

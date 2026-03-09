@@ -113,6 +113,8 @@ namespace AICAD.Services
                     return result;
                 }
                 var tasks = decomposeResult.Features ?? new JArray();
+                AppendMaterialTaskFromPrompt(tasks, userPrompt, decomposeCtx);
+                EnsureTaskIndexes(tasks);
                 if (tasks.Count == 0)
                 {
                     result.Success = false;
@@ -284,6 +286,58 @@ namespace AICAD.Services
             if (paramsObj == null) return;
             if (paramsObj["op"] == null && paramsObj["type"] != null)
                 paramsObj["op"] = paramsObj["type"];
+        }
+
+        private static void EnsureTaskIndexes(JArray tasks)
+        {
+            if (tasks == null) return;
+            for (int i = 0; i < tasks.Count; i++)
+            {
+                if (tasks[i] is JObject task)
+                    task["index"] = i;
+            }
+        }
+
+        private static bool HasMaterialTask(JArray tasks)
+        {
+            if (tasks == null) return false;
+            foreach (var token in tasks)
+            {
+                var task = token as JObject;
+                if (task == null) continue;
+                var featureType = task.Value<string>("feature_type") ?? string.Empty;
+                if (featureType.Equals("material", StringComparison.OrdinalIgnoreCase)
+                    || featureType.Equals("set_material", StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private void AppendMaterialTaskFromPrompt(JArray tasks, string userPrompt, LoggingContext logContext)
+        {
+            if (tasks == null || HasMaterialTask(tasks)) return;
+            if (!MaterialIntentParser.TryExtractMaterial(userPrompt, out var material)) return;
+
+            var dependsOn = new JArray();
+            if (tasks.Count > 0)
+                dependsOn.Add(tasks.Count - 1);
+
+            tasks.Add(new JObject
+            {
+                ["feature_type"] = "material",
+                ["role"] = "dependent",
+                ["intent"] = $"set material {material}",
+                ["material"] = material,
+                ["depends_on"] = dependsOn
+            });
+
+            try
+            {
+                _logger.LogWithContext(LogLevel.Information, logContext, $"Appended synthetic material task from prompt material={material}");
+            }
+            catch { }
         }
 
         private void PopulateFailureContext(BuildResult result, StepExecutionResult exec, int taskIndex, string runId)

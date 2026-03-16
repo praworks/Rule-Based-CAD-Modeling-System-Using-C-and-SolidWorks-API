@@ -81,6 +81,12 @@
     <Compile Remove=".tools\**\*.cs" />
     <EmbeddedResource Remove=".tools\**\*" />
     <None Remove=".tools\**\*" />
+    <!-- Retire the unused WinForms settings stack so the add-in has a single compiled settings surface. -->
+    <Compile Remove="UI\SettingsDialog.cs" />
+    <Compile Remove="UI\DatabaseTab.cs" />
+    <Compile Remove="UI\LlmTab.cs" />
+    <Compile Remove="UI\SamplesTab.cs" />
+    <Compile Remove="UI\NameEasyTab.cs" />
   </ItemGroup>
   <!-- Ensure runtime presets are copied to the add-in output directory so the WPF taskpane can load them -->
   <ItemGroup>

@@ -10,10 +10,24 @@ class ImportPrompts
     {
         try
         {
-            // MongoDB connection
-            var mongoClient = new MongoClient("mongodb://localhost:27017");
-            var database = mongoClient.GetDatabase("TaskPaneAddin");
-            var collection = database.GetCollection<BsonDocument>("PromptPresetCollection");
+            var mongoUri = args.Length > 0
+                ? args[0]
+                : Environment.GetEnvironmentVariable("PROMPT_PRESET_MONGO_URI")
+                    ?? Environment.GetEnvironmentVariable("MONGODB_URI")
+                    ?? "mongodb://localhost:27017";
+            var dbName = args.Length > 1
+                ? args[1]
+                : Environment.GetEnvironmentVariable("PROMPT_PRESET_MONGO_DB")
+                    ?? Environment.GetEnvironmentVariable("MONGODB_DB")
+                    ?? "TaskPaneAddin";
+            var collectionName = args.Length > 2
+                ? args[2]
+                : Environment.GetEnvironmentVariable("PROMPT_PRESET_MONGO_COLL")
+                    ?? "PromptPresetCollection";
+
+            var mongoClient = new MongoClient(mongoUri);
+            var database = mongoClient.GetDatabase(dbName);
+            var collection = database.GetCollection<BsonDocument>(collectionName);
 
             // Read refactored prompts
             string jsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "RefactoredPrompts.json");

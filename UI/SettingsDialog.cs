@@ -14,8 +14,6 @@ namespace AICAD.UI
     /// </summary>
     public class SettingsDialog : Form
     {
-        private const string RecommendedMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
-
         internal SplitContainer _splitContainer;
         internal FlowLayoutPanel _navPanel;
         internal Panel _contentHost;
@@ -147,12 +145,15 @@ namespace AICAD.UI
             try
             {
                 var current = Environment.GetEnvironmentVariable("MONGODB_URI", EnvironmentVariableTarget.User) ?? "";
-                if (!string.IsNullOrEmpty(current) &&
-                    (current.IndexOf("prashanth", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                     current.IndexOf("cluster2.9abz2oy", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                     current.IndexOf("prashan2011th", StringComparison.OrdinalIgnoreCase) >= 0))
+                if (string.IsNullOrWhiteSpace(current))
                 {
-                    Environment.SetEnvironmentVariable("MONGODB_URI", RecommendedMongoUri, EnvironmentVariableTarget.User);
+                    var legacy = Environment.GetEnvironmentVariable("MONGO_LOG_CONN", EnvironmentVariableTarget.User)
+                        ?? Environment.GetEnvironmentVariable("MONGO_LOG_CONN")
+                        ?? string.Empty;
+                    if (!string.IsNullOrWhiteSpace(legacy))
+                    {
+                        Environment.SetEnvironmentVariable("MONGODB_URI", legacy, EnvironmentVariableTarget.User);
+                    }
                 }
             }
             catch { }
@@ -276,14 +277,6 @@ namespace AICAD.UI
                 _txtMongoUri.Text = Environment.GetEnvironmentVariable("MONGODB_URI", EnvironmentVariableTarget.User) 
                     ?? Environment.GetEnvironmentVariable("MONGO_LOG_CONN", EnvironmentVariableTarget.User) 
                     ?? "";
-
-                if (string.IsNullOrWhiteSpace(_txtMongoUri.Text) ||
-                    _txtMongoUri.Text.IndexOf("prashanth", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    _txtMongoUri.Text.IndexOf("cluster2.9abz2oy", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    _txtMongoUri.Text.IndexOf("prashan2011th", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    _txtMongoUri.Text = RecommendedMongoUri;
-                }
                 _txtMongoDb.Text = Environment.GetEnvironmentVariable("MONGODB_DB", EnvironmentVariableTarget.User) 
                     ?? "TaskPaneAddin";
                 _txtMongoUser.Text = Environment.GetEnvironmentVariable("MONGODB_USER", EnvironmentVariableTarget.User) ?? "";

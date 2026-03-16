@@ -228,9 +228,8 @@ namespace AICAD.UI
         // Provider check caching: run provider health-check only once per session (first Build)
         private bool _providersCheckedOnce = false;
         private bool _providersLastOk = false;
-        // Force using only good_feedback from a specific MongoDB (when true)
+        // Prefer Mongo-backed good_feedback when a connection string is configured.
         private readonly bool _forceUseOnlyGoodFeedback = true;
-        private readonly string _forcedGoodFeedbackMongoUri = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
         // Temporary hard-coded behavior: force local-only mode and disable few-shot when using local LLM.
         // Set to false to restore previous multi-provider behavior.
         private readonly bool FORCE_LOCAL_ONLY = false;
@@ -1356,16 +1355,13 @@ namespace AICAD.UI
         {
             try
             {
-                var baseDir = @"D:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API";
+                var baseDir = ResolveFeedbackStorageDirectory();
                 _fileLogger = new FileDbLogger(baseDir);
 
-                var mongoUri = System.Environment.GetEnvironmentVariable("MONGODB_URI")
-                               ?? System.Environment.GetEnvironmentVariable("MONGO_LOG_CONN")
-                               ?? string.Empty;
-                // If forced mode is enabled, override any env var and use the provided Mongo URI
+                var mongoUri = GetConfiguredMongoUri();
                 if (_forceUseOnlyGoodFeedback && string.IsNullOrWhiteSpace(mongoUri))
                 {
-                    mongoUri = _forcedGoodFeedbackMongoUri;
+                    AppendStatusLine("[DB] good_feedback is enabled, but MONGODB_URI is not configured.");
                 }
                 var mongoDb = System.Environment.GetEnvironmentVariable("MONGODB_DB") ?? "TaskPaneAddin";
                 var mongoCol = System.Environment.GetEnvironmentVariable("MONGODB_COLLECTION") ?? "SW";
@@ -1424,32 +1420,37 @@ namespace AICAD.UI
                     AppendStatusLine("[DB] Logging using File/SQLite at: " + baseDir);
                 }
 
-                // Initialize feedback storage: force use of direct MongoDB connection string
+                // Initialize feedback storage from configured MongoDB connection details.
                 try
                 {
-                    var mongoConn = "mongodb+srv://prashan2011th_db_user:Uobz3oeAutZMRuCl@rule-based-cad-modeling.dlrnkre.mongodb.net/";
-                    try { System.Environment.SetEnvironmentVariable("MONGODB_URI", mongoConn, EnvironmentVariableTarget.User); } catch { }
-
-                    // DataApiService treats a mongodb:// or mongodb+srv:// endpoint as a direct MongoDB connection.
-                    _dataApiService = new DataApiService(mongoConn, null);
-                    AppendStatusLine("[DB] Direct MongoDB initialized for feedback (Data API disabled)");
-
-                    var testTask = _dataApiService.TestConnectionAsync();
-                    testTask.ContinueWith(t =>
+                    var mongoConn = GetConfiguredMongoUri();
+                    if (!string.IsNullOrWhiteSpace(mongoConn))
                     {
-                        Dispatcher.BeginInvoke(new Action(() =>
+                        // DataApiService treats a mongodb:// or mongodb+srv:// endpoint as a direct MongoDB connection.
+                        _dataApiService = new DataApiService(mongoConn, null);
+                        AppendStatusLine("[DB] Direct MongoDB initialized for feedback (Data API disabled)");
+
+                        var testTask = _dataApiService.TestConnectionAsync();
+                        testTask.ContinueWith(t =>
                         {
-                            if (t.Status == TaskStatus.RanToCompletion && t.Result)
+                            Dispatcher.BeginInvoke(new Action(() =>
                             {
-                                SetDbStatus("MongoDB ready", Colors.DarkGreen);
-                                AppendStatusLine("[DB] Direct MongoDB connection verified");
-                            }
-                            else
-                            {
-                                AppendStatusLine("[DB] Direct MongoDB test failed: " + (_dataApiService?.LastError ?? t?.Exception?.Message));
-                            }
-                        }));
-                    }, TaskScheduler.Default);
+                                if (t.Status == TaskStatus.RanToCompletion && t.Result)
+                                {
+                                    SetDbStatus("MongoDB ready", Colors.DarkGreen);
+                                    AppendStatusLine("[DB] Direct MongoDB connection verified");
+                                }
+                                else
+                                {
+                                    AppendStatusLine("[DB] Direct MongoDB test failed: " + (_dataApiService?.LastError ?? t?.Exception?.Message));
+                                }
+                            }));
+                        }, TaskScheduler.Default);
+                    }
+                    else
+                    {
+                        AppendStatusLine("[DB] Direct MongoDB feedback disabled: MONGODB_URI is not configured.");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -1461,6 +1462,42 @@ namespace AICAD.UI
                 SetDbStatus("Init error", Colors.Firebrick);
                 AppendDetailedStatus("DB:init", "exception", ex);
             }
+        }
+
+        private static string ResolveFeedbackStorageDirectory()
+        {
+            var configured = System.Environment.GetEnvironmentVariable("AICAD_DATA_DIR");
+            if (!string.IsNullOrWhiteSpace(configured))
+            {
+                Directory.CreateDirectory(configured);
+                return configured;
+            }
+
+            var localAppData = System.Environment.GetFolderPath(System.Environment.SpecialFolder.LocalApplicationData);
+            if (!string.IsNullOrWhiteSpace(localAppData))
+            {
+                var localPath = Path.Combine(localAppData, "AICAD", "Data");
+                Directory.CreateDirectory(localPath);
+                return localPath;
+            }
+
+            var asmDir = Path.GetDirectoryName(typeof(TextToCADTaskpaneWpf).Assembly.Location);
+            if (!string.IsNullOrWhiteSpace(asmDir))
+            {
+                Directory.CreateDirectory(asmDir);
+                return asmDir;
+            }
+
+            return System.Environment.CurrentDirectory;
+        }
+
+        private static string GetConfiguredMongoUri()
+        {
+            return System.Environment.GetEnvironmentVariable("MONGODB_URI", EnvironmentVariableTarget.User)
+                ?? System.Environment.GetEnvironmentVariable("MONGODB_URI")
+                ?? System.Environment.GetEnvironmentVariable("MONGO_LOG_CONN", EnvironmentVariableTarget.User)
+                ?? System.Environment.GetEnvironmentVariable("MONGO_LOG_CONN")
+                ?? string.Empty;
         }
 
         private void SetRealTimeStatus(string text, Color color)
@@ -3621,9 +3658,11 @@ namespace AICAD.UI
         {
             try
             {
-                if (_fileLogger == null && _mongoLogger == null)
+                var hasWritableLogger = (_mongoLogger != null && _mongoLogger.IsAvailable) || _fileLogger != null;
+                var hasFeedbackBackend = hasWritableLogger || _stepStore != null || (up && _goodStore != null) || (up && _dataApiService != null);
+                if (!hasFeedbackBackend)
                 {
-                    SetDbStatus("Feedback not saved (no logger)", Colors.DarkOrange);
+                    SetDbStatus("Feedback not saved (no feedback backend)", Colors.DarkOrange);
                     return;
                 }
                 var fb = new JObject
@@ -3635,8 +3674,10 @@ namespace AICAD.UI
                     ["model"] = _lastModel ?? string.Empty
                 };
                 bool ok = false;
+                bool attempted = false;
                 if (_mongoLogger != null && _mongoLogger.IsAvailable)
                 {
+                    attempted = true;
                     try
                     {
                         var bdoc = MongoDB.Bson.Serialization.BsonSerializer.Deserialize<MongoDB.Bson.BsonDocument>(AICAD.Services.JsonUtils.SerializeCompact(fb));
@@ -3646,12 +3687,15 @@ namespace AICAD.UI
                 }
                 if (!ok && _fileLogger != null)
                 {
-                    ok = await _fileLogger.InsertAsync("Feedback", fb);
+                    attempted = true;
+                    ok = await _fileLogger.InsertAsync("Feedback", fb) || ok;
                 }
                 if (up && _goodStore != null)
                 {
+                    attempted = true;
                     string plan = ExtractRawJson(_lastReply ?? "{}");
                     var saved = await _goodStore.SaveGoodAsync(_lastRunId, _lastPrompt, _lastModel, plan, null);
+                    ok = saved || ok;
                     if (!saved && !string.IsNullOrWhiteSpace(_goodStore.LastError))
                     {
                         SetDbStatus("GoodStore error: " + _goodStore.LastError, Colors.Firebrick);
@@ -3661,8 +3705,10 @@ namespace AICAD.UI
                 // Post feedback via Data API (no credentials needed from users)
                 if (up && _dataApiService != null)
                 {
+                    attempted = true;
                     string plan = ExtractRawJson(_lastReply ?? "{}");
                     var apiSaved = await _dataApiService.InsertFeedbackAsync(_lastRunId, _lastPrompt, _lastModel, plan, true);
+                    ok = apiSaved || ok;
                     if (apiSaved)
                     {
                         SetDbStatus("✓ Feedback sent to company database", Colors.DarkGreen);
@@ -3676,13 +3722,22 @@ namespace AICAD.UI
 
                 if (_stepStore != null)
                 {
+                    attempted = true;
                     var s2ok = await _stepStore.SaveFeedbackAsync(_lastRunId, up, null);
+                    ok = s2ok || ok;
                     if (!s2ok && !string.IsNullOrWhiteSpace(_stepStore.LastError))
                     {
                         SetDbStatus("StepStore fb error: " + _stepStore.LastError, Colors.Firebrick);
                     }
                 }
-                SetDbStatus(ok ? "Feedback saved" : "Feedback error", ok ? Colors.DarkGreen : Colors.Firebrick);
+                if (!attempted)
+                {
+                    SetDbStatus("Feedback not saved (no active backend)", Colors.DarkOrange);
+                }
+                else
+                {
+                    SetDbStatus(ok ? "Feedback saved" : "Feedback error", ok ? Colors.DarkGreen : Colors.Firebrick);
+                }
             }
             catch (Exception ex)
             {

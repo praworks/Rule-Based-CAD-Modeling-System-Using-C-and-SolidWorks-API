@@ -2,9 +2,17 @@ const { MongoClient } = require('mongodb');
 const fs = require('fs');
 const path = require('path');
 
-const MONGO_URI = 'mongodb://localhost:27017';
-const DB_NAME = 'TaskPaneAddin';
-const COLLECTION_NAME = 'PromptPresetCollection';
+const MONGO_URI = process.argv[2]
+  || process.env.PROMPT_PRESET_MONGO_URI
+  || process.env.MONGODB_URI
+  || 'mongodb://localhost:27017';
+const DB_NAME = process.argv[3]
+  || process.env.PROMPT_PRESET_MONGO_DB
+  || process.env.MONGODB_DB
+  || 'TaskPaneAddin';
+const COLLECTION_NAME = process.argv[4]
+  || process.env.PROMPT_PRESET_MONGO_COLL
+  || 'PromptPresetCollection';
 
 async function importPrompts() {
   const client = new MongoClient(MONGO_URI);

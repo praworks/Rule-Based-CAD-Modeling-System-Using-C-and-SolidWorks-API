@@ -17,6 +17,10 @@ namespace AICAD.UI
 {
     public partial class SettingsWindow : Window
     {
+        private const string DefaultMongoHost = "localhost";
+        private const int DefaultMongoPort = 27017;
+        private const string DefaultMongoDatabase = "TaskPaneAddin";
+
         public class ProviderItem
         {
             public string Id { get; set; }
@@ -174,7 +178,6 @@ namespace AICAD.UI
                 TryUseSecretsClientFile();
                 LoadMongoButton_Click(null, null);
                 LoadApiButton_Click(null, null);
-                LoadDataApiSettings();
                 try { LoadSamplesButton_Click(null, null); } catch { }
                 try { LoadNameEasySettings(); } catch { }
                 try { LoadAccountInfo(); } catch { }
@@ -335,25 +338,13 @@ namespace AICAD.UI
         {
             try
             {
-                MongoConnectionStringTextBox.Text = Environment.GetEnvironmentVariable("MONGODB_URI", EnvironmentVariableTarget.User)
-                    ?? Environment.GetEnvironmentVariable("MONGO_LOG_CONN", EnvironmentVariableTarget.User)
-                    ?? "";
-
-                var current = MongoConnectionStringTextBox.Text ?? string.Empty;
-                if (string.IsNullOrWhiteSpace(current) ||
-                    current.IndexOf("prashanth", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    current.IndexOf("cluster2.9abz2oy", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    current.IndexOf("prashan2011th", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    MongoConnectionStringTextBox.Text = ""; // do not populate private URIs in the new UI
-                }
-
-                MongoDbNameTextBox.Text = Environment.GetEnvironmentVariable("MONGODB_DB", EnvironmentVariableTarget.User) ?? "TaskPaneAddin";
+                var connectionString = GetSavedMongoConnectionString();
+                PopulateMongoFields(connectionString);
+                MongoConnectionStringTextBox.Text = connectionString;
 
                 ApiStatusTextBlock.Text = "";
                 
-                // Update status based on whether connection string is configured
-                if (string.IsNullOrWhiteSpace(MongoConnectionStringTextBox.Text))
+                if (string.IsNullOrWhiteSpace(connectionString))
                 {
                     UpdateDatabaseStatus("local", "Not Connected", null);
                     MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
@@ -374,8 +365,20 @@ namespace AICAD.UI
         {
             try
             {
-                Environment.SetEnvironmentVariable("MONGODB_URI", MongoConnectionStringTextBox.Text ?? "", EnvironmentVariableTarget.User);
-                Environment.SetEnvironmentVariable("MONGODB_DB", MongoDbNameTextBox.Text ?? "", EnvironmentVariableTarget.User);
+                var connectionString = BuildMongoConnectionString(validate: true, out var validationMessage);
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    UpdateDatabaseStatus("local", validationMessage, false);
+                    return;
+                }
+
+                MongoConnectionStringTextBox.Text = connectionString;
+
+                Environment.SetEnvironmentVariable("MONGODB_URI", connectionString, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("MONGO_LOG_CONN", connectionString, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("MONGODB_DB", MongoDbNameTextBox.Text?.Trim() ?? DefaultMongoDatabase, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("MONGODB_USER", IsMongoAuthenticationEnabled() ? DbAuthUsernameTextBox.Text?.Trim() ?? string.Empty : string.Empty, EnvironmentVariableTarget.User);
+                Environment.SetEnvironmentVariable("MONGODB_PW", IsMongoAuthenticationEnabled() ? DbAuthPasswordBox.Password ?? string.Empty : string.Empty, EnvironmentVariableTarget.User);
 
                 UpdateDatabaseStatus("local", "Saved! Restart SolidWorks.", true);
                 MongoLoadedInfoIcon.Visibility = Visibility.Collapsed;
@@ -396,14 +399,15 @@ namespace AICAD.UI
 
             try
             {
-                var conn = MongoConnectionStringTextBox.Text?.Trim() ?? string.Empty;
-                var dbName = MongoDbNameTextBox.Text?.Trim() ?? string.Empty;
+                var conn = BuildMongoConnectionString(validate: true, out var validationMessage);
 
                 if (string.IsNullOrWhiteSpace(conn))
                 {
-                    UpdateDatabaseStatus("local", "No Connection URI entered.", false);
+                    UpdateDatabaseStatus("local", validationMessage, false);
                     return;
                 }
+
+                MongoConnectionStringTextBox.Text = conn;
 
                 try
                 {
@@ -432,6 +436,158 @@ namespace AICAD.UI
             {
                 Dispatcher.Invoke(() => TestMongoButton.IsEnabled = true);
             }
+        }
+
+        private string GetSavedMongoConnectionString()
+        {
+            return Environment.GetEnvironmentVariable("MONGODB_URI", EnvironmentVariableTarget.User)
+                ?? Environment.GetEnvironmentVariable("MONGODB_URI")
+                ?? Environment.GetEnvironmentVariable("MONGO_LOG_CONN", EnvironmentVariableTarget.User)
+                ?? Environment.GetEnvironmentVariable("MONGO_LOG_CONN")
+                ?? string.Empty;
+        }
+
+        private void PopulateMongoFields(string connectionString)
+        {
+            DbHostTextBox.Text = DefaultMongoHost;
+            DbPortTextBox.Text = DefaultMongoPort.ToString();
+            MongoDbNameTextBox.Text = Environment.GetEnvironmentVariable("MONGODB_DB", EnvironmentVariableTarget.User)
+                ?? Environment.GetEnvironmentVariable("MONGODB_DB")
+                ?? DefaultMongoDatabase;
+            DbAuthUsernameTextBox.Text = Environment.GetEnvironmentVariable("MONGODB_USER", EnvironmentVariableTarget.User)
+                ?? Environment.GetEnvironmentVariable("MONGODB_USER")
+                ?? string.Empty;
+            DbAuthPasswordBox.Password = Environment.GetEnvironmentVariable("MONGODB_PW", EnvironmentVariableTarget.User)
+                ?? Environment.GetEnvironmentVariable("MONGODB_PW")
+                ?? string.Empty;
+            SetMongoAuthenticationMode("None");
+
+            if (string.IsNullOrWhiteSpace(connectionString))
+            {
+                return;
+            }
+
+            try
+            {
+                var mongoUrl = MongoUrl.Create(connectionString);
+                if (mongoUrl.Server != null)
+                {
+                    DbHostTextBox.Text = string.IsNullOrWhiteSpace(mongoUrl.Server.Host) ? DefaultMongoHost : mongoUrl.Server.Host;
+                    DbPortTextBox.Text = mongoUrl.Server.Port.ToString();
+                }
+
+                if (!string.IsNullOrWhiteSpace(mongoUrl.DatabaseName))
+                {
+                    MongoDbNameTextBox.Text = mongoUrl.DatabaseName;
+                }
+
+                if (!string.IsNullOrWhiteSpace(mongoUrl.Username))
+                {
+                    DbAuthUsernameTextBox.Text = mongoUrl.Username;
+                    DbAuthPasswordBox.Password = mongoUrl.Password ?? string.Empty;
+                    SetMongoAuthenticationMode("UserPass");
+                }
+            }
+            catch
+            {
+                // Leave the defaults/user overrides in place when an existing URI cannot be expanded into basic fields.
+            }
+        }
+
+        private void SetMongoAuthenticationMode(string modeTag)
+        {
+            if (DbAuthComboBox == null)
+            {
+                return;
+            }
+
+            foreach (var item in DbAuthComboBox.Items.OfType<ComboBoxItem>())
+            {
+                if (string.Equals(item.Tag?.ToString(), modeTag, StringComparison.OrdinalIgnoreCase))
+                {
+                    DbAuthComboBox.SelectedItem = item;
+                    return;
+                }
+            }
+
+            DbAuthComboBox.SelectedIndex = 0;
+        }
+
+        private bool IsMongoAuthenticationEnabled()
+        {
+            return string.Equals(DbAuthComboBox?.SelectedValue?.ToString(), "UserPass", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private string BuildMongoConnectionString(bool validate, out string validationMessage)
+        {
+            validationMessage = string.Empty;
+
+            var rawConnectionString = MongoConnectionStringTextBox.Text?.Trim() ?? string.Empty;
+            if (!string.IsNullOrWhiteSpace(rawConnectionString))
+            {
+                if (rawConnectionString.StartsWith("mongodb://", StringComparison.OrdinalIgnoreCase) ||
+                    rawConnectionString.StartsWith("mongodb+srv://", StringComparison.OrdinalIgnoreCase))
+                {
+                    return rawConnectionString;
+                }
+
+                validationMessage = "Enter a valid MongoDB URI starting with mongodb:// or mongodb+srv://, or clear it to use host and port.";
+                return null;
+            }
+
+            var host = DbHostTextBox.Text?.Trim() ?? string.Empty;
+            var portText = DbPortTextBox.Text?.Trim() ?? string.Empty;
+            var databaseName = MongoDbNameTextBox.Text?.Trim() ?? string.Empty;
+
+            if (string.IsNullOrWhiteSpace(host))
+            {
+                if (validate)
+                {
+                    validationMessage = "Enter a MongoDB server address.";
+                    return null;
+                }
+
+                host = DefaultMongoHost;
+            }
+
+            if (!int.TryParse(portText, out var port) || port <= 0 || port > 65535)
+            {
+                if (validate)
+                {
+                    validationMessage = "Enter a valid MongoDB port number.";
+                    return null;
+                }
+
+                port = DefaultMongoPort;
+            }
+
+            if (string.IsNullOrWhiteSpace(databaseName))
+            {
+                databaseName = DefaultMongoDatabase;
+            }
+
+            var builder = new MongoUrlBuilder
+            {
+                Server = new MongoServerAddress(host, port),
+                DatabaseName = databaseName
+            };
+
+            if (IsMongoAuthenticationEnabled())
+            {
+                var username = DbAuthUsernameTextBox.Text?.Trim() ?? string.Empty;
+                var password = DbAuthPasswordBox.Password ?? string.Empty;
+
+                if (string.IsNullOrWhiteSpace(username))
+                {
+                    validationMessage = "Enter a MongoDB username or switch authentication to None.";
+                    return null;
+                }
+
+                builder.Username = username;
+                builder.Password = password;
+            }
+
+            return builder.ToMongoUrl().ToString();
         }
 
         private void LoadApiButton_Click(object sender, RoutedEventArgs e)
@@ -676,11 +832,13 @@ namespace AICAD.UI
         {
             Dispatcher.Invoke(() =>
             {
-                Ellipse circle = null;
-                TextBlock txt = null;
+                if (dbType != "local")
+                {
+                    return;
+                }
 
-                if (dbType == "local") { circle = MongoStatusCircle; txt = MongoStatusText; }
-                else if (dbType == "cloud") { circle = DataApiStatusCircle; txt = DataApiStatusText; }
+                var circle = MongoStatusCircle;
+                var txt = MongoStatusText;
 
                 if (circle != null && txt != null)
                 {
@@ -938,78 +1096,6 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 System.Windows.MessageBox.Show("Failed to save samples settings: " + ex.Message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void LoadDataApiSettings()
-        {
-            try
-            {
-                var endpoint = Environment.GetEnvironmentVariable("DATA_API_ENDPOINT", EnvironmentVariableTarget.User);
-                var apiKey = Environment.GetEnvironmentVariable("DATA_API_KEY", EnvironmentVariableTarget.User);
-                DataApiEndpointTextBox.Text = string.IsNullOrWhiteSpace(endpoint)
-                    ? "https://data.mongodb-api.com/app/pedkniqj/endpoint/data/v1"
-                    : endpoint;
-                DataApiKeyPasswordBox.Password = string.IsNullOrWhiteSpace(apiKey)
-                    ? "3b65c98d-3603-433d-bf2d-d4840aecc97c"
-                    : apiKey;
-                
-                // Update status based on whether API key is configured
-                if (string.IsNullOrWhiteSpace(apiKey) || apiKey == "3b65c98d-3603-433d-bf2d-d4840aecc97c")
-                {
-                    UpdateDatabaseStatus("cloud", "Not Connected", null);
-                }
-                else
-                {
-                    UpdateDatabaseStatus("cloud", "Ready to test", null);
-                }
-            }
-            catch { }
-        }
-
-        private void SaveDataApi_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                Environment.SetEnvironmentVariable("DATA_API_ENDPOINT", DataApiEndpointTextBox.Text ?? string.Empty, EnvironmentVariableTarget.User);
-                Environment.SetEnvironmentVariable("DATA_API_KEY", DataApiKeyPasswordBox.Password ?? string.Empty, EnvironmentVariableTarget.User);
-
-                UpdateDatabaseStatus("cloud", "Saved! Restart SolidWorks.", true);
-                System.Windows.MessageBox.Show("Data API settings saved. Restart SolidWorks.", "Settings Saved", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (Exception ex)
-            {
-                UpdateDatabaseStatus("cloud", "Save failed: " + ex.Message, false);
-            }
-        }
-
-        private async void TestDataApi_Click(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                UpdateDatabaseStatus("cloud", "Testing connection...", null);
-                var endpoint = DataApiEndpointTextBox.Text?.Trim();
-                var apiKey = DataApiKeyPasswordBox.Password;
-                var service = new DataApiService(endpoint, apiKey);
-                var ok = await service.TestConnectionAsync();
-                if (ok)
-                {
-                    UpdateDatabaseStatus("cloud", "Connection verified!", true);
-                    DataApiErrorDetailsTextBox.Visibility = Visibility.Collapsed;
-                    DataApiErrorDetailsTextBox.Text = string.Empty;
-                }
-                else
-                {
-                    UpdateDatabaseStatus("cloud", "Test failed: see details below", false);
-                    DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
-                    DataApiErrorDetailsTextBox.Text = service.LastError ?? "Unknown error";
-                }
-            }
-            catch (Exception ex)
-            {
-                UpdateDatabaseStatus("cloud", "Test exception: see details below", false);
-                DataApiErrorDetailsTextBox.Visibility = Visibility.Visible;
-                DataApiErrorDetailsTextBox.Text = ex.ToString();
             }
         }
 

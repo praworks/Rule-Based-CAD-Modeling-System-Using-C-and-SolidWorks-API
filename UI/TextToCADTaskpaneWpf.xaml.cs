@@ -1357,6 +1357,12 @@ namespace AICAD.UI
             {
                 var baseDir = ResolveFeedbackStorageDirectory();
                 _fileLogger = new FileDbLogger(baseDir);
+                var fileGoodStore = new FileGoodFeedbackStore(baseDir);
+                FileStepStore fileStepStore = null;
+                if (!_forceUseOnlyGoodFeedback)
+                {
+                    fileStepStore = new FileStepStore(baseDir);
+                }
 
                 var mongoUri = GetConfiguredMongoUri();
                 if (_forceUseOnlyGoodFeedback && string.IsNullOrWhiteSpace(mongoUri))
@@ -1377,11 +1383,10 @@ namespace AICAD.UI
                 }
                 if (_goodStore == null)
                 {
-                    try { _goodStore = new SqliteFeedbackStore(baseDir); }
-                    catch (Exception ex) { AppendStatusLine("[DB:init] SqliteFeedbackStore ctor exception: " + ex.Message); _goodStore = new FileGoodFeedbackStore(baseDir); }
+                    _goodStore = fileGoodStore;
+                    AppendStatusLine("[DB] Using file fallback for good feedback at: " + baseDir);
                 }
 
-                // If forcing only good_feedback, do not initialize StepStore (we'll use only the good feedback store)
                 if (!_forceUseOnlyGoodFeedback)
                 {
                     if (!string.IsNullOrWhiteSpace(mongoUri))
@@ -1391,12 +1396,13 @@ namespace AICAD.UI
                     }
                     if (_stepStore == null)
                     {
-                        try { _stepStore = new SqliteStepStore(baseDir); }
-                        catch (Exception ex) { AppendStatusLine("[DB:init] SqliteStepStore ctor exception: " + ex.Message); }
+                        _stepStore = fileStepStore;
+                        AppendStatusLine("[DB] Using file fallback for run history at: " + baseDir);
                     }
                 }
 
-                if (_mongoLogger != null && _mongoLogger.IsAvailable)
+                var usingMongo = _mongoLogger != null && _mongoLogger.IsAvailable;
+                if (usingMongo)
                 {
                     SetDbStatus("MongoDB ready", Colors.DarkGreen);
                     try
@@ -1411,13 +1417,14 @@ namespace AICAD.UI
                 }
                 else if (!string.IsNullOrWhiteSpace(_mongoLogger?.LastError))
                 {
-                    SetDbStatus("Mongo error: " + _mongoLogger.LastError, Colors.Firebrick);
+                    SetDbStatus("File fallback active", Colors.DarkOrange);
                     AppendStatusLine("[DB] Mongo error: " + _mongoLogger.LastError);
+                    AppendStatusLine("[DB] Falling back to file storage at: " + baseDir);
                 }
                 else
                 {
-                    SetDbStatus("File/SQLite ready", Colors.DarkGreen);
-                    AppendStatusLine("[DB] Logging using File/SQLite at: " + baseDir);
+                    SetDbStatus("File fallback active", Colors.DarkOrange);
+                    AppendStatusLine("[DB] Using file storage fallback at: " + baseDir);
                 }
 
                 // Initialize feedback storage from configured MongoDB connection details.

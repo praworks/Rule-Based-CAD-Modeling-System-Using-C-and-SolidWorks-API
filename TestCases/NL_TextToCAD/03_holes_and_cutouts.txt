@@ -1,0 +1,10 @@
+TC021 Create a 120 mm x 80 mm x 10 mm plate with a 20 mm diameter hole at the center.
+TC022 Make a 140 mm x 90 mm x 12 mm plate with four 10 mm diameter through holes, one near each corner, each hole center 15 mm from the two nearest edges.
+TC023 Create a circular flange 100 mm in diameter and 12 mm thick with a 30 mm center hole.
+TC024 Build a 150 mm x 60 mm x 10 mm bar with two 12 mm diameter through holes on the centerline, each 20 mm from an end.
+TC025 Create a 100 mm x 50 mm x 8 mm plate with a rectangular window cutout 40 mm x 20 mm at the center.
+TC026 Make a 90 mm x 90 mm x 12 mm plate with two 16 mm diameter holes on the horizontal centerline, spaced 40 mm apart.
+TC027 Create a 130 mm x 70 mm x 10 mm plate with one 25 mm diameter center hole and two 8 mm diameter mounting holes 20 mm from the left and right edges.
+TC028 Build a 110 mm x 70 mm x 30 mm block with a blind hole 18 mm in diameter and 20 mm deep at the center of the top face.
+TC029 Create a 160 mm x 100 mm x 10 mm plate with a centered rectangular cutout 60 mm x 30 mm and two 10 mm holes on the vertical centerline, one above and one below the cutout.
+TC030 Make a rectangular plate 120 mm x 60 mm x 8 mm with a centered through cutout 50 mm long and 15 mm wide.

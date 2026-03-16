@@ -31,6 +31,8 @@ namespace AICAD.UI
 {
     public partial class TextToCADTaskpaneWpf : UserControl
     {
+        private const string NlTestCaseFolderRelativePath = @"TestCases\NL_TextToCAD";
+
         // Throttle native focus calls to avoid focus-fighting loops
         private DateTime _lastEnsureNativeFocusUtc = DateTime.MinValue;
         private readonly object _ensureNativeFocusLock = new object();
@@ -719,6 +721,16 @@ namespace AICAD.UI
                 // ensure dropdown always has a default entry so UI isn't empty
                 try { shapePreset.Items.Clear(); shapePreset.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "— none —" }); shapePreset.SelectedIndex = 0; } catch { }
 
+                try
+                {
+                    var addedTestCases = AddNlTestCasesToPromptDropdown(sb);
+                    sb.AppendLine($"[{DateTime.UtcNow:O}] Added {addedTestCases} NL test cases to combo");
+                }
+                catch (Exception ex)
+                {
+                    sb.AppendLine($"[{DateTime.UtcNow:O}] NL test case load failed: {ex.Message}");
+                }
+
                 // Attempt to load from MongoDB if environment variable is provided
                 try
                 {
@@ -855,13 +867,11 @@ namespace AICAD.UI
                 if (_promptPresets != null)
                 {
                     sb.AppendLine($"[{DateTime.UtcNow:O}] Populating combo with {_promptPresets.Count} presets");
-                    shapePreset.Items.Clear();
-                    shapePreset.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = "— none —" });
                     foreach (var it in _promptPresets)
                     {
                         var id = it["id"]?.ToString() ?? "";
                         var desc = it["description"]?.ToString() ?? "";
-                        var display = string.IsNullOrWhiteSpace(id) ? desc : ($"{id} - {desc}");
+                        var display = string.IsNullOrWhiteSpace(id) ? $"Preset | {desc}" : ($"Preset | {id} - {desc}");
                         var cbi = new System.Windows.Controls.ComboBoxItem { Content = display, Tag = it };
                         shapePreset.Items.Add(cbi);
                         sb.AppendLine($"[{DateTime.UtcNow:O}] Added item: {display} (tag set)");
@@ -3991,6 +4001,118 @@ namespace AICAD.UI
                 }), System.Windows.Threading.DispatcherPriority.Background);
             }
             catch { }
+        }
+
+        private int AddNlTestCasesToPromptDropdown(StringBuilder sb)
+        {
+            var added = 0;
+            var folder = TryResolveNlTestCaseFolder(sb);
+            if (string.IsNullOrWhiteSpace(folder) || !Directory.Exists(folder))
+            {
+                sb.AppendLine($"[{DateTime.UtcNow:O}] NL test case folder not found.");
+                return 0;
+            }
+
+            sb.AppendLine($"[{DateTime.UtcNow:O}] Loading NL test cases from: {folder}");
+            foreach (var file in Directory.GetFiles(folder, "*.txt").OrderBy(Path.GetFileName))
+            {
+                if (string.Equals(Path.GetFileName(file), "00_INDEX.txt", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                var category = Path.GetFileNameWithoutExtension(file) ?? "NL";
+                var lines = File.ReadAllLines(file);
+                foreach (var raw in lines)
+                {
+                    var line = (raw ?? string.Empty).Trim();
+                    if (string.IsNullOrWhiteSpace(line) || !line.StartsWith("TC", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var firstSpace = line.IndexOf(' ');
+                    var id = firstSpace > 0 ? line.Substring(0, firstSpace).Trim() : line;
+                    var promptText = firstSpace > 0 ? line.Substring(firstSpace + 1).Trim() : string.Empty;
+                    if (string.IsNullOrWhiteSpace(promptText))
+                    {
+                        continue;
+                    }
+
+                    var item = new JObject
+                    {
+                        ["id"] = id,
+                        ["description"] = promptText,
+                        ["prompt"] = promptText,
+                        ["source"] = "nl_test_case",
+                        ["category"] = category
+                    };
+
+                    var display = $"Test Case | {id} - {TrimForDisplay(promptText, 90)}";
+                    shapePreset.Items.Add(new System.Windows.Controls.ComboBoxItem { Content = display, Tag = item });
+                    added++;
+                }
+            }
+
+            return added;
+        }
+
+        private string TryResolveNlTestCaseFolder(StringBuilder sb)
+        {
+            var candidates = new List<string>();
+
+            try
+            {
+                var asmPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                if (!string.IsNullOrWhiteSpace(asmPath))
+                {
+                    var asmDir = Path.GetDirectoryName(asmPath);
+                    if (!string.IsNullOrWhiteSpace(asmDir))
+                    {
+                        candidates.Add(Path.Combine(asmDir, NlTestCaseFolderRelativePath));
+                        candidates.Add(Path.GetFullPath(Path.Combine(asmDir, "..", "..", "..", NlTestCaseFolderRelativePath)));
+                        candidates.Add(Path.GetFullPath(Path.Combine(asmDir, "..", "..", "..", "..", NlTestCaseFolderRelativePath)));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"[{DateTime.UtcNow:O}] Assembly-path test case lookup failed: {ex.Message}");
+            }
+
+            try
+            {
+                var baseDir = AppDomain.CurrentDomain.BaseDirectory ?? System.Environment.CurrentDirectory;
+                candidates.Add(Path.Combine(baseDir, NlTestCaseFolderRelativePath));
+                candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..", NlTestCaseFolderRelativePath)));
+                candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..", "..", NlTestCaseFolderRelativePath)));
+                candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..", "..", "..", NlTestCaseFolderRelativePath)));
+            }
+            catch (Exception ex)
+            {
+                sb.AppendLine($"[{DateTime.UtcNow:O}] BaseDir test case lookup failed: {ex.Message}");
+            }
+
+            foreach (var candidate in candidates.Where(c => !string.IsNullOrWhiteSpace(c)).Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                sb.AppendLine($"[{DateTime.UtcNow:O}] Checking NL test case folder: {candidate}");
+                if (Directory.Exists(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private static string TrimForDisplay(string text, int maxLength)
+        {
+            if (string.IsNullOrWhiteSpace(text) || text.Length <= maxLength)
+            {
+                return text ?? string.Empty;
+            }
+
+            return text.Substring(0, Math.Max(0, maxLength - 3)).TrimEnd() + "...";
         }
 
         private void AppendDetailedStatus(string category, string message, Exception ex)

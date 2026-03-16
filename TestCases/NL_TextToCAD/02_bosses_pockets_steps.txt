@@ -1,0 +1,10 @@
+TC011 Start with a 120 mm x 80 mm x 10 mm plate, then add a centered rectangular boss 60 mm x 30 mm x 15 mm on top.
+TC012 Create a 100 mm x 60 mm x 12 mm base and add a centered circular boss 40 mm in diameter rising 20 mm.
+TC013 Make a 140 mm x 70 mm x 12 mm plate with a centered rectangular pocket 80 mm x 30 mm cut 6 mm deep.
+TC014 Build a 90 mm x 90 mm x 15 mm block and cut a centered circular pocket 50 mm in diameter and 8 mm deep.
+TC015 Create a 110 mm x 50 mm x 10 mm base with a second centered step on top that is 70 mm x 30 mm x 8 mm.
+TC016 Make a rectangular block 100 mm x 60 mm x 30 mm and cut a top pocket 50 mm x 25 mm to a depth of 12 mm.
+TC017 Create a 130 mm x 80 mm x 10 mm plate with two raised pads, each 30 mm x 20 mm x 10 mm, centered in width and placed 25 mm from each end.
+TC018 Build a 100 mm x 40 mm x 20 mm block and add a 25 mm diameter boss on the top center, 15 mm high.
+TC019 Create a 160 mm x 90 mm x 12 mm plate with a centered rectangular through cutout 70 mm x 20 mm.
+TC020 Make a 100 mm x 100 mm x 20 mm block with a centered square pocket 40 mm x 40 mm and 10 mm depth.

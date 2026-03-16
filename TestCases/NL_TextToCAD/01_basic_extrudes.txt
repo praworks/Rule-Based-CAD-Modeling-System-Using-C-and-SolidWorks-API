@@ -1,0 +1,10 @@
+TC001 Create a rectangular plate 100 mm long, 60 mm wide, and 12 mm thick.
+TC002 Make a circular disc 80 mm in diameter and 8 mm thick.
+TC003 Create a square block 50 mm by 50 mm with a height of 40 mm.
+TC004 Build a base plate 120 mm long, 40 mm wide, and 10 mm thick.
+TC005 Create a round spacer with 30 mm outer diameter, 12 mm inner diameter, and 15 mm thickness.
+TC006 Make a flat bar 150 mm long, 25 mm wide, and 6 mm thick.
+TC007 Create a cylinder 45 mm in diameter and 70 mm tall.
+TC008 Build a rectangular block 90 mm long, 35 mm wide, and 25 mm tall.
+TC009 Make a square plate 75 mm by 75 mm with thickness 5 mm.
+TC010 Create a ring with 60 mm outer diameter, 30 mm inner diameter, and 10 mm thickness.

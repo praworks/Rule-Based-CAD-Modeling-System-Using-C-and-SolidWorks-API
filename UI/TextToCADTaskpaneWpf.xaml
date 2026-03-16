@@ -174,7 +174,8 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <ComboBox x:Name="shapePreset" Grid.Column="1" SelectedIndex="0" Height="26" VerticalContentAlignment="Center" Margin="4,0,4,0" />
+            <Label Grid.Column="0" Content="Prompt/Test" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
+            <ComboBox x:Name="shapePreset" Grid.Column="1" SelectedIndex="0" Height="26" VerticalContentAlignment="Center" Margin="4,0,4,0" ToolTip="Select a built-in prompt preset or one of the NL text-to-CAD test cases" />
         </Grid>
 
         <Grid Grid.Row="4" Margin="0,2,0,0">

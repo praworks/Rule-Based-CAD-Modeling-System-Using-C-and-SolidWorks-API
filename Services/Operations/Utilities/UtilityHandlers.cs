@@ -59,9 +59,9 @@ namespace AICAD.Services.Operations.Utilities
                     // Common mappings
                     if (name.IndexOf("xy", StringComparison.OrdinalIgnoreCase) >= 0 || 
                         name.IndexOf("x-y", StringComparison.OrdinalIgnoreCase) >= 0)
-                        candidates.Add("Top Plane");
-                    if (name.IndexOf("xz", StringComparison.OrdinalIgnoreCase) >= 0)
                         candidates.Add("Front Plane");
+                    if (name.IndexOf("xz", StringComparison.OrdinalIgnoreCase) >= 0)
+                        candidates.Add("Top Plane");
                     if (name.IndexOf("yz", StringComparison.OrdinalIgnoreCase) >= 0)
                         candidates.Add("Right Plane");
 

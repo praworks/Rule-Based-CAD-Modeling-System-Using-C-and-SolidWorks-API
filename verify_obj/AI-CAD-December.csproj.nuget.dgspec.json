@@ -1,0 +1,98 @@
+{
+  "format": 1,
+  "restore": {
+    "F:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\AI-CAD-December.csproj": {}
+  },
+  "projects": {
+    "F:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\AI-CAD-December.csproj": {
+      "version": "1.0.0",
+      "restore": {
+        "projectUniqueName": "F:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\AI-CAD-December.csproj",
+        "projectName": "AI-CAD-December",
+        "projectPath": "F:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\AI-CAD-December.csproj",
+        "packagesPath": "C:\\Users\\Prashanth-UOM\\.nuget\\packages\\",
+        "outputPath": "F:\\SolidWorks Project\\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\\verify_obj\\\\",
+        "projectStyle": "PackageReference",
+        "configFilePaths": [
+          "C:\\Users\\Prashanth-UOM\\AppData\\Roaming\\NuGet\\NuGet.Config"
+        ],
+        "originalTargetFrameworks": [
+          "net48"
+        ],
+        "sources": {
+          "https://api.nuget.org/v3/index.json": {}
+        },
+        "frameworks": {
+          "net48": {
+            "targetAlias": "net48",
+            "projectReferences": {}
+          }
+        },
+        "warningProperties": {
+          "warnAsError": [
+            "NU1605"
+          ]
+        },
+        "restoreAuditProperties": {
+          "enableAudit": "true",
+          "auditLevel": "low",
+          "auditMode": "direct"
+        },
+        "SdkAnalysisLevel": "9.0.300"
+      },
+      "frameworks": {
+        "net48": {
+          "targetAlias": "net48",
+          "dependencies": {
+            "Google.Apis.Auth": {
+              "target": "Package",
+              "version": "[1.73.0, )"
+            },
+            "MSTest.TestFramework": {
+              "suppressParent": "All",
+              "target": "Package",
+              "version": "[2.2.10, )"
+            },
+            "Microsoft.CSharp": {
+              "target": "Package",
+              "version": "[4.7.0, )"
+            },
+            "Microsoft.Extensions.Logging": {
+              "target": "Package",
+              "version": "[7.0.0, )"
+            },
+            "Microsoft.Extensions.Logging.Abstractions": {
+              "target": "Package",
+              "version": "[7.0.0, )"
+            },
+            "Microsoft.Web.WebView2": {
+              "target": "Package",
+              "version": "[1.0.3650.58, )"
+            },
+            "MongoDB.Driver": {
+              "target": "Package",
+              "version": "[3.5.2, )"
+            },
+            "Newtonsoft.Json": {
+              "target": "Package",
+              "version": "[13.0.4, )"
+            },
+            "System.Data.SQLite.Core": {
+              "target": "Package",
+              "version": "[1.0.119, )"
+            },
+            "System.Net.Http": {
+              "target": "Package",
+              "version": "[4.3.4, )"
+            },
+            "System.Runtime.CompilerServices.Unsafe": {
+              "target": "Package",
+              "version": "[6.1.2, )"
+            }
+          },
+          "runtimeIdentifierGraphPath": "C:\\Program Files\\dotnet\\sdk\\9.0.307\\RuntimeIdentifierGraph.json"
+        }
+      }
+    }
+  }
+}

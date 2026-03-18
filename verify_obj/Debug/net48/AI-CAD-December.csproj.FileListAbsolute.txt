@@ -1,0 +1,13 @@
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\AI-CAD-December.csproj.AssemblyReference.cache
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\BlankWebView2Window.baml
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\SettingsWindow.baml
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\StatusWindow.baml
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\Theme.baml
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\BlankWebView2Window.g.cs
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\ExchangeWindow.g.cs
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\SettingsWindow.g.cs
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\StatusWindow.g.cs
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\UI\TextToCADTaskpaneWpf.g.cs
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\GeneratedInternalTypeHelper.g.cs
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\AI-CAD-December_MarkupCompile.cache
+F:\SolidWorks Project\Rule-Based-CAD-Modeling-System-Using-C-and-SolidWorks-API\verify_obj\Debug\net48\AI-CAD-December_MarkupCompile.lref

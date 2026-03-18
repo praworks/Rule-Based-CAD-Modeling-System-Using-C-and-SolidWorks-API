@@ -6,7 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <UseWPF>true</UseWPF>
     <ImportWindowsDesktopTargets>true</ImportWindowsDesktopTargets>
-    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);artifacts\**;verify_build\**;verify_obj\**</DefaultItemExcludes>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <RegisterForComInterop>false</RegisterForComInterop>

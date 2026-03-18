@@ -183,6 +183,12 @@ namespace AICAD.Services
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local material plan"); } catch { }
                     return BuildMaterialPlan(featureTask, modelFacts);
                 }
+                var localTopBossPlan = TryBuildTopMountedBossPlan(featureTask, modelFacts);
+                if (localTopBossPlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local top-mounted boss plan"); } catch { }
+                    return localTopBossPlan;
+                }
 
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
                 var systemPromptOverride = PromptHandler.GetExecuteSystemPromptForFeatureType(featureType);
@@ -954,6 +960,54 @@ namespace AICAD.Services
             if (string.IsNullOrWhiteSpace(featureType)) return false;
             return featureType.Equals("material", StringComparison.OrdinalIgnoreCase)
                    || featureType.Equals("set_material", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static FeaturePlanResult TryBuildTopMountedBossPlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null || modelFacts == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var role = featureTask.Value<string>("role") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!featureType.Equals("extrude", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!role.Equals("dependent", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            var lower = intent.ToLowerInvariant();
+            if (!(lower.Contains("on top") || lower.Contains("top face") || lower.Contains("on the top") || lower.Contains("boss on top")))
+                return null;
+
+            var dimMatch = Regex.Match(intent, @"(\d+(?:\.\d+)?)\s*(?:mm)?\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?", RegexOptions.IgnoreCase);
+            if (!dimMatch.Success) return null;
+
+            if (!double.TryParse(dimMatch.Groups[1].Value, out var widthMm)) return null;
+            if (!double.TryParse(dimMatch.Groups[2].Value, out var heightMm)) return null;
+            if (!double.TryParse(dimMatch.Groups[3].Value, out var depthMm)) return null;
+
+            return new FeaturePlanResult
+            {
+                Steps = new JArray
+                {
+                    new JObject { ["op"] = "select_face", ["face"] = "top" },
+                    new JObject { ["op"] = "sketch_begin" },
+                    new JObject
+                    {
+                        ["op"] = "rectangle_center",
+                        ["cx"] = 0,
+                        ["cy"] = 0,
+                        ["w"] = widthMm,
+                        ["h"] = heightMm
+                    },
+                    new JObject { ["op"] = "sketch_end" },
+                    new JObject
+                    {
+                        ["op"] = "extrude",
+                        ["depth"] = depthMm,
+                        ["type"] = "boss"
+                    }
+                },
+                Thinking = $"Select the top face, sketch a centered {widthMm} x {heightMm} mm rectangle, and extrude it {depthMm} mm as a boss."
+            };
         }
 
         private static FeaturePlanResult BuildUbBoltPlan(JObject featureTask, JObject modelFacts)

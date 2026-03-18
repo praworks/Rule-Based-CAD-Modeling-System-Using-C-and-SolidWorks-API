@@ -1081,16 +1081,6 @@ namespace AICAD.UI
         {
             try
             {
-                // Clear placeholder text when first focusing
-                try
-                {
-                    if (string.Equals((prompt.Text ?? string.Empty).Trim(), "Make M10x1.5 100mm Thread bar", StringComparison.OrdinalIgnoreCase))
-                    {
-                        prompt.Text = string.Empty;
-                    }
-                }
-                catch { }
-
                 // Defer keyboard focus to after the mouse event is processed to work around host focus quirks
                 this.Dispatcher.BeginInvoke(new Action(() =>
                 {
@@ -1229,15 +1219,7 @@ namespace AICAD.UI
 
         private void prompt_LostFocus(object sender, RoutedEventArgs e)
         {
-            try
-            {
-                // Keep placeholder behavior: if empty, restore hint text (non-destructive)
-                if (string.IsNullOrWhiteSpace(prompt.Text))
-                {
-                    prompt.Text = "Make M10x1.5 100mm Thread bar";
-                }
-            }
-            catch { }
+            try { } catch { }
         }
 
         private void prompt_PreviewKeyDown(object sender, System.Windows.Input.KeyEventArgs e)

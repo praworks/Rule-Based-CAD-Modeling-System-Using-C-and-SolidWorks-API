@@ -1,0 +1,8 @@
+﻿<?xml version="1.0" encoding="utf-8" standalone="no"?>
+<Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Condition=" '$(ExcludeRestorePackageImports)' != 'true' ">
+    <Import Project="$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\buildTransitive\net46\Stub.System.Data.SQLite.Core.NetFramework.targets" Condition="Exists('$(NuGetPackageRoot)stub.system.data.sqlite.core.netframework\1.0.119\buildTransitive\net46\Stub.System.Data.SQLite.Core.NetFramework.targets')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.extensions.logging.abstractions\7.0.0\buildTransitive\net462\Microsoft.Extensions.Logging.Abstractions.targets" Condition="Exists('$(NuGetPackageRoot)microsoft.extensions.logging.abstractions\7.0.0\buildTransitive\net462\Microsoft.Extensions.Logging.Abstractions.targets')" />
+    <Import Project="$(NuGetPackageRoot)microsoft.web.webview2\1.0.3650.58\buildTransitive\Microsoft.Web.WebView2.targets" Condition="Exists('$(NuGetPackageRoot)microsoft.web.webview2\1.0.3650.58\buildTransitive\Microsoft.Web.WebView2.targets')" />
+  </ImportGroup>
+</Project>

@@ -162,7 +162,7 @@
                            TextWrapping="Wrap"
                            Opacity="0.85"/>
 
-                <TextBox x:Name="prompt" Grid.Row="1" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" Text="Enter prompt..." GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" Style="{StaticResource TextBoxStyle}" Margin="0,0,4,0"/>
+                <TextBox x:Name="prompt" Grid.Row="1" Grid.Column="0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" Padding="6" GotFocus="prompt_GotFocus" LostFocus="prompt_LostFocus" PreviewKeyDown="prompt_PreviewKeyDown" Style="{StaticResource TextBoxStyle}" Margin="0,0,4,0"/>
 
                 <Button x:Name="build" Grid.Row="1" Grid.Column="1" Content="Build 🚀" Height="26" VerticalAlignment="Top" Style="{StaticResource PrimaryButton}"/>
             </Grid>

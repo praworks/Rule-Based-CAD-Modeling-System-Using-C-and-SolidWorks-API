@@ -33,15 +33,39 @@ namespace AICAD.Services.Operations.PartFeatures
 
                 // Alias fallbacks: top/front/right maps to planes; if plane selected, pick nearest face on that plane
                 var fid = faceId.Trim().ToLowerInvariant();
-                if (fid.Contains("top") || fid.Contains("xy") || fid.Contains("x-y"))
+                if (fid.Contains("top"))
+                {
+                    if (TrySelectExtremeFaceOnPlane(model, PlaneKind.Top, true, out string chosen)) return OperationResult.CreateSuccess();
+                }
+                if (fid.Contains("bottom"))
+                {
+                    if (TrySelectExtremeFaceOnPlane(model, PlaneKind.Top, false, out string chosen)) return OperationResult.CreateSuccess();
+                }
+                if (fid.Contains("xy") || fid.Contains("x-y"))
                 {
                     if (TrySelectNearestFaceOnPlane(model, PlaneKind.Top, out string chosen)) return OperationResult.CreateSuccess();
                 }
-                if (fid.Contains("front") || fid.Contains("xz"))
+                if (fid.Contains("front"))
+                {
+                    if (TrySelectExtremeFaceOnPlane(model, PlaneKind.Front, true, out string chosen)) return OperationResult.CreateSuccess();
+                }
+                if (fid.Contains("back"))
+                {
+                    if (TrySelectExtremeFaceOnPlane(model, PlaneKind.Front, false, out string chosen)) return OperationResult.CreateSuccess();
+                }
+                if (fid.Contains("xz"))
                 {
                     if (TrySelectNearestFaceOnPlane(model, PlaneKind.Front, out string chosen)) return OperationResult.CreateSuccess();
                 }
-                if (fid.Contains("right") || fid.Contains("yz"))
+                if (fid.Contains("right"))
+                {
+                    if (TrySelectExtremeFaceOnPlane(model, PlaneKind.Right, true, out string chosen)) return OperationResult.CreateSuccess();
+                }
+                if (fid.Contains("left"))
+                {
+                    if (TrySelectExtremeFaceOnPlane(model, PlaneKind.Right, false, out string chosen)) return OperationResult.CreateSuccess();
+                }
+                if (fid.Contains("yz"))
                 {
                     if (TrySelectNearestFaceOnPlane(model, PlaneKind.Right, out string chosen)) return OperationResult.CreateSuccess();
                 }
@@ -122,8 +146,9 @@ namespace AICAD.Services.Operations.PartFeatures
                 var faces = (object[])liveBody.GetFaces();
                 if (faces == null || faces.Length == 0) return false;
 
-                // Determine comparison coordinate index (0:X,1:Y,2:Z) and direction
-                int coordIndex = plane == PlaneKind.Top ? 2 : plane == PlaneKind.Front ? 1 : 0;
+                // Standard SOLIDWORKS planes:
+                // Front Plane -> XY (normal Z), Top Plane -> XZ (normal Y), Right Plane -> YZ (normal X)
+                int coordIndex = plane == PlaneKind.Top ? 1 : plane == PlaneKind.Front ? 2 : 0;
 
                 double bestDist = double.MaxValue;
                 int bestIdx = -1;
@@ -171,6 +196,74 @@ namespace AICAD.Services.Operations.PartFeatures
                     }
                     catch { }
                 }
+
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private bool TrySelectExtremeFaceOnPlane(IModelDoc2 model, PlaneKind plane, bool preferPositive, out string chosenFaceId)
+        {
+            chosenFaceId = null;
+            try
+            {
+                var part = model as IPartDoc;
+                if (part == null) return false;
+                var bodies = (object[])part.GetBodies2((int)swBodyType_e.swSolidBody, true);
+                if (bodies == null || bodies.Length == 0) return false;
+                var liveBody = bodies[bodies.Length - 1] as IBody2;
+                if (liveBody == null) return false;
+                var faces = (object[])liveBody.GetFaces();
+                if (faces == null || faces.Length == 0) return false;
+
+                int coordIndex = plane == PlaneKind.Top ? 1 : plane == PlaneKind.Front ? 2 : 0;
+                double bestCoord = preferPositive ? double.MinValue : double.MaxValue;
+                int bestIdx = -1;
+
+                for (int i = 0; i < faces.Length; i++)
+                {
+                    try
+                    {
+                        var f = faces[i];
+                        double[] box = null;
+                        try { box = (double[])((dynamic)f).GetBox(); } catch { }
+                        if (box == null || box.Length < 6) continue;
+
+                        double cx = (box[0] + box[3]) / 2.0;
+                        double cy = (box[1] + box[4]) / 2.0;
+                        double cz = (box[2] + box[5]) / 2.0;
+                        double coord = coordIndex == 0 ? cx : coordIndex == 1 ? cy : cz;
+
+                        if ((preferPositive && coord > bestCoord) || (!preferPositive && coord < bestCoord))
+                        {
+                            bestCoord = coord;
+                            bestIdx = i;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (bestIdx < 0) return false;
+
+                SafeClearSelection(model);
+                var selMgr = (SelectionMgr)model.SelectionManager;
+                var selData = selMgr.CreateSelectData();
+                try { selData.Mark = 1; } catch { }
+                try
+                {
+                    var fObj = faces[bestIdx];
+                    try { ((dynamic)fObj).Select4(true, selData); } catch { try { ((dynamic)fObj).Select2(true, selData); } catch { } }
+                    var curSel = model.SelectionManager.GetSelectedObjectCount2(-1);
+                    if (curSel > 0)
+                    {
+                        chosenFaceId = $"face_index_{bestIdx}";
+                        return true;
+                    }
+                }
+                catch { }
 
                 return false;
             }

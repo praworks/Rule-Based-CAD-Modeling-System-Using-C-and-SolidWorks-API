@@ -20,6 +20,7 @@ namespace AICAD.UI
         private const string DefaultMongoHost = "localhost";
         private const int DefaultMongoPort = 27017;
         private const string DefaultMongoDatabase = "TaskPaneAddin";
+        private const string PreferredSwUnitsKey = "PreferredSwUnitSystem";
 
         public class ProviderItem
         {
@@ -193,6 +194,16 @@ namespace AICAD.UI
                     var top = AICAD.Services.SettingsManager.GetBool("StatusWindowTopmost", true);
                     ChkStatusWindowTopmost.IsChecked = top;
                 } catch { }
+                try
+                {
+                    var units = AICAD.Services.SettingsManager.GetString(PreferredSwUnitsKey, "MMGS");
+                    SwUnitsMmgsRadio.IsChecked = !string.Equals(units, "IPS", StringComparison.OrdinalIgnoreCase);
+                    SwUnitsIpsRadio.IsChecked = string.Equals(units, "IPS", StringComparison.OrdinalIgnoreCase);
+                }
+                catch
+                {
+                    if (SwUnitsMmgsRadio != null) SwUnitsMmgsRadio.IsChecked = true;
+                }
             }
             catch { }
         }
@@ -1336,6 +1347,12 @@ namespace AICAD.UI
                 var requireSpec = (ChkRequireSpecClarification.IsChecked == true);
                 AICAD.Services.SettingsManager.SetBool("RequireSpecClarification", requireSpec);
             } catch { }
+            try
+            {
+                var preferredUnits = (SwUnitsIpsRadio.IsChecked == true) ? "IPS" : "MMGS";
+                AICAD.Services.SettingsManager.SetString(PreferredSwUnitsKey, preferredUnits);
+            }
+            catch { }
             System.Windows.MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButton.OK, MessageBoxImage.Information);
         }
 

@@ -28,6 +28,6 @@ Step format (CRITICAL):
 REQUIRED RULES:
 - If feature intent mentions "Top Plane", use {"op":"select_plane","name":"Top Plane"}.
 - Else if it mentions "Front Plane" or "Right Plane", use that plane name.
-- Otherwise default to "Front Plane".
+- Otherwise default to "Top Plane".
 - rectangle_center w/h and extrude depth must come from the feature intent (mm).
 - For a plate like "100x100x10mm", set w=100, h=100, depth=10, cx=0, cy=0.

@@ -27,6 +27,7 @@ namespace AICAD.Services
     internal static class StepExecutor
     {
         private static readonly OperationRegistry _operationRegistry = OperationRegistry.CreateDefault();
+        private const string PreferredSwUnitsKey = "PreferredSwUnitSystem";
 
         /// <summary>
         /// Execute a plan with multiple steps using the operation handler registry
@@ -118,6 +119,7 @@ namespace AICAD.Services
                         result.Log.Add(new JObject { ["step"] = 0, ["op"] = "new_part", ["success"] = true });
                     }
                     int actErr = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr);
+                    ApplyPreferredDocumentUnits(swApp, runId, requestId);
                     sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
                 }
 
@@ -165,6 +167,7 @@ namespace AICAD.Services
                                 result.CreatedNewPart = true;
                                 result.ModelTitle = model.GetTitle();
                                 int actErr = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr);
+                                ApplyPreferredDocumentUnits(swApp, runId, requestId);
                                 sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
                             }
                             log["success"] = true;
@@ -187,6 +190,7 @@ namespace AICAD.Services
                                 result.ModelTitle = model.GetTitle();
                             }
                             int actErr2 = 0; swApp.ActivateDoc3(model.GetTitle(), true, (int)swRebuildOptions_e.swRebuildAll, ref actErr2);
+                            ApplyPreferredDocumentUnits(swApp, runId, requestId);
                             sketchMgr = model.SketchManager; featMgr = model.FeatureManager;
                         }
 
@@ -469,6 +473,25 @@ namespace AICAD.Services
         private static void RequireModel(IModelDoc2 model)
         {
             if (model == null) throw new Exception("Model not initialized (call new_part first)");
+        }
+
+        private static void ApplyPreferredDocumentUnits(ISldWorks swApp, string runId, string requestId)
+        {
+            try
+            {
+                var preferredUnits = SettingsManager.GetString(PreferredSwUnitsKey, "MMGS");
+                if (!UnitManager.SetUnits(swApp, preferredUnits))
+                {
+                    DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Preferred units '{preferredUnits}' were not applied because there was no active document.");
+                    return;
+                }
+
+                DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "INFO", $"Applied preferred document units: {preferredUnits}");
+            }
+            catch (Exception ex)
+            {
+                try { DiagnosticLogWriter.LogLine(runId, requestId, "StepExecutor", "WARN", $"Failed to apply preferred document units: {ex.Message}"); } catch { }
+            }
         }
 
         private static double ToM(double mm) => mm / 1000.0;

@@ -140,5 +140,36 @@ namespace AICAD.Services
                 return false;
             }
         }
+
+        public static string GetString(string key, string defaultValue)
+        {
+            try
+            {
+                using (var reg = Registry.CurrentUser.OpenSubKey(RegistryPath))
+                {
+                    var v = reg?.GetValue(key)?.ToString();
+                    if (!string.IsNullOrWhiteSpace(v)) return v;
+                }
+            }
+            catch { }
+            return defaultValue;
+        }
+
+        public static bool SetString(string key, string value)
+        {
+            try
+            {
+                using (var reg = Registry.CurrentUser.CreateSubKey(RegistryPath))
+                {
+                    reg?.SetValue(key, value ?? string.Empty);
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                AddinLogger.Error(nameof(SettingsManager), "Failed to save setting " + key, ex);
+                return false;
+            }
+        }
     }
 }

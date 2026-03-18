@@ -1149,7 +1149,7 @@ namespace AICAD.Services
 
         private static string NormalizePlaneName(string planeName)
         {
-            if (string.IsNullOrWhiteSpace(planeName)) return "Front Plane";
+            if (string.IsNullOrWhiteSpace(planeName)) return "Top Plane";
             var trimmed = planeName.Trim();
             if (trimmed.Equals("Top", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Top Plane", StringComparison.OrdinalIgnoreCase))
                 return "Top Plane";
@@ -1157,7 +1157,7 @@ namespace AICAD.Services
                 return "Right Plane";
             if (trimmed.Equals("Front", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Front Plane", StringComparison.OrdinalIgnoreCase))
                 return "Front Plane";
-            return "Front Plane";
+            return "Top Plane";
         }
 
         private static string AwaitWithTimeout(Func<Task<string>> taskFactory, string provider, int seconds = 120)

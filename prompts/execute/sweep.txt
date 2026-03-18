@@ -33,7 +33,7 @@ Donut / torus rule:
   - tubeDia = tube diameter
   - path radius R = (OD - tubeDia) / 2
 - Emit steps in this order:
-  1) select_plane (default "Front Plane" unless intent specifies another)
+  1) select_plane (default "Top Plane" unless intent specifies another)
   2) sketch_begin
   3) circle_center with r=R at cx=0, cy=0   (path circle)
   4) sketch_end

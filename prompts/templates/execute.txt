@@ -24,4 +24,4 @@ Respond with RAW JSON only in one of these shapes:
 }
 
 CRITICAL: Use FLAT step format. Parameters go in the same object as "op", NOT nested in "params".
-Example: {"op":"select_plane","name":"Front Plane"} NOT {"op":"select_plane","params":{"name":"..."}}
+Example: {"op":"select_plane","name":"Top Plane"} NOT {"op":"select_plane","params":{"name":"..."}}

@@ -108,6 +108,15 @@
                                 </StackPanel>
                             </GroupBox>
 
+                            <GroupBox Header="SolidWorks Units" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Choose the document units AI-CAD applies before building parts." Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,8" FontSize="12" TextWrapping="Wrap" />
+                                    <RadioButton x:Name="SwUnitsMmgsRadio" Content="MMGS (millimeter, gram, second)" GroupName="SwUnits" Margin="0,4" />
+                                    <RadioButton x:Name="SwUnitsIpsRadio" Content="IPS (inch, pound, second)" GroupName="SwUnits" Margin="0,4" />
+                                    <TextBlock Text="This preference is applied to the active or newly created document when the AI executor prepares a part." Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" FontSize="11" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </GroupBox>
+
                             <GroupBox Header="🛡️ Safety &amp; Backup" Margin="0,8,0,0">
                                 <StackPanel>
                                     <CheckBox x:Name="ChkConfirmBeforeApply" Content="Ask for confirmation before applying changes" ToolTip="Show a confirmation dialog before applying naming changes" Margin="0,4" />

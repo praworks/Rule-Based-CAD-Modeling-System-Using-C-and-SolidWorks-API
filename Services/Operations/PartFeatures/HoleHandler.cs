@@ -41,9 +41,9 @@ namespace AICAD.Services.Operations.PartFeatures
 
                 double depth = 0.0;
                 bool isThroughAll = true;
-                if (step.ContainsKey("depth"))
+                if (TryGetBlindDepth(step, out var depthMeters))
                 {
-                    depth = PartFeatureHelpers.ToMeters(step.Value<double>("depth"));
+                    depth = depthMeters;
                     isThroughAll = false;
                 }
 
@@ -137,6 +137,23 @@ namespace AICAD.Services.Operations.PartFeatures
             {
                 return false;
             }
+        }
+
+        internal static bool TryGetBlindDepth(JObject step, out double depthMeters)
+        {
+            depthMeters = 0.0;
+            if (step == null) return false;
+
+            var depthToken = step["depth"];
+            if (depthToken == null || depthToken.Type == JTokenType.Null || depthToken.Type == JTokenType.Undefined)
+                return false;
+
+            var depthMm = depthToken.Value<double?>();
+            if (!depthMm.HasValue || depthMm.Value <= 0)
+                return false;
+
+            depthMeters = PartFeatureHelpers.ToMeters(depthMm.Value);
+            return true;
         }
 
         private static bool TrySelectLargestFace(IModelDoc2 model)

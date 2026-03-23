@@ -21,59 +21,8 @@ namespace AICAD.Services.Operations.PartFeatures
                 if (featMgr == null)
                     return OperationResult.CreateFailure("Feature manager not available");
 
-                // --- FIX START: Auto-Select Last Sketch if Selection is Empty ---
                 var selMgr = (SelectionMgr)model.SelectionManager;
-
-                // If the AI plan called "sketch_end" right before this, the selection count may be 0.
-                // Try to re-select the most-recent sketch so the cut-extrude has a valid sketch selected.
-                if (selMgr.GetSelectedObjectCount2(-1) == 0)
-                {
-                    try { model.ClearSelection2(true); } catch { }
-
-                    SelectData selData = null;
-                    try { selData = selMgr.CreateSelectData(); selData.Mark = 1; } catch { }
-
-                    Feature lastSketch = null;
-                    try
-                    {
-                        var f = model.FirstFeature();
-                        while (f != null)
-                        {
-                            try
-                            {
-                                var tname = f.GetTypeName2();
-                                if (!string.IsNullOrEmpty(tname) && tname.ToLower().Contains("sketch"))
-                                {
-                                    lastSketch = f; // keep latest sketch seen
-                                }
-                            }
-                            catch { }
-                            try { f = f.GetNextFeature(); } catch { break; }
-                        }
-                    }
-                    catch { }
-
-                    if (lastSketch != null)
-                    {
-                        try { ((dynamic)lastSketch).Select4(false, selData); } catch { try { ((dynamic)lastSketch).Select2(false, 0); } catch { } }
-                        AddinStatusLogger.Log("ExtrudeCutHandler", $"Auto-selected last sketch '{lastSketch.Name}' because selection was empty.");
-                    }
-                    else
-                    {
-                        // Fallback: try the last feature added (legacy behavior)
-                        try
-                        {
-                            var lastFeature = model.Extension.GetLastFeatureAdded() as Feature;
-                            if (lastFeature != null)
-                            {
-                                try { ((dynamic)lastFeature).Select4(false, selData); } catch { try { ((dynamic)lastFeature).Select2(false, 0); } catch { } }
-                                AddinStatusLogger.Log("ExtrudeCutHandler", $"Auto-selected last feature '{lastFeature.Name}' because selection was empty.");
-                            }
-                        }
-                        catch { }
-                    }
-                }
-                // --- FIX END ---
+                EnsureSketchSelected(model, selMgr);
 
                 // Log selection diagnostics before attempting the cut
                 int selCount = 0;
@@ -112,13 +61,28 @@ namespace AICAD.Services.Operations.PartFeatures
                 catch { }
 
                 double depth = PartFeatureHelpers.ToMeters(step.Value<double?>("depth") ?? 0);
+                bool throughAll = step.Value<bool?>("through_all") ?? false;
+                var endConditionToken = step.Value<string>("end_condition") ?? string.Empty;
+                if (!throughAll && !string.IsNullOrWhiteSpace(endConditionToken))
+                {
+                    throughAll = endConditionToken.Equals("through_all", StringComparison.OrdinalIgnoreCase)
+                        || endConditionToken.Equals("throughall", StringComparison.OrdinalIgnoreCase)
+                        || endConditionToken.Equals("through-all", StringComparison.OrdinalIgnoreCase);
+                }
+                if (!throughAll && depth <= 0)
+                {
+                    return OperationResult.CreateFailure("Extrude cut failed: blind cuts require depth > 0 unless through_all is true.");
+                }
+                int endCondition = throughAll
+                    ? (int)swEndConditions_e.swEndCondThroughAll
+                    : (int)swEndConditions_e.swEndCondBlind;
                 
                 // Use FeatureCut4 for robust cut extrusion with proper cut-specific options
                 var feat = featMgr.FeatureCut4(
                     true,   // Sd: single direction
                     false,  // Flip
                     false,  // Dir2
-                    (int)swEndConditions_e.swEndCondBlind,  // T1: end condition
+                    endCondition,  // T1: end condition
                     0,      // T2
                     depth,  // D1: depth
                     0.0,    // D2
@@ -154,6 +118,86 @@ namespace AICAD.Services.Operations.PartFeatures
             catch (Exception ex)
             {
                 return OperationResult.CreateFailure($"extrude_cut failed: {ex.Message}");
+            }
+        }
+
+        private static void EnsureSketchSelected(IModelDoc2 model, SelectionMgr selMgr)
+        {
+            try
+            {
+                if (HasSelectedSketch(selMgr))
+                    return;
+
+                try { model.ClearSelection2(true); } catch { }
+
+                SelectData selData = null;
+                try { selData = selMgr.CreateSelectData(); selData.Mark = 1; } catch { }
+
+                var lastSketch = FindLastSketch(model);
+                if (lastSketch != null)
+                {
+                    try { ((dynamic)lastSketch).Select4(false, selData); }
+                    catch { try { ((dynamic)lastSketch).Select2(false, 0); } catch { } }
+                    AddinStatusLogger.Log("ExtrudeCutHandler", $"Auto-selected last sketch '{lastSketch.Name}'.");
+                    return;
+                }
+
+                try
+                {
+                    var lastFeature = model.Extension.GetLastFeatureAdded() as Feature;
+                    if (lastFeature != null)
+                    {
+                        try { ((dynamic)lastFeature).Select4(false, selData); }
+                        catch { try { ((dynamic)lastFeature).Select2(false, 0); } catch { } }
+                        AddinStatusLogger.Log("ExtrudeCutHandler", $"Auto-selected last feature '{lastFeature.Name}' as cut profile fallback.");
+                    }
+                }
+                catch { }
+            }
+            catch { }
+        }
+
+        private static bool HasSelectedSketch(SelectionMgr selMgr)
+        {
+            try
+            {
+                var selCount = selMgr.GetSelectedObjectCount2(-1);
+                for (int i = 1; i <= selCount; i++)
+                {
+                    if (selMgr.GetSelectedObjectType3(i, -1) == (int)swSelectType_e.swSelSKETCHES)
+                        return true;
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private static Feature FindLastSketch(IModelDoc2 model)
+        {
+            try
+            {
+                Feature lastSketch = null;
+                var feature = model.FirstFeature();
+                while (feature != null)
+                {
+                    try
+                    {
+                        var typeName = feature.GetTypeName2();
+                        if (!string.IsNullOrEmpty(typeName) && typeName.IndexOf("sketch", StringComparison.OrdinalIgnoreCase) >= 0)
+                            lastSketch = feature;
+                    }
+                    catch { }
+
+                    try { feature = feature.GetNextFeature(); }
+                    catch { break; }
+                }
+
+                return lastSketch;
+            }
+            catch
+            {
+                return null;
             }
         }
     }

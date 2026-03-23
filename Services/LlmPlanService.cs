@@ -183,11 +183,23 @@ namespace AICAD.Services
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local material plan"); } catch { }
                     return BuildMaterialPlan(featureTask, modelFacts);
                 }
+                var localTopHolePlan = TryBuildTopCenterHolePlan(featureTask, modelFacts);
+                if (localTopHolePlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local top-center hole plan"); } catch { }
+                    return localTopHolePlan;
+                }
                 var localTopBossPlan = TryBuildTopMountedBossPlan(featureTask, modelFacts);
                 if (localTopBossPlan != null)
                 {
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local top-mounted boss plan"); } catch { }
                     return localTopBossPlan;
+                }
+                var localTopPocketPlan = TryBuildTopMountedPocketPlan(featureTask, modelFacts);
+                if (localTopPocketPlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local top-mounted pocket plan"); } catch { }
+                    return localTopPocketPlan;
                 }
 
                 var label = featureTask?.Value<string>("feature_type") ?? "feature";
@@ -962,6 +974,60 @@ namespace AICAD.Services
                    || featureType.Equals("set_material", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static FeaturePlanResult TryBuildTopCenterHolePlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null || modelFacts == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var role = featureTask.Value<string>("role") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!featureType.Equals("hole", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!role.Equals("dependent", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            var lower = intent.ToLowerInvariant();
+            var mentionsCenter = lower.Contains("center") || lower.Contains("centred") || lower.Contains("centered");
+            var mentionsExplicitNonTopFace =
+                lower.Contains("front face")
+                || lower.Contains("back face")
+                || lower.Contains("left face")
+                || lower.Contains("right face")
+                || lower.Contains("bottom face")
+                || lower.Contains("front")
+                || lower.Contains("back")
+                || lower.Contains("left")
+                || lower.Contains("right")
+                || lower.Contains("bottom")
+                || lower.Contains("side face")
+                || lower.Contains("side");
+            if (!mentionsCenter || mentionsExplicitNonTopFace) return null;
+
+            var diameterMm = TryExtractDiameterMm(intent);
+            if (!diameterMm.HasValue || diameterMm.Value <= 0) return null;
+
+            var depthMm = TryExtractDepthMm(intent);
+            var isBlind = lower.Contains("blind");
+
+            var holeStep = new JObject
+            {
+                ["op"] = "hole",
+                ["diameter"] = diameterMm.Value,
+                ["target"] = "center",
+                ["face"] = "top"
+            };
+
+            if (isBlind || (depthMm.HasValue && depthMm.Value > 0 && !IsThroughAllIntent(intent)))
+                holeStep["depth"] = depthMm ?? 0;
+
+            return new FeaturePlanResult
+            {
+                Steps = new JArray { holeStep },
+                Thinking = holeStep["depth"] != null
+                    ? $"Create a centered blind hole on the top face with diameter {diameterMm.Value} mm and depth {holeStep["depth"]} mm."
+                    : $"Create a centered through hole on the top face with diameter {diameterMm.Value} mm."
+            };
+        }
+
         private static FeaturePlanResult TryBuildTopMountedBossPlan(JObject featureTask, JObject modelFacts)
         {
             if (featureTask == null || modelFacts == null) return null;
@@ -1008,6 +1074,146 @@ namespace AICAD.Services
                 },
                 Thinking = $"Select the top face, sketch a centered {widthMm} x {heightMm} mm rectangle, and extrude it {depthMm} mm as a boss."
             };
+        }
+
+        private static FeaturePlanResult TryBuildTopMountedPocketPlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null || modelFacts == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var role = featureTask.Value<string>("role") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!(featureType.Equals("extrude_cut", StringComparison.OrdinalIgnoreCase)
+                  || featureType.Equals("pocket", StringComparison.OrdinalIgnoreCase)))
+                return null;
+            if (!role.Equals("dependent", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            var lower = intent.ToLowerInvariant();
+            var soundsLikeTopPocket =
+                lower.Contains("pocket")
+                || lower.Contains("cutout")
+                || lower.Contains("cut ")
+                || lower.Contains(" on top")
+                || lower.Contains("top face");
+            if (!soundsLikeTopPocket) return null;
+
+            var depthMm = TryExtractDepthMm(intent);
+            if (!depthMm.HasValue && lower.Contains("pocket"))
+            {
+                var pocketDims = ExtractOrderedNumbers(intent);
+                if (pocketDims.Count >= 3)
+                    depthMm = pocketDims[pocketDims.Count - 1];
+            }
+
+            var throughAll = IsThroughAllIntent(intent) || (!depthMm.HasValue && ImpliesThroughCutout(intent));
+            if (!throughAll && (!depthMm.HasValue || depthMm.Value <= 0)) return null;
+
+            var dims = ExtractOrderedNumbers(intent);
+            var looksRectangular =
+                lower.Contains("rectangular")
+                || lower.Contains("rectangle")
+                || lower.Contains("square")
+                || (!lower.Contains("circular") && !lower.Contains("round") && !lower.Contains("diameter") && dims.Count >= (throughAll ? 2 : 3));
+
+            if (looksRectangular)
+            {
+                if (lower.Contains("square"))
+                {
+                    if (dims.Count < 2) return null;
+                    var sideMm = dims[0];
+                    return new FeaturePlanResult
+                    {
+                        Steps = new JArray
+                        {
+                            new JObject { ["op"] = "select_face", ["face"] = "top" },
+                            new JObject { ["op"] = "sketch_begin" },
+                            new JObject
+                            {
+                                ["op"] = "rectangle_center",
+                                ["cx"] = 0,
+                                ["cy"] = 0,
+                                ["w"] = sideMm,
+                                ["h"] = sideMm
+                            },
+                            new JObject { ["op"] = "sketch_end" },
+                            new JObject
+                            {
+                                ["op"] = "extrude_cut",
+                                ["through_all"] = throughAll,
+                                ["depth"] = throughAll ? 0 : depthMm.Value
+                            }
+                        },
+                        Thinking = throughAll
+                            ? $"Select the top face, sketch a centered {sideMm} x {sideMm} mm square, and cut it through all."
+                            : $"Select the top face, sketch a centered {sideMm} x {sideMm} mm square, and cut it {depthMm.Value} mm deep."
+                    };
+                }
+
+                if (dims.Count < (throughAll ? 2 : 3)) return null;
+                var widthMm = dims[0];
+                var heightMm = dims[1];
+                return new FeaturePlanResult
+                {
+                    Steps = new JArray
+                    {
+                        new JObject { ["op"] = "select_face", ["face"] = "top" },
+                        new JObject { ["op"] = "sketch_begin" },
+                        new JObject
+                        {
+                            ["op"] = "rectangle_center",
+                            ["cx"] = 0,
+                            ["cy"] = 0,
+                            ["w"] = widthMm,
+                            ["h"] = heightMm
+                        },
+                        new JObject { ["op"] = "sketch_end" },
+                        new JObject
+                        {
+                            ["op"] = "extrude_cut",
+                            ["through_all"] = throughAll,
+                            ["depth"] = throughAll ? 0 : depthMm.Value
+                        }
+                    },
+                    Thinking = throughAll
+                        ? $"Select the top face, sketch a centered {widthMm} x {heightMm} mm rectangle, and cut it through all."
+                        : $"Select the top face, sketch a centered {widthMm} x {heightMm} mm rectangle, and cut it {depthMm.Value} mm deep."
+                };
+            }
+
+            if (lower.Contains("circular") || lower.Contains("round") || lower.Contains("diameter"))
+            {
+                var diameterMm = TryExtractDiameterMm(intent);
+                if (!diameterMm.HasValue || diameterMm.Value <= 0) return null;
+
+                return new FeaturePlanResult
+                {
+                    Steps = new JArray
+                    {
+                        new JObject { ["op"] = "select_face", ["face"] = "top" },
+                        new JObject { ["op"] = "sketch_begin" },
+                        new JObject
+                        {
+                            ["op"] = "circle_center",
+                            ["cx"] = 0,
+                            ["cy"] = 0,
+                            ["diameter"] = diameterMm.Value
+                        },
+                        new JObject { ["op"] = "sketch_end" },
+                        new JObject
+                        {
+                            ["op"] = "extrude_cut",
+                            ["through_all"] = throughAll,
+                            ["depth"] = throughAll ? 0 : depthMm.Value
+                        }
+                    },
+                    Thinking = throughAll
+                        ? $"Select the top face, sketch a centered {diameterMm.Value} mm diameter circle, and cut it through all."
+                        : $"Select the top face, sketch a centered {diameterMm.Value} mm diameter circle, and cut it {depthMm.Value} mm deep."
+                };
+            }
+
+            return null;
         }
 
         private static FeaturePlanResult BuildUbBoltPlan(JObject featureTask, JObject modelFacts)
@@ -1212,6 +1418,84 @@ namespace AICAD.Services
             if (trimmed.Equals("Front", StringComparison.OrdinalIgnoreCase) || trimmed.Equals("Front Plane", StringComparison.OrdinalIgnoreCase))
                 return "Front Plane";
             return "Top Plane";
+        }
+
+        private static double? TryExtractDepthMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var taggedMatch = Regex.Match(
+                text,
+                @"(?:depth|deep|cut)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:deep|depth)",
+                RegexOptions.IgnoreCase);
+            if (taggedMatch.Success)
+            {
+                var raw = !string.IsNullOrWhiteSpace(taggedMatch.Groups[1].Value)
+                    ? taggedMatch.Groups[1].Value
+                    : taggedMatch.Groups[2].Value;
+                if (double.TryParse(raw, out var depthMm))
+                    return depthMm;
+            }
+            
+            return null;
+        }
+
+        private static bool IsThroughAllIntent(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            var lower = text.ToLowerInvariant();
+            return lower.Contains("through all")
+                || lower.Contains("through-all")
+                || lower.Contains("through cutout")
+                || lower.Contains("through cut")
+                || lower.Contains("through slot")
+                || lower.Contains("all the way through")
+                || lower.Contains("cut through");
+        }
+
+        private static bool ImpliesThroughCutout(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            var lower = text.ToLowerInvariant();
+            return lower.Contains("window cutout")
+                || lower.Contains("window")
+                || lower.Contains("cutout")
+                || lower.Contains("opening");
+        }
+
+        private static double? TryExtractDiameterMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var diameterMatch = Regex.Match(
+                text,
+                @"(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:in\s+)?diameter|diameter\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?",
+                RegexOptions.IgnoreCase);
+            if (diameterMatch.Success)
+            {
+                var raw = !string.IsNullOrWhiteSpace(diameterMatch.Groups[1].Value)
+                    ? diameterMatch.Groups[1].Value
+                    : diameterMatch.Groups[2].Value;
+                if (double.TryParse(raw, out var diameterMm))
+                    return diameterMm;
+            }
+
+            var dims = ExtractOrderedNumbers(text);
+            return dims.Count > 0 ? (double?)dims[0] : null;
+        }
+
+        private static List<double> ExtractOrderedNumbers(string text)
+        {
+            var result = new List<double>();
+            if (string.IsNullOrWhiteSpace(text)) return result;
+
+            foreach (Match match in Regex.Matches(text, @"\d+(?:\.\d+)?", RegexOptions.IgnoreCase))
+            {
+                if (double.TryParse(match.Value, out var value))
+                    result.Add(value);
+            }
+
+            return result;
         }
 
         private static string AwaitWithTimeout(Func<Task<string>> taskFactory, string provider, int seconds = 120)

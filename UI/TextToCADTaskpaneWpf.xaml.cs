@@ -707,6 +707,209 @@ namespace AICAD.UI
             }
         }
 
+        private string TryGetSelectedNlTestCaseId()
+        {
+            try
+            {
+                var selected = shapePreset?.SelectedItem as ComboBoxItem;
+                var item = selected?.Tag as JObject;
+                if (item == null) return null;
+
+                var source = item.Value<string>("source") ?? string.Empty;
+                if (!source.Equals("nl_test_case", StringComparison.OrdinalIgnoreCase))
+                    return null;
+
+                var id = item.Value<string>("id") ?? string.Empty;
+                return string.IsNullOrWhiteSpace(id) ? null : id.Trim().ToUpperInvariant();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private string TryResolveTestRunExporterScriptPath()
+        {
+            try
+            {
+                var candidates = new List<string>();
+                try
+                {
+                    var asmPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                    if (!string.IsNullOrWhiteSpace(asmPath))
+                    {
+                        var asmDir = Path.GetDirectoryName(asmPath);
+                        if (!string.IsNullOrWhiteSpace(asmDir))
+                        {
+                            candidates.Add(Path.Combine(asmDir, "scripts", "Export-TestRunArtifact.ps1"));
+                            candidates.Add(Path.GetFullPath(Path.Combine(asmDir, "..", "..", "..", "scripts", "Export-TestRunArtifact.ps1")));
+                            candidates.Add(Path.GetFullPath(Path.Combine(asmDir, "..", "..", "..", "..", "scripts", "Export-TestRunArtifact.ps1")));
+                        }
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    var baseDir = AppDomain.CurrentDomain.BaseDirectory ?? System.Environment.CurrentDirectory;
+                    if (!string.IsNullOrWhiteSpace(baseDir))
+                    {
+                        candidates.Add(Path.Combine(baseDir, "scripts", "Export-TestRunArtifact.ps1"));
+                        candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..", "scripts", "Export-TestRunArtifact.ps1")));
+                        candidates.Add(Path.GetFullPath(Path.Combine(baseDir, "..", "..", "scripts", "Export-TestRunArtifact.ps1")));
+                    }
+                }
+                catch { }
+
+                foreach (var candidate in candidates.Where(c => !string.IsNullOrWhiteSpace(c)))
+                {
+                    try
+                    {
+                        if (File.Exists(candidate))
+                            return candidate;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private async Task TryExportSelectedTestArtifactsAsync(string runId)
+        {
+            var testId = TryGetSelectedNlTestCaseId();
+            if (string.IsNullOrWhiteSpace(testId) || string.IsNullOrWhiteSpace(runId))
+                return;
+
+            var scriptPath = TryResolveTestRunExporterScriptPath();
+            if (string.IsNullOrWhiteSpace(scriptPath))
+            {
+                try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "WARN", "Test artifact exporter script not found."); } catch { }
+                return;
+            }
+
+            try
+            {
+                var outputDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory ?? System.Environment.CurrentDirectory, "TestArtifacts");
+                Directory.CreateDirectory(outputDir);
+
+                var psi = new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = "powershell.exe",
+                    Arguments = $"-NoProfile -ExecutionPolicy Bypass -File \"{scriptPath}\" -RunId \"{runId}\" -TestId \"{testId}\" -OutputDir \"{outputDir}\"",
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true
+                };
+
+                var exportResult = await Task.Run(() =>
+                {
+                    using (var process = System.Diagnostics.Process.Start(psi))
+                    {
+                        if (process == null)
+                            return Tuple.Create(-1, string.Empty, "Failed to start exporter process.");
+
+                        var stdout = process.StandardOutput.ReadToEnd();
+                        var stderr = process.StandardError.ReadToEnd();
+                        process.WaitForExit(30000);
+                        return Tuple.Create(process.ExitCode, stdout, stderr);
+                    }
+                }).ConfigureAwait(false);
+
+                if (exportResult.Item1 == 0)
+                {
+                    try
+                    {
+                        var summary = string.IsNullOrWhiteSpace(exportResult.Item2)
+                            ? $"Test artifact export completed for {testId}."
+                            : $"Test artifact export completed for {testId}: {DiagnosticLogWriter.Truncate(exportResult.Item2.Replace("\r", " ").Replace("\n", " "), 240)}";
+                        DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", summary);
+                    }
+                    catch { }
+                }
+                else
+                {
+                    var error = string.IsNullOrWhiteSpace(exportResult.Item3) ? exportResult.Item2 : exportResult.Item3;
+                    try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "WARN", $"Test artifact export failed for {testId}: {DiagnosticLogWriter.Truncate((error ?? string.Empty).Replace("\r", " ").Replace("\n", " "), 240)}"); } catch { }
+                }
+            }
+            catch (Exception ex)
+            {
+                try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "WARN", "Test artifact export exception: " + ex.Message); } catch { }
+            }
+        }
+
+        private void ClearAiQuestions()
+        {
+            try
+            {
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (QuestionsText != null) QuestionsText.Text = string.Empty;
+                        if (QuestionsContainer != null) QuestionsContainer.Visibility = Visibility.Collapsed;
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        private void ShowAiQuestions(JObject clarification)
+        {
+            try
+            {
+                var lines = new List<string>();
+                try
+                {
+                    var questions = clarification?["questions"] as JArray;
+                    if (questions != null)
+                    {
+                        foreach (var question in questions.Values<string>())
+                        {
+                            var clean = (question ?? string.Empty).Trim();
+                            if (!string.IsNullOrWhiteSpace(clean))
+                                lines.Add(clean);
+                        }
+                    }
+                }
+                catch { }
+
+                if (lines.Count == 0)
+                {
+                    try
+                    {
+                        var single = clarification?.Value<string>("question") ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(single))
+                            lines.Add(single.Trim());
+                    }
+                    catch { }
+                }
+
+                if (lines.Count == 0)
+                {
+                    ClearAiQuestions();
+                    return;
+                }
+
+                var redText = string.Join(System.Environment.NewLine, lines.Select((q, i) => $"{i + 1}. {q}"));
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (ThinkingContainer != null) ThinkingContainer.Visibility = Visibility.Visible;
+                        if (QuestionsText != null) QuestionsText.Text = redText;
+                        if (QuestionsContainer != null) QuestionsContainer.Visibility = Visibility.Visible;
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
         private void TryLoadPromptPresets()
         {
             try
@@ -2424,6 +2627,7 @@ namespace AICAD.UI
                 {
                     ThinkingContainer.Visibility = Visibility.Visible;
                     ThinkingText.Text = "Reasoning about planes, coordinates, and constraints…";
+                    ClearAiQuestions();
                     _lastThinkingSignature = null;
                 }
                 catch { }
@@ -2561,6 +2765,14 @@ namespace AICAD.UI
                         errText = orchResult.Error ?? "Build failed";
                         try
                         {
+                            if (orchResult.Execution?.Clarification != null)
+                                ShowAiQuestions(orchResult.Execution.Clarification);
+                            else
+                                ClearAiQuestions();
+                        }
+                        catch { }
+                        try
+                        {
                             DiagnosticLogWriter.LogLine(runId, null, "BuildOrchestrator", "ERROR",
                                 $"failedTaskIndex={orchResult.FailedTaskIndex} failedStepIndex={orchResult.FailedStepIndex} lastOp={orchResult.LastOp}");
                         }
@@ -2572,6 +2784,7 @@ namespace AICAD.UI
                 AfterExecution:
                 if (exec != null && exec.Success)
                 {
+                    ClearAiQuestions();
                     AppendStatusLine("Model created.");
                     
                     // VALIDATION: Display validation results from closed-loop verification
@@ -2698,6 +2911,7 @@ namespace AICAD.UI
                 }
                 else
                 {
+                    if (exec?.Clarification == null) ClearAiQuestions();
                     var swError = (exec != null && exec.Log.Count > 0 && exec.Log[exec.Log.Count - 1].ContainsKey("error"))
                         ? exec.Log[exec.Log.Count - 1].Value<string>("error")
                         : (errText ?? "Unknown error");
@@ -2914,6 +3128,11 @@ namespace AICAD.UI
                 {
                     try { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", (exec?.Success ?? false) ? "INFO" : "ERROR", $"STEP 10 Completed success={(exec?.Success ?? false)}"); } catch { }
                     DiagnosticLogWriter.EndRun(runId, exec?.Success ?? false, errText, (long)totalSw.Elapsed.TotalMilliseconds);
+                }
+                catch { }
+                try
+                {
+                    await TryExportSelectedTestArtifactsAsync(runId).ConfigureAwait(false);
                 }
                 catch { }
             }

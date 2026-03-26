@@ -20,9 +20,10 @@ namespace AICAD.Services
 
             Assert.IsNotNull(plan, "Plan should be generated for a window cutout.");
             Assert.IsNotNull(plan.Steps, "Plan should contain executable steps.");
-            Assert.AreEqual("extrude_cut", ((JObject)plan.Steps[4])["op"]?.ToString(), "Last step should be an extrude_cut.");
-            Assert.AreEqual(true, ((JObject)plan.Steps[4])["through_all"]?.Value<bool>(), "Window cutouts should default to through-all.");
-            Assert.AreEqual(0d, ((JObject)plan.Steps[4])["depth"]?.Value<double>(), "Through-all cuts should not infer a blind depth from sketch dimensions.");
+            Assert.AreEqual("auto_dimension", ((JObject)plan.Steps[3])["op"]?.ToString(), "Window cutout sketch should be auto-dimensioned before closing.");
+            Assert.AreEqual("extrude_cut", ((JObject)plan.Steps[5])["op"]?.ToString(), "Last step should be an extrude_cut.");
+            Assert.AreEqual(true, ((JObject)plan.Steps[5])["through_all"]?.Value<bool>(), "Window cutouts should default to through-all.");
+            Assert.AreEqual(0d, ((JObject)plan.Steps[5])["depth"]?.Value<double>(), "Through-all cuts should not infer a blind depth from sketch dimensions.");
         }
 
         [TestMethod]
@@ -77,9 +78,28 @@ namespace AICAD.Services
 
             Assert.IsNotNull(plan, "Plan should be generated for a rectangular pocket.");
             Assert.IsNotNull(plan.Steps, "Plan should contain executable steps.");
-            Assert.AreEqual("extrude_cut", ((JObject)plan.Steps[4])["op"]?.ToString(), "Pocket shortcut should terminate with an extrude_cut.");
-            Assert.AreEqual(false, ((JObject)plan.Steps[4])["through_all"]?.Value<bool>(), "Explicit pocket depth should remain a blind cut.");
-            Assert.AreEqual(5d, ((JObject)plan.Steps[4])["depth"]?.Value<double>(), "Pocket depth should come from the third dimension when no depth keyword is present.");
+            Assert.AreEqual("auto_dimension", ((JObject)plan.Steps[3])["op"]?.ToString(), "Pocket shortcut should fully define the sketch before closing it.");
+            Assert.AreEqual("extrude_cut", ((JObject)plan.Steps[5])["op"]?.ToString(), "Pocket shortcut should terminate with an extrude_cut.");
+            Assert.AreEqual(false, ((JObject)plan.Steps[5])["through_all"]?.Value<bool>(), "Explicit pocket depth should remain a blind cut.");
+            Assert.AreEqual(5d, ((JObject)plan.Steps[5])["depth"]?.Value<double>(), "Pocket depth should come from the third dimension when no depth keyword is present.");
+        }
+
+        [TestMethod]
+        public void TopMountedBossPlan_InsertsAutoDimensionBeforeSketchEnd()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "extrude",
+                ["role"] = "dependent",
+                ["intent"] = "create a 60 mm x 30 mm x 15 mm boss on top"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, new JObject { ["feature_count"] = 1 });
+
+            Assert.IsNotNull(plan, "Plan should be generated for a top-mounted boss.");
+            Assert.IsNotNull(plan.Steps, "Plan should contain executable steps.");
+            Assert.AreEqual("auto_dimension", ((JObject)plan.Steps[3])["op"]?.ToString(), "Boss shortcut should fully define the sketch before closing it.");
+            Assert.AreEqual("sketch_end", ((JObject)plan.Steps[4])["op"]?.ToString(), "Boss shortcut should close the sketch after auto-dimensioning.");
         }
     }
 }

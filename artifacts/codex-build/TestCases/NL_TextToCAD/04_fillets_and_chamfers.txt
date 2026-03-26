@@ -1,0 +1,27 @@
+TC031 Create a 100 mm x 60 mm x 12 mm plate and fillet all four vertical outer edges with a 5 mm radius.
+RESULT: Passed
+
+TC032 Make an 80 mm x 80 mm x 20 mm block and chamfer the top outer edges by 3 mm.
+RESULT: Passed
+
+TC033 Create a 120 mm x 50 mm x 15 mm bar with a centered 20 mm hole and a 2 mm chamfer on both hole edges.
+RESULT: Passed
+
+TC034 Build a 90 mm x 40 mm x 25 mm block and fillet the four top outer edges with radius 4 mm.
+RESULT: Passed
+
+TC035 Make a circular disc 70 mm in diameter and 10 mm thick with a 2 mm chamfer on the top outer edge.
+RESULT: Passed
+
+TC036 Create a 100 mm x 70 mm x 12 mm plate with a centered rectangular pocket 50 mm x 30 mm x 5 mm and fillet the four outer vertical edges with radius 3 mm.
+
+TC037 Make a 110 mm x 60 mm x 20 mm block and chamfer the two short-end edges by 4 mm.
+RESULT: Passed
+
+TC038 Create a ring with 80 mm outer diameter, 40 mm inner diameter, and 12 mm thickness, then chamfer the outer top edge 2 mm.
+RESULT: Passed
+
+TC039 Build a 100 mm x 100 mm x 15 mm square plate and round the top perimeter with a 6 mm fillet.
+
+
+TC040 Make a 140 mm x 80 mm x 12 mm plate with four corner holes of 10 mm diameter and apply a 1 mm chamfer to the hole openings.

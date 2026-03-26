@@ -1,0 +1,27 @@
+NL to CAD test pack
+
+Objective:
+Use these prompts to test whether the app can create part models directly from natural language.
+
+Structure:
+- 10 files
+- 10 prompts per file
+- 100 prompts total
+
+Recommended usage:
+- Start with 01 and move upward.
+- Use one prompt at a time.
+- Record whether the app created the part, asked for clarification, or failed.
+- For prompts with units, keep the exact wording.
+
+Files:
+01_basic_extrudes.txt
+02_bosses_pockets_steps.txt
+03_holes_and_cutouts.txt
+04_fillets_and_chamfers.txt
+05_revolved_parts.txt
+06_swept_parts.txt
+07_lofted_parts.txt
+08_units_materials_threads.txt
+09_combined_mechanical_parts.txt
+10_natural_language_variations.txt

@@ -1,0 +1,10 @@
+TC061 Create a loft from a 40 mm diameter circle to a 60 mm x 60 mm square over a height of 80 mm.
+TC062 Make a transition piece from a 70 mm x 40 mm rectangle to a 30 mm diameter circle over 60 mm height.
+TC063 Create a lofted part from a 50 mm square base to a 30 mm square top over 70 mm height.
+TC064 Build a round-to-rectangle duct from a 60 mm diameter circle to an 80 mm x 40 mm rectangle over 100 mm height.
+TC065 Make a tapered column by lofting between two circles, 50 mm diameter at the bottom and 25 mm diameter at the top, height 90 mm.
+TC066 Create a loft from an 80 mm x 50 mm rectangle to a 50 mm x 30 mm rectangle over 70 mm height.
+TC067 Build a funnel-like solid by lofting from a 100 mm diameter circle to a 30 mm diameter circle over 80 mm height.
+TC068 Create a lofted connector from a 60 mm square base to a 60 mm diameter circular top over 50 mm height.
+TC069 Make a transition body from a 100 mm x 30 mm rectangle to a 50 mm x 20 mm rectangle over 65 mm height.
+TC070 Create a loft between a 45 mm diameter circle and a 30 mm square over 55 mm height.

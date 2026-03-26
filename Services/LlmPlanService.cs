@@ -460,7 +460,7 @@ namespace AICAD.Services
             var guidance = string.Empty;
             if (unknownOps.Any(o => o.Equals("create_cube", StringComparison.OrdinalIgnoreCase) || o.Equals("create_box", StringComparison.OrdinalIgnoreCase)))
             {
-                guidance = "For cubes/boxes, use: select_plane -> sketch_begin -> rectangle_center -> dimension -> sketch_end -> extrude.";
+                guidance = "For cubes/boxes, use: select_plane -> sketch_begin -> rectangle_center -> auto_dimension -> sketch_end -> extrude.";
             }
             return originalPrompt + "\n\nREPAIR REQUEST:\nThe previous plan used unknown ops: " + unknownList +
                    ". Allowed ops (use only these, do NOT invent new ops): " + allowedList + ". " + guidance +
@@ -1064,6 +1064,7 @@ namespace AICAD.Services
                         ["w"] = widthMm,
                         ["h"] = heightMm
                     },
+                    new JObject { ["op"] = "auto_dimension" },
                     new JObject { ["op"] = "sketch_end" },
                     new JObject
                     {
@@ -1136,6 +1137,7 @@ namespace AICAD.Services
                                 ["w"] = sideMm,
                                 ["h"] = sideMm
                             },
+                            new JObject { ["op"] = "auto_dimension" },
                             new JObject { ["op"] = "sketch_end" },
                             new JObject
                             {
@@ -1167,6 +1169,7 @@ namespace AICAD.Services
                             ["w"] = widthMm,
                             ["h"] = heightMm
                         },
+                        new JObject { ["op"] = "auto_dimension" },
                         new JObject { ["op"] = "sketch_end" },
                         new JObject
                         {
@@ -1199,6 +1202,7 @@ namespace AICAD.Services
                             ["cy"] = 0,
                             ["diameter"] = diameterMm.Value
                         },
+                        new JObject { ["op"] = "auto_dimension" },
                         new JObject { ["op"] = "sketch_end" },
                         new JObject
                         {

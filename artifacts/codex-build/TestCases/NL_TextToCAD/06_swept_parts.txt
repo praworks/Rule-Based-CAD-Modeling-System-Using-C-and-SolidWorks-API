@@ -1,0 +1,14 @@
+TC051 Create a 10 mm diameter rod swept along an L-shaped path: 80 mm horizontal, then 50 mm vertical.
+RESULT: Passed
+
+TC052 Make a 12 mm diameter pipe swept along a U-shaped path with 60 mm straight sections and a 40 mm bend radius.
+RESULT: Failed
+
+TC053 Create an 8 mm circular wire following a rectangular path 100 mm by 60 mm with 10 mm corner radii.
+TC054 Build a handgrip using a 14 mm diameter sweep along an arc of 120 degrees with 70 mm radius.
+TC055 Create a rectangular section sweep with profile 12 mm by 8 mm along a straight path 120 mm long.
+TC056 Make a hook-like part by sweeping a 6 mm circular profile along a path that goes 40 mm up, then 30 mm right, then ends in a 20 mm radius arc.
+TC057 Create a 10 mm diameter solid swept along a path that goes 100 mm straight and then turns 90 degrees for another 60 mm.
+TC058 Build a sweep with a 15 mm by 10 mm rectangular profile along a two-arc path that makes an S shape, total path length about 140 mm.
+TC059 Create a circular cable guide by sweeping an 8 mm profile around a 90 degree arc path of 50 mm radius.
+TC060 Make a frame member by sweeping a 20 mm x 10 mm rectangular profile along a path 150 mm long with one 45 degree bend at the midpoint.

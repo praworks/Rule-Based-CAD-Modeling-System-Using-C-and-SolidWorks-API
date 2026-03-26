@@ -423,13 +423,30 @@ namespace AICAD.Services
                 try
                 {
                     var op = (jo.Value<string>("op") ?? string.Empty).Trim();
-                    if (op.Equals("dimension", StringComparison.OrdinalIgnoreCase))
+                    if (op.Equals("auto dimension", StringComparison.OrdinalIgnoreCase))
                     {
                         jo["op"] = "auto_dimension";
-                        if (jo["cx"] == null) jo["cx"] = 0;
-                        if (jo["cy"] == null) jo["cy"] = 0;
-                        if (jo["w"] == null) jo["w"] = 10;
-                        if (jo["h"] == null) jo["h"] = 10;
+                    }
+                    else if (op.Equals("auto-dimension", StringComparison.OrdinalIgnoreCase) || op.Equals("autodimension", StringComparison.OrdinalIgnoreCase))
+                    {
+                        jo["op"] = "auto_dimension";
+                    }
+                    else if (op.Equals("dimension", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var hasRectangleDims =
+                            jo["cx"] != null &&
+                            jo["cy"] != null &&
+                            (jo["w"] != null || jo["width"] != null) &&
+                            (jo["h"] != null || jo["height"] != null);
+                        var hasExplicitDimensionTarget =
+                            jo["entity"] != null ||
+                            jo["type"] != null ||
+                            jo["value"] != null;
+
+                        if (!hasRectangleDims && !hasExplicitDimensionTarget)
+                        {
+                            jo["op"] = "auto_dimension";
+                        }
                     }
                 }
                 catch { }

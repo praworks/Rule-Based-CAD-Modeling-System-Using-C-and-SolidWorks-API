@@ -35,42 +35,6 @@ namespace AICAD.UI
             InitializeComponent();
             InitializeProviderList();
             LoadAllSettings();
-            try
-            {
-                // Keep the two checkboxes in sync if both panels are visible
-                ChkEnableExceptionClassifier.Checked += ToggleExceptionClassifierChanged;
-                ChkEnableExceptionClassifier.Unchecked += ToggleExceptionClassifierChanged;
-                ChkRequireSpecClarification.Checked += ChkRequireSpecClarification_Changed;
-                ChkRequireSpecClarification.Unchecked += ChkRequireSpecClarification_Changed;
-                try
-                {
-                    ChkStatusWindowTopmost.Checked += (s, e) => { try { SettingsManager.SetBool("StatusWindowTopmost", true); UpdateStatusWindowTopmost(true); } catch { } };
-                    ChkStatusWindowTopmost.Unchecked += (s, e) => { try { SettingsManager.SetBool("StatusWindowTopmost", false); UpdateStatusWindowTopmost(false); } catch { } };
-                }
-                catch { }
-            }
-            catch { }
-            // (Duplicate quick-access checkbox removed from XAML)
-        }
-
-        private void UpdateStatusWindowTopmost(bool topmost)
-        {
-            try
-            {
-                // If a StatusWindow is open in this process, update its Topmost property
-                foreach (Window w in Application.Current.Windows)
-                {
-                    try
-                    {
-                        if (w is StatusWindow sw)
-                        {
-                            sw.Topmost = topmost;
-                        }
-                    }
-                    catch { }
-                }
-            }
-            catch { }
         }
 
         private void InitializeProviderList()
@@ -182,18 +146,6 @@ namespace AICAD.UI
                 try { LoadSamplesButton_Click(null, null); } catch { }
                 try { LoadNameEasySettings(); } catch { }
                 try { LoadAccountInfo(); } catch { }
-                try {
-                    var enabled = AICAD.Services.SettingsManager.GetBool("EnableExceptionClassifier", false);
-                    ChkEnableExceptionClassifier.IsChecked = enabled;
-                } catch { }
-                try {
-                    var req = AICAD.Services.SettingsManager.GetBool("RequireSpecClarification", false);
-                    ChkRequireSpecClarification.IsChecked = req;
-                } catch { }
-                try {
-                    var top = AICAD.Services.SettingsManager.GetBool("StatusWindowTopmost", true);
-                    ChkStatusWindowTopmost.IsChecked = top;
-                } catch { }
                 try
                 {
                     var units = AICAD.Services.SettingsManager.GetString(PreferredSwUnitsKey, "MMGS");
@@ -1338,15 +1290,6 @@ namespace AICAD.UI
             SaveMongoButton_Click(sender, e);
             SaveApiKeysButton_Click(sender, e);
             SaveSamplesButton_Click(sender, e);
-            try {
-                // Persist the single Traffic Cop checkbox value
-                bool enabled = (ChkEnableExceptionClassifier.IsChecked == true);
-                AICAD.Services.SettingsManager.SetBool("EnableExceptionClassifier", enabled);
-            } catch { }
-            try {
-                var requireSpec = (ChkRequireSpecClarification.IsChecked == true);
-                AICAD.Services.SettingsManager.SetBool("RequireSpecClarification", requireSpec);
-            } catch { }
             try
             {
                 var preferredUnits = (SwUnitsIpsRadio.IsChecked == true) ? "IPS" : "MMGS";
@@ -1354,38 +1297,6 @@ namespace AICAD.UI
             }
             catch { }
             System.Windows.MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private void ToggleExceptionClassifierChanged(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var state = (sender as CheckBox)?.IsChecked == true;
-                try { ChkEnableExceptionClassifier.IsChecked = state; } catch { }
-                try
-                {
-                    // Persist immediately so the change takes effect without clicking Save All
-                    AICAD.Services.SettingsManager.SetBool("EnableExceptionClassifier", state);
-                }
-                catch { }
-                try
-                {
-                    AICAD.Services.AddinStatusLogger.Log("Settings", $"EnableExceptionClassifier={(state ? "Enabled" : "Disabled")}");
-                }
-                catch { }
-            }
-            catch { }
-        }
-
-        private void ChkRequireSpecClarification_Changed(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                var state = (sender as CheckBox)?.IsChecked == true;
-                try { AICAD.Services.SettingsManager.SetBool("RequireSpecClarification", state); } catch { }
-                try { AICAD.Services.AddinStatusLogger.Log("Settings", $"RequireSpecClarification={(state ? "Enabled" : "Disabled")} "); } catch { }
-            }
-            catch { }
         }
     }
 }

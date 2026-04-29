@@ -99,30 +99,12 @@
                         <StackPanel x:Name="GeneralPanel" Visibility="Visible">
                             <TextBlock Text="Customize your AI-CAD experience" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" />
 
-                            <GroupBox Header="🚀 Startup &amp; Workflow" Margin="0,8,0,0">
-                                <StackPanel>
-                                    <CheckBox x:Name="ChkLoadNameEasyOnStartup" Content="Enable NameEasy when SolidWorks starts" ToolTip="Automatically loads the NameEasy feature on startup" Margin="0,4" />
-                                    <CheckBox x:Name="ChkAutoExpandTaskPane" Content="Show AI-CAD panel when creating new parts" ToolTip="Auto-expand Task Pane when creating a new part document" Margin="0,4" />
-                                    <CheckBox x:Name="ChkCollapseAfterRename" Content="Auto-collapse panel after renaming" ToolTip="Automatically collapse the panel after successful rename operations" Margin="0,4" />
-                                    <CheckBox x:Name="ChkRequireSpecClarification" Content="Require critical engineering specs before planning" ToolTip="When enabled, the planner will request missing engineering specifications instead of generating a plan" Margin="0,4" />
-                                </StackPanel>
-                            </GroupBox>
-
                             <GroupBox Header="SolidWorks Units" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="Choose the document units AI-CAD applies before building parts." Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,8" FontSize="12" TextWrapping="Wrap" />
                                     <RadioButton x:Name="SwUnitsMmgsRadio" Content="MMGS (millimeter, gram, second)" GroupName="SwUnits" Margin="0,4" />
                                     <RadioButton x:Name="SwUnitsIpsRadio" Content="IPS (inch, pound, second)" GroupName="SwUnits" Margin="0,4" />
                                     <TextBlock Text="This preference is applied to the active or newly created document when the AI executor prepares a part." Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" FontSize="11" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </GroupBox>
-
-                            <GroupBox Header="🛡️ Safety &amp; Backup" Margin="0,8,0,0">
-                                <StackPanel>
-                                    <CheckBox x:Name="ChkConfirmBeforeApply" Content="Ask for confirmation before applying changes" ToolTip="Show a confirmation dialog before applying naming changes" Margin="0,4" />
-                                    <CheckBox x:Name="ChkBackupBeforeRename" Content="Create backup files before renaming (.bak)" ToolTip="Automatically create backup copies of files before renaming operations" Margin="0,4" />
-                                        <CheckBox x:Name="ChkEnableExceptionClassifier" Content="Enable LLM Error Reporting (Traffic Cop)" ToolTip="Send filtered exceptions to the configured local LLM for troubleshooting (opt-in)" Margin="0,4" />
-                                        <CheckBox x:Name="ChkStatusWindowTopmost" Content="Status console always on top" ToolTip="Keep the status console above other windows" Margin="0,4" />
                                 </StackPanel>
                             </GroupBox>
 

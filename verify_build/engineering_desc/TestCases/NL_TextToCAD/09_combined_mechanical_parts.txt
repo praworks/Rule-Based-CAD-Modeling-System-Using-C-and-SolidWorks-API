@@ -1,0 +1,10 @@
+TC081 Create an L-bracket with a 100 mm x 40 mm base, a 60 mm tall vertical leg, both 8 mm thick, and one 12 mm hole in the center of each leg.
+TC082 Make a mounting flange: a 120 mm x 120 mm x 12 mm square plate, a 50 mm diameter centered boss 20 mm high, and a 25 mm center hole.
+TC083 Build a clevis-like part with a 90 mm x 30 mm x 12 mm base, two vertical tabs 12 mm thick rising 40 mm, and a 10 mm hole through both tabs.
+TC084 Create a support block 100 mm x 60 mm x 20 mm with a centered top boss 40 mm diameter and 15 mm high, plus a 12 mm through hole at the center.
+TC085 Make a base plate 140 mm x 80 mm x 10 mm with two raised pads 30 mm x 30 mm x 20 mm and a 10 mm hole through the center of each pad.
+TC086 Create a flange coupling half with a 70 mm diameter body 30 mm long, a 110 mm diameter flange 12 mm thick, a 25 mm bore, and four 10 mm bolt holes on the flange.
+TC087 Build a rectangular housing block 120 mm x 80 mm x 30 mm with a centered pocket 80 mm x 50 mm x 15 mm and four 8 mm corner mounting holes.
+TC088 Make a standoff plate 100 mm x 50 mm x 8 mm with two cylindrical standoffs 18 mm diameter and 20 mm high, each with a 6 mm hole through the center.
+TC089 Create a round flange 120 mm in diameter and 10 mm thick with a 40 mm center hole and a 50 mm diameter boss 25 mm high on top.
+TC090 Build a simple motor mount plate 150 mm x 100 mm x 10 mm with a 60 mm center hole and four 8 mm mounting holes arranged around the center.

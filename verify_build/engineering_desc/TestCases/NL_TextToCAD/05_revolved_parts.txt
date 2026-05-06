@@ -1,0 +1,10 @@
+TC041 Create a stepped shaft by revolving a profile: 20 mm diameter for 60 mm length, then 30 mm diameter for 15 mm length on the right end.
+TC042 Make a pulley by revolving a section with 80 mm outer diameter, 20 mm bore, and 20 mm total width.
+TC043 Create a simple bushing by revolving a section with 40 mm outer diameter, 20 mm inner diameter, and 30 mm length.
+TC044 Build a bottle-shaped solid by revolving a profile that has a 50 mm diameter base, narrows to a 25 mm diameter neck, and has total height 90 mm.
+TC045 Create a flange-like revolved part with a 60 mm diameter body 20 mm long and a 100 mm diameter flange 8 mm thick at one end.
+TC046 Make a spindle by revolving a profile with three diameters: 18 mm for 30 mm length, 28 mm for 20 mm length, and 12 mm for 25 mm length.
+TC047 Create a revolved knob with a 35 mm diameter base, a 45 mm maximum diameter upper body, and 25 mm total height.
+TC048 Build a wheel hub by revolving a section with 70 mm outer diameter, 25 mm bore, and 40 mm width.
+TC049 Create a tapered sleeve by revolving a profile that starts at 40 mm outer diameter on one end and reduces to 25 mm outer diameter over 50 mm length, with a 15 mm through bore.
+TC050 Make a revolved roller 55 mm in diameter and 80 mm long with 5 mm chamfers on both ends.

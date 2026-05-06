@@ -6,6 +6,7 @@ using System.Collections.ObjectModel;
 using System.Runtime.Serialization;
 using System.Runtime.Serialization.Json;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
@@ -2752,7 +2753,7 @@ namespace AICAD.UI
                     });
 
                     classifiedCategory = orchResult.Category;
-                    _generatedDescription = orchResult.Description;
+                    _generatedDescription = NormalizeDescriptionForMetadata(orchResult.Description, text);
                     if (!string.IsNullOrWhiteSpace(_generatedDescription))
                     {
                         try { AppendStatusLine($"[Description] Generated: {_generatedDescription}"); } catch { }
@@ -3540,21 +3541,10 @@ namespace AICAD.UI
 
                     try
                     {
-                        // Only auto-update Description when the NameEasy setting is enabled
-                        bool allowAutoDescription = false;
-                        try
+                        var descriptionToWrite = NormalizeDescriptionForMetadata(description, _lastPrompt);
+                        if (!string.IsNullOrWhiteSpace(descriptionToWrite))
                         {
-                            using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(@"Software\\AI-CAD\\NameEasy"))
-                            {
-                                var val = key?.GetValue("AutoUpdateDescription")?.ToString() ?? "0";
-                                allowAutoDescription = (val == "1" || val.Equals("true", StringComparison.OrdinalIgnoreCase));
-                            }
-                        }
-                        catch { allowAutoDescription = false; }
-
-                        if (!string.IsNullOrEmpty(description) && allowAutoDescription)
-                        {
-                            custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                            custPropMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText, descriptionToWrite, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
                         }
                     }
                     catch { }
@@ -3700,7 +3690,7 @@ namespace AICAD.UI
 
                 if (!string.IsNullOrWhiteSpace(partName)) SetProp("Part Number", partName);
                 SetProp("Material", material ?? string.Empty);
-                SetProp("Description", description ?? string.Empty);
+                SetProp("Description", NormalizeDescriptionForMetadata(description, _lastPrompt));
 
                 // Let SolidWorks compute mass: link Weight to SW-Mass for the current file name when available
                 var path = model.GetPathName();
@@ -3726,6 +3716,89 @@ namespace AICAD.UI
                 status = ex.Message;
                 return false;
             }
+        }
+
+        private string NormalizeDescriptionForMetadata(string description, string fallbackPrompt = null)
+        {
+            var resolved = (description ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(resolved))
+                resolved = (_generatedDescription ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(resolved))
+                resolved = (fallbackPrompt ?? _lastPrompt ?? string.Empty).Trim();
+            resolved = TryNormalizeEngineeringDescription(resolved);
+            if (resolved.Length > 255)
+                resolved = resolved.Substring(0, 255);
+            return resolved;
+        }
+
+        private string TryNormalizeEngineeringDescription(string description)
+        {
+            var text = (description ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(text))
+                return string.Empty;
+
+            var cylinderDescription = TryNormalizeCylinderDescription(text);
+            if (!string.IsNullOrWhiteSpace(cylinderDescription))
+                return cylinderDescription;
+
+            return text;
+        }
+
+        private string TryNormalizeCylinderDescription(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return string.Empty;
+
+            if (text.IndexOf("cylinder", StringComparison.OrdinalIgnoreCase) < 0 &&
+                text.IndexOf("cylindrical", StringComparison.OrdinalIgnoreCase) < 0)
+            {
+                return string.Empty;
+            }
+
+            var compactMatch = Regex.Match(
+                text,
+                @"[Ø⌀]?\s*(?<diameter>\d+(?:\.\d+)?)\s*mm\s*[x×]\s*(?<height>\d+(?:\.\d+)?)\s*mm",
+                RegexOptions.IgnoreCase);
+            var diameter = compactMatch.Success ? compactMatch.Groups["diameter"].Value : ExtractFirstMatch(text, new[]
+            {
+                @"(?:diameter|dia)\s*(?:of|=)?\s*(?<value>\d+(?:\.\d+)?)\s*mm",
+                @"(?<value>\d+(?:\.\d+)?)\s*mm\s*(?:in\s*)?diameter",
+                @"[Ø⌀]\s*(?<value>\d+(?:\.\d+)?)\s*mm"
+            });
+            var height = compactMatch.Success ? compactMatch.Groups["height"].Value : ExtractFirstMatch(text, new[]
+            {
+                @"(?:height|tall|high|long)\s*(?:of|=)?\s*(?<value>\d+(?:\.\d+)?)\s*mm",
+                @"(?<value>\d+(?:\.\d+)?)\s*mm\s*(?:tall|high|long)",
+                @"[x×]\s*(?<value>\d+(?:\.\d+)?)\s*mm"
+            });
+
+            if (string.IsNullOrWhiteSpace(diameter) || string.IsNullOrWhiteSpace(height))
+                return string.Empty;
+
+            return $"Cylinder Ø{FormatDimensionValue(diameter)} mm × {FormatDimensionValue(height)} mm";
+        }
+
+        private string ExtractFirstMatch(string text, IEnumerable<string> patterns)
+        {
+            foreach (var pattern in patterns ?? Enumerable.Empty<string>())
+            {
+                var match = Regex.Match(text, pattern, RegexOptions.IgnoreCase);
+                if (match.Success)
+                {
+                    var value = match.Groups["value"]?.Value;
+                    if (!string.IsNullOrWhiteSpace(value))
+                        return value;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private string FormatDimensionValue(string rawValue)
+        {
+            if (decimal.TryParse(rawValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var numeric))
+                return numeric.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture);
+            return rawValue?.Trim() ?? string.Empty;
         }
 
         private string ResolveMaterialName(string material)

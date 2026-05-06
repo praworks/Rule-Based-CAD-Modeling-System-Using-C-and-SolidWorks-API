@@ -7,15 +7,10 @@ DECOMPOSE RULES (STRICT):
 - DO NOT output execution instructions or ops.
 - Output exactly one RAW JSON object.
 - If the user provides dimensions or size, include them explicitly in each feature's intent (e.g., "create cube 100x100x100mm").
-- The description must be a short engineering-style part description, not a full sentence when a compact form is possible.
-- Prefer compact dimension notation such as:
-  - Cylinder Ø45 mm × 70 mm
-  - Cube 100 × 100 × 100 mm
-  - Plate 120 × 80 × 10 mm
 
 OUTPUT SHAPE:
 {
-  "description":"<short engineering-style description or empty>",
+  "description":"<one-sentence intent or empty>",
   "needs_description": false,
   "question": "<question or empty>",
   "features": [ { "feature_type": "<string>", "role": "base"|"dependent", "intent": "<string>", "depends_on": [ <indexes> ] } ]
@@ -34,9 +29,5 @@ Map non-canonical:
 - countersink/counterbore -> hole
 - rod/u-bolt/donut -> sweep
 - set material / material <name> / use <name> material -> material (dependent)
-
-Example:
-User request: Create a cylinder 45 mm in diameter and 70 mm tall
-description: "Cylinder Ø45 mm × 70 mm"
 
 Return RAW JSON only.

@@ -460,7 +460,7 @@
                             <GroupBox Header="🔄 Auto-Update Options" Margin="0,8,0,0">
                                 <StackPanel>
                                     <CheckBox x:Name="ChkAutoUpdateMaterial" Content="Automatically update Material properties" ToolTip="Auto-fill material information when naming parts" Margin="0,4" />
-                                    <CheckBox x:Name="ChkAutoUpdateDescription" Content="Automatically update Description field" ToolTip="Auto-fill description based on naming patterns" Margin="0,4" />
+                                    <CheckBox x:Name="ChkAutoUpdateDescription" Content="Always update Description field" ToolTip="Description metadata is always written from the generated description or the build prompt." Margin="0,4" IsChecked="True" IsEnabled="False" />
                                 </StackPanel>
                             </GroupBox>
                             

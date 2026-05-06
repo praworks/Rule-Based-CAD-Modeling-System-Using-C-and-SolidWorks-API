@@ -1,0 +1,10 @@
+TC071 In millimeters, create a 100 mm x 60 mm x 8 mm plate and assign Aluminum as the material.
+TC072 In inches, make a rectangular plate 4 in long, 2 in wide, and 0.25 in thick.
+TC073 Create a steel shaft 20 mm in diameter and 80 mm long with an external thread on the first 25 mm from one end.
+TC074 Build a brass bushing with 35 mm outer diameter, 20 mm inner diameter, 25 mm length, and set the material to Brass.
+TC075 In millimeters, create a 120 mm x 80 mm x 10 mm mounting plate with four 8 mm corner holes and assign Stainless Steel.
+TC076 Make a threaded rod 12 mm in diameter and 60 mm long, with thread over the full length.
+TC077 Create a plastic spacer with 30 mm outer diameter, 12 mm inner diameter, and 10 mm thickness.
+TC078 In centimeters, create a cylinder 5 cm in diameter and 12 cm tall.
+TC079 Make a shaft 16 mm in diameter and 50 mm long with a 24 mm diameter flange 6 mm thick at one end, and use Mild Steel as the material.
+TC080 Create a simple bolt-like part with a 10 mm diameter shank 40 mm long and an external thread on the last 20 mm.

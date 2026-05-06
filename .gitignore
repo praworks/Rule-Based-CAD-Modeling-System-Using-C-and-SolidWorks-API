@@ -6,8 +6,14 @@ client_secret_*.json
 bin/
 obj/
 build_obj/
+artifacts/
+verify_build/
+verify_obj/
+TempLogs/
+TestArtifacts/
 *.user
 *.suo
+*_wpftmp.csproj
 
 # Visual Studio / VSCode
 .vs/
@@ -23,7 +29,10 @@ build_obj/
 
 # Logs
 aicad_log.txt
+dotnet_build_output.txt
+msbuild.binlog
 *.log
+temp_AICAD.dll
 
 # NuGet / packages
 packages/

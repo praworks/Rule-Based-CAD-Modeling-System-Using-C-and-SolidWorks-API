@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json.Linq;
 using SolidWorks.Interop.sldworks;
@@ -51,6 +52,7 @@ namespace AICAD.Services
                 result.Error = "Empty prompt";
                 return result;
             }
+            userPrompt = NormalizeUserPrompt(userPrompt);
 
             var correlationId = string.IsNullOrWhiteSpace(runId) ? Guid.NewGuid().ToString("N") : runId;
             var context = new LoggingContext
@@ -107,6 +109,17 @@ namespace AICAD.Services
                     var question = string.IsNullOrWhiteSpace(decomposeResult.Question) ? "Provide a short description of the request." : decomposeResult.Question;
                     result.Error = question;
                     result.FeatureTasks = new JArray();
+                    result.Execution = new StepExecutionResult
+                    {
+                        Success = false,
+                        Clarification = new JObject
+                        {
+                            ["clarification_needed"] = true,
+                            ["feature_index"] = 0,
+                            ["feature_type"] = "decompose",
+                            ["questions"] = new JArray(question)
+                        }
+                    };
                     _logger.LogWithContext(LogLevel.Warning, decomposeCtx, "Decompose requested clarification: " + question);
                     result.LlmMs = llmSw.ElapsedMilliseconds;
                     buildOp.MarkFailure(null, result.Error, userVisible: true);
@@ -408,6 +421,18 @@ namespace AICAD.Services
             }
             catch { }
             return clarification.ToString();
+        }
+
+        private static string NormalizeUserPrompt(string userPrompt)
+        {
+            if (string.IsNullOrWhiteSpace(userPrompt))
+                return userPrompt ?? string.Empty;
+
+            return Regex.Replace(
+                userPrompt,
+                @"\b(clyinder|cilinder|cylnder|cylider|cyclinder)\b",
+                "cylinder",
+                RegexOptions.IgnoreCase);
         }
     }
 }

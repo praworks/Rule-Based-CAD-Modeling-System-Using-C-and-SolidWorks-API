@@ -30,6 +30,8 @@ If unclear:
 Canonical feature_type values: extrude, extrude_cut, revolve, revolve_cut, sweep, loft, fillet, chamfer, hole, thread, pocket, material.
 Map non-canonical:
 - cube/box/block -> extrude (base)
+- cylinder -> extrude (base)
+- sphere/cone -> revolve (base)
 - slot -> extrude_cut
 - countersink/counterbore -> hole
 - rod/u-bolt/donut -> sweep

@@ -908,7 +908,7 @@ namespace AICAD.Services
                 }
 
                 // Base/block/plate: require explicit dimensions (LxWxH or numeric values)
-                if (lower.Contains("base") || lower.Contains("plate") || lower.Contains("block") || lower.Contains("box") || lower.Contains("rectan"))
+                if (lower.Contains("base") || lower.Contains("plate") || lower.Contains("block") || lower.Contains("box") || lower.Contains("cube") || lower.Contains("rectan"))
                 {
                     // look for numeric dimension patterns (e.g., 100x50x20 or 100 x 50 x 20, or '100 mm')
                     var hasDims = System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+(\\.\\d+)?\\s*(mm|cm|m)?") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+(\\.\\d+)?\\s*[x×]\\s*\\d+(\\.\\d+)?");
@@ -919,13 +919,32 @@ namespace AICAD.Services
                 }
 
                 // Cylinder: require radius/diameter and height
-                if (lower.Contains("cylinder"))
+                if (System.Text.RegularExpressions.Regex.IsMatch(lower, "\\b(cylinder|cylindrical|clyinder|cilinder|cylnder|cylider|cyclinder)\\b", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                 {
                     var hasRadius = lower.Contains("radius") || lower.Contains("r=") || lower.Contains("diameter") || lower.Contains("dia") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+\\s*mm");
                     var hasHeight = lower.Contains("height") || lower.Contains("h=") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+[x×]\\d+");
                     if (!hasRadius || !hasHeight)
                     {
                         return "Cylinder requests require radius/diameter and height values (in mm).";
+                    }
+                }
+
+                if (lower.Contains("sphere"))
+                {
+                    var hasRadius = lower.Contains("radius") || lower.Contains("r=") || lower.Contains("diameter") || lower.Contains("dia") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+\\s*mm");
+                    if (!hasRadius)
+                    {
+                        return "Sphere requests require a radius or diameter value (in mm).";
+                    }
+                }
+
+                if (lower.Contains("cone"))
+                {
+                    var hasRadius = lower.Contains("radius") || lower.Contains("r=") || lower.Contains("diameter") || lower.Contains("dia") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+\\s*mm");
+                    var hasHeight = lower.Contains("height") || lower.Contains("h=") || lower.Contains("tall") || System.Text.RegularExpressions.Regex.IsMatch(lower, "\\d+[xÃ—]\\d+");
+                    if (!hasRadius || !hasHeight)
+                    {
+                        return "Cone requests require a radius/diameter and height value (in mm).";
                     }
                 }
 

@@ -75,6 +75,21 @@ namespace AICAD.Services
         }
 
         [TestMethod]
+        public void RevolveFeaturePromptPath_IsResolvedToPromptBody()
+        {
+            PromptCatalog.EnsureCatalogLoaded();
+            var revolvePrompt = PromptCatalog.GetSystemPromptForFeature("execute_revolve");
+
+            Assert.IsFalse(string.IsNullOrWhiteSpace(revolvePrompt), "execute_revolve prompt must be present");
+            Assert.IsFalse(
+                revolvePrompt.Trim().Equals("prompts/execute/revolve.txt", StringComparison.OrdinalIgnoreCase),
+                "Feature prompt lookup must resolve file paths to file content.");
+            Assert.IsTrue(
+                revolvePrompt.IndexOf("\"feature_type\": \"revolve\"", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Resolved execute_revolve prompt should include the revolve clarification contract.");
+        }
+
+        [TestMethod]
         public void DecomposePrompt_ReturnsDescriptionAndFeatures()
         {
             PromptCatalog.EnsureCatalogLoaded();

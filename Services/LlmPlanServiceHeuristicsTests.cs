@@ -101,5 +101,62 @@ namespace AICAD.Services
             Assert.AreEqual("auto_dimension", ((JObject)plan.Steps[3])["op"]?.ToString(), "Boss shortcut should fully define the sketch before closing it.");
             Assert.AreEqual("sketch_end", ((JObject)plan.Steps[4])["op"]?.ToString(), "Boss shortcut should close the sketch after auto-dimensioning.");
         }
+
+        [TestMethod]
+        public void BaseCube_UsesLocalExtrudeShortcut()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "extrude",
+                ["role"] = "base",
+                ["intent"] = "create cube 100 mm"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, null);
+
+            Assert.IsNotNull(plan, "Plan should be generated for a base cube.");
+            Assert.IsNotNull(plan.Steps, "Cube shortcut should return executable steps.");
+            Assert.AreEqual("new_part", ((JObject)plan.Steps[0])["op"]?.ToString(), "Base cube shortcut should start a new part when no model exists.");
+            Assert.AreEqual("rectangle_center", ((JObject)plan.Steps[3])["op"]?.ToString(), "Cube shortcut should sketch a centered rectangle.");
+            Assert.AreEqual(100d, ((JObject)plan.Steps[6])["depth"]?.Value<double>(), "Cube depth should match the side length.");
+        }
+
+        [TestMethod]
+        public void BaseCylinder_UsesLocalExtrudeShortcut()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "extrude",
+                ["role"] = "base",
+                ["intent"] = "create a cylinder 40 mm diameter and 80 mm height"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, null);
+
+            Assert.IsNotNull(plan, "Plan should be generated for a base cylinder.");
+            Assert.IsNotNull(plan.Steps, "Cylinder shortcut should return executable steps.");
+            Assert.AreEqual("circle_center", ((JObject)plan.Steps[3])["op"]?.ToString(), "Cylinder shortcut should sketch a centered circle.");
+            Assert.AreEqual(40d, ((JObject)plan.Steps[3])["diameter"]?.Value<double>(), "Cylinder diameter should come from the intent.");
+            Assert.AreEqual(80d, ((JObject)plan.Steps[6])["depth"]?.Value<double>(), "Cylinder height should become extrude depth.");
+        }
+
+        [TestMethod]
+        public void BaseCylinder_CommonMisspelling_UsesLocalExtrudeShortcut()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "extrude",
+                ["role"] = "base",
+                ["intent"] = "make a clyinder 40 mm diameter and 80 mm height"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, null);
+
+            Assert.IsNotNull(plan, "Plan should be generated for a misspelled cylinder intent.");
+            Assert.IsNotNull(plan.Steps, "Misspelled cylinder shortcut should return executable steps.");
+            Assert.AreEqual("circle_center", ((JObject)plan.Steps[3])["op"]?.ToString(), "Misspelled cylinder shortcut should still sketch a centered circle.");
+            Assert.AreEqual(40d, ((JObject)plan.Steps[3])["diameter"]?.Value<double>(), "Misspelled cylinder diameter should come from the intent.");
+            Assert.AreEqual(80d, ((JObject)plan.Steps[6])["depth"]?.Value<double>(), "Misspelled cylinder height should become extrude depth.");
+        }
     }
 }

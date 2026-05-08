@@ -183,6 +183,12 @@ namespace AICAD.Services
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local material plan"); } catch { }
                     return BuildMaterialPlan(featureTask, modelFacts);
                 }
+                var localBasePrimitivePlan = TryBuildBasePrimitivePlan(featureTask, modelFacts);
+                if (localBasePrimitivePlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local base primitive plan"); } catch { }
+                    return localBasePrimitivePlan;
+                }
                 var localTopHolePlan = TryBuildTopCenterHolePlan(featureTask, modelFacts);
                 if (localTopHolePlan != null)
                 {
@@ -974,6 +980,153 @@ namespace AICAD.Services
                    || featureType.Equals("set_material", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static FeaturePlanResult TryBuildBasePrimitivePlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var role = featureTask.Value<string>("role") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!featureType.Equals("extrude", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!role.Equals("base", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            var lower = intent.ToLowerInvariant();
+            var plane = NormalizePlaneName(TryExtractPlaneName(intent));
+
+            if (IsCylinderLikeIntent(lower))
+            {
+                var diameterMm = TryExtractDiameterOrRadiusMm(intent);
+                var cylinderHeightMm = TryExtractHeightMm(intent);
+                if (!diameterMm.HasValue || diameterMm.Value <= 0 || !cylinderHeightMm.HasValue || cylinderHeightMm.Value <= 0)
+                {
+                    return new FeaturePlanResult
+                    {
+                        ClarificationNeeded = true,
+                        Clarification = new JObject
+                        {
+                            ["clarification_needed"] = true,
+                            ["feature_index"] = featureTask.Value<int?>("index") ?? 0,
+                            ["feature_type"] = "extrude",
+                            ["questions"] = new JArray("Please provide the cylinder diameter or radius and height in millimeters.")
+                        },
+                        Thinking = "Cylinder size is incomplete."
+                    };
+                }
+
+                return BuildBaseExtrudePlan(
+                    modelFacts,
+                    plane,
+                    new JObject
+                    {
+                        ["op"] = "circle_center",
+                        ["cx"] = 0,
+                        ["cy"] = 0,
+                        ["diameter"] = diameterMm.Value
+                    },
+                    cylinderHeightMm.Value,
+                    $"Sketch a centered {diameterMm.Value} mm diameter circle on {plane} and extrude it {cylinderHeightMm.Value} mm.");
+            }
+
+            var dims = ExtractOrderedNumbers(intent);
+            if (lower.Contains("cube"))
+            {
+                if (dims.Count < 1 || dims[0] <= 0)
+                {
+                    return new FeaturePlanResult
+                    {
+                        ClarificationNeeded = true,
+                        Clarification = new JObject
+                        {
+                            ["clarification_needed"] = true,
+                            ["feature_index"] = featureTask.Value<int?>("index") ?? 0,
+                            ["feature_type"] = "extrude",
+                            ["questions"] = new JArray("Please provide the cube size in millimeters.")
+                        },
+                        Thinking = "Cube side length is missing."
+                    };
+                }
+
+                var sideMm = dims[0];
+                return BuildBaseExtrudePlan(
+                    modelFacts,
+                    plane,
+                    new JObject
+                    {
+                        ["op"] = "rectangle_center",
+                        ["cx"] = 0,
+                        ["cy"] = 0,
+                        ["w"] = sideMm,
+                        ["h"] = sideMm
+                    },
+                    sideMm,
+                    $"Sketch a centered {sideMm} x {sideMm} mm square on {plane} and extrude it {sideMm} mm.");
+            }
+
+            var looksRectangularBase =
+                lower.Contains("box")
+                || lower.Contains("block")
+                || lower.Contains("plate")
+                || lower.Contains("base")
+                || lower.Contains("rectangular")
+                || lower.Contains("rectangle");
+            if (!looksRectangularBase)
+                return null;
+
+            if (dims.Count < 3 || dims[0] <= 0 || dims[1] <= 0 || dims[2] <= 0)
+            {
+                return new FeaturePlanResult
+                {
+                    ClarificationNeeded = true,
+                    Clarification = new JObject
+                    {
+                        ["clarification_needed"] = true,
+                        ["feature_index"] = featureTask.Value<int?>("index") ?? 0,
+                        ["feature_type"] = "extrude",
+                        ["questions"] = new JArray("Please provide the base dimensions in millimeters as length x width x height.")
+                    },
+                    Thinking = "Base dimensions are incomplete."
+                };
+            }
+
+            var widthMm = dims[0];
+            var heightMm = dims[1];
+            var depthMm = dims[2];
+            return BuildBaseExtrudePlan(
+                modelFacts,
+                plane,
+                new JObject
+                {
+                    ["op"] = "rectangle_center",
+                    ["cx"] = 0,
+                    ["cy"] = 0,
+                    ["w"] = widthMm,
+                    ["h"] = heightMm
+                },
+                depthMm,
+                $"Sketch a centered {widthMm} x {heightMm} mm rectangle on {plane} and extrude it {depthMm} mm.");
+        }
+
+        private static FeaturePlanResult BuildBaseExtrudePlan(JObject modelFacts, string plane, JObject sketchStep, double depthMm, string thinking)
+        {
+            var steps = new JArray();
+            if (modelFacts == null)
+                steps.Add(new JObject { ["op"] = "new_part" });
+
+            steps.Add(new JObject { ["op"] = "select_plane", ["name"] = plane });
+            steps.Add(new JObject { ["op"] = "sketch_begin" });
+            steps.Add(sketchStep);
+            steps.Add(new JObject { ["op"] = "auto_dimension" });
+            steps.Add(new JObject { ["op"] = "sketch_end" });
+            steps.Add(new JObject { ["op"] = "extrude", ["depth"] = depthMm });
+
+            return new FeaturePlanResult
+            {
+                Steps = steps,
+                Thinking = thinking
+            };
+        }
+
         private static FeaturePlanResult TryBuildTopCenterHolePlan(JObject featureTask, JObject modelFacts)
         {
             if (featureTask == null || modelFacts == null) return null;
@@ -1424,6 +1577,27 @@ namespace AICAD.Services
             return "Top Plane";
         }
 
+        private static bool IsCylinderLikeIntent(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            return Regex.IsMatch(
+                text,
+                @"\b(cylinder|cylindrical|clyinder|cilinder|cylnder|cylider|cyclinder)\b",
+                RegexOptions.IgnoreCase);
+        }
+
+        private static string TryExtractPlaneName(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            if (text.IndexOf("right plane", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf(" right ", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Right Plane";
+            if (text.IndexOf("front plane", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf(" front ", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Front Plane";
+            if (text.IndexOf("top plane", StringComparison.OrdinalIgnoreCase) >= 0 || text.IndexOf(" top ", StringComparison.OrdinalIgnoreCase) >= 0)
+                return "Top Plane";
+            return null;
+        }
+
         private static double? TryExtractDepthMm(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
@@ -1486,6 +1660,47 @@ namespace AICAD.Services
 
             var dims = ExtractOrderedNumbers(text);
             return dims.Count > 0 ? (double?)dims[0] : null;
+        }
+
+        private static double? TryExtractDiameterOrRadiusMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var radiusMatch = Regex.Match(
+                text,
+                @"(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:in\s+)?radius|radius\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|r=\s*(\d+(?:\.\d+)?)",
+                RegexOptions.IgnoreCase);
+            if (radiusMatch.Success)
+            {
+                var raw = !string.IsNullOrWhiteSpace(radiusMatch.Groups[1].Value)
+                    ? radiusMatch.Groups[1].Value
+                    : (!string.IsNullOrWhiteSpace(radiusMatch.Groups[2].Value) ? radiusMatch.Groups[2].Value : radiusMatch.Groups[3].Value);
+                if (double.TryParse(raw, out var radiusMm))
+                    return radiusMm * 2.0;
+            }
+
+            return TryExtractDiameterMm(text);
+        }
+
+        private static double? TryExtractHeightMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var heightMatch = Regex.Match(
+                text,
+                @"(?:height|tall|length)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:high|tall|height)",
+                RegexOptions.IgnoreCase);
+            if (heightMatch.Success)
+            {
+                var raw = !string.IsNullOrWhiteSpace(heightMatch.Groups[1].Value)
+                    ? heightMatch.Groups[1].Value
+                    : heightMatch.Groups[2].Value;
+                if (double.TryParse(raw, out var heightMm))
+                    return heightMm;
+            }
+
+            var dims = ExtractOrderedNumbers(text);
+            return dims.Count > 1 ? (double?)dims[dims.Count - 1] : null;
         }
 
         private static List<double> ExtractOrderedNumbers(string text)

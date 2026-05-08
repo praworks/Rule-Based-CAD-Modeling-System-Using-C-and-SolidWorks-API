@@ -6,6 +6,7 @@
   "systemPromptsByFeature": {
     "execute_sketch": "prompts/execute/base.txt",
     "execute_extrude": "prompts/execute/extrude.txt",
+    "execute_revolve": "prompts/execute/revolve.txt",
     "execute_sweep": "prompts/execute/sweep.txt",
     "execute_hole": "prompts/execute/hole.txt",
     "execute_fillet": "prompts/execute/fillet.txt",

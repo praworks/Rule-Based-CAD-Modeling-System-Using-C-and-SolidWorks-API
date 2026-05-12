@@ -978,7 +978,6 @@ namespace AICAD.UI
                     {
                         if (reg != null)
                         {
-                            reg.SetValue("AutoUpdateMaterial", (ChkAutoUpdateMaterial.IsChecked == true) ? "1" : "0");
                             reg.SetValue("AutoUpdateDescription", "1");
                         }
                     }
@@ -1007,9 +1006,7 @@ namespace AICAD.UI
                 {
                     if (key != null)
                     {
-                        var mat = key.GetValue("AutoUpdateMaterial")?.ToString() ?? "0";
                         var desc = key.GetValue("AutoUpdateDescription")?.ToString() ?? "1";
-                        ChkAutoUpdateMaterial.IsChecked = (mat == "1" || mat.Equals("true", StringComparison.OrdinalIgnoreCase));
                         ChkAutoUpdateDescription.IsChecked = string.IsNullOrWhiteSpace(desc) || desc == "1" || desc.Equals("true", StringComparison.OrdinalIgnoreCase);
                     }
                     else

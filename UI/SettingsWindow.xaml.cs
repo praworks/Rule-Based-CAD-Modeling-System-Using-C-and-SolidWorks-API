@@ -239,12 +239,18 @@ namespace AICAD.UI
                 var dir = new System.IO.DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory);
                 while (dir != null)
                 {
-                    var secretsDir = System.IO.Path.Combine(dir.FullName, "Secrets");
-                    if (System.IO.Directory.Exists(secretsDir))
+                    foreach (var candidateDir in new[]
                     {
+                        System.IO.Path.Combine(dir.FullName, "Secrets"),
+                        System.IO.Path.Combine(dir.FullName, "Login", "OAuth"),
+                        System.IO.Path.Combine(dir.FullName, "Services", "Login", "OAuth")
+                    })
+                    {
+                        if (!System.IO.Directory.Exists(candidateDir)) continue;
+
                         try
                         {
-                            var matches = System.IO.Directory.GetFiles(secretsDir, "client_secret*.json", System.IO.SearchOption.TopDirectoryOnly);
+                            var matches = System.IO.Directory.GetFiles(candidateDir, "client_secret*.json", System.IO.SearchOption.TopDirectoryOnly);
                             if (matches.Length > 0)
                             {
                                 var file = matches[0];

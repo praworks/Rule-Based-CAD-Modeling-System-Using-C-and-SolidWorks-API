@@ -314,20 +314,20 @@ Google authentication support.
 
 Files:
 
-* `GoogleOAuthConfig.cs`
-* `OAuthDesktopHelper.cs`
-* `CredentialManager.cs`
-* `SecretProvider.cs`
+* `Services/Login/OAuth/GoogleOAuthConfig.cs`
+* `Services/Login/OAuth/OAuthDesktopHelper.cs`
+* `Services/Login/CredentialManager.cs`
+* `Services/Login/SecretProvider.cs`
 
 ---
 
 # 13. User / Settings System
 
 ```
-UserService.cs
+Services/Login/Identity/UserService.cs
 SettingsManager.cs
 SeriesManager.cs
-TokenManager.cs
+Services/Login/OAuth/TokenManager.cs
 ```
 
 Handles:

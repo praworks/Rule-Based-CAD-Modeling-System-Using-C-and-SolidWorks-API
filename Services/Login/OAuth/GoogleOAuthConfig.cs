@@ -124,27 +124,12 @@ namespace AICAD.Services
 
             try
             {
-                foreach (var dir in EnumerateCandidateDirectories())
+                foreach (var dir in EnumerateSearchDirectories())
                 {
                     try
                     {
                         var matches = Directory.GetFiles(dir, "client_secret*.json", SearchOption.TopDirectoryOnly);
                         if (matches.Length > 0) return matches[0];
-                    }
-                    catch { }
-                }
-
-                // Also search Secrets/ subdirectory in each candidate directory
-                foreach (var dir in EnumerateCandidateDirectories())
-                {
-                    try
-                    {
-                        var secretsDir = Path.Combine(dir, "Secrets");
-                        if (Directory.Exists(secretsDir))
-                        {
-                            var matches = Directory.GetFiles(secretsDir, "client_secret*.json", SearchOption.TopDirectoryOnly);
-                            if (matches.Length > 0) return matches[0];
-                        }
                     }
                     catch { }
                 }
@@ -165,6 +150,30 @@ namespace AICAD.Services
             }
 
             return null;
+        }
+
+        private static IEnumerable<string> EnumerateSearchDirectories()
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void YieldIfExists(List<string> paths, string path)
+            {
+                if (string.IsNullOrWhiteSpace(path)) return;
+                try { path = Path.GetFullPath(path); } catch { }
+                if (!Directory.Exists(path)) return;
+                if (seen.Add(path)) paths.Add(path);
+            }
+
+            var searchPaths = new List<string>();
+            foreach (var dir in EnumerateCandidateDirectories())
+            {
+                YieldIfExists(searchPaths, dir);
+                YieldIfExists(searchPaths, Path.Combine(dir, "Secrets"));
+                YieldIfExists(searchPaths, Path.Combine(dir, "Login", "OAuth"));
+                YieldIfExists(searchPaths, Path.Combine(dir, "Services", "Login", "OAuth"));
+            }
+
+            return searchPaths;
         }
 
         private static IEnumerable<string> EnumerateCandidateDirectories()

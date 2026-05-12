@@ -34,7 +34,10 @@ namespace AICAD.Services
                     .Set("displayName", displayName ?? string.Empty)
                     .Set("lastSignInUtc", DateTime.UtcNow)
                     .Set("idToken", idToken ?? string.Empty)
-                    .SetOnInsert("createdUtc", DateTime.UtcNow);
+                    .SetOnInsert("createdUtc", DateTime.UtcNow)
+                    .SetOnInsert("isAdmin", false)
+                    .SetOnInsert("role", "user")
+                    .SetOnInsert("roles", new BsonArray { "user" });
 
                 var options = new UpdateOptions { IsUpsert = true };
                 await users.UpdateOneAsync(filter, update, options).ConfigureAwait(false);
@@ -96,7 +99,10 @@ namespace AICAD.Services
                     .Set("idToken", idToken ?? string.Empty)
                     .Set("googleSub", payload.Subject ?? string.Empty)
                     .Set("picture", payload.Picture ?? string.Empty)
-                    .SetOnInsert("createdUtc", DateTime.UtcNow);
+                    .SetOnInsert("createdUtc", DateTime.UtcNow)
+                    .SetOnInsert("isAdmin", false)
+                    .SetOnInsert("role", "user")
+                    .SetOnInsert("roles", new BsonArray { "user" });
 
                 var options = new FindOneAndUpdateOptions<BsonDocument>
                 {

@@ -1,0 +1,189 @@
+AI-CAD Settings Fix Plan
+Created: 2026-05-11
+
+Legend
+[ ] Not started
+[~] In progress
+[x] Done
+[!] Blocked / decision needed
+
+Primary Goal
+Make the settings window consistent, trustworthy, and fully wired so every visible option either works correctly or is removed.
+
+Priority 1: Broken or misleading behavior
+[ ] S01 - Make provider priority consistent across all execution paths.
+Notes: Some code uses AICAD_LLM_PRIORITY, but ProviderRouter still hardcodes groq,local,gemini.
+Files: Services/ProviderRouter.cs, Services/ClarificationService.cs, Services/LlmPlanService.cs, UI/TextToCADTaskpaneWpf.xaml.cs
+
+[ ] S02 - Fix LM Studio endpoint normalization.
+Notes: UI suggests a base URL, but some inputs can become /v1/v1/chat/completions.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs, Services/LocalHttpLlmClient.cs
+
+[ ] S03 - Fix Training Data source path mismatch.
+Notes: UI label says JSONL, browse writes samples.db, and runtime does not really consume AICAD_SAMPLES_DB_PATH.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs, UI/TextToCADTaskpaneWpf.xaml.cs
+
+[ ] S04 - Decide and implement behavior for smart example selection.
+Notes: Setting is saved, but SmartExampleSelector has no call sites.
+Files: Services/SmartExampleSelector.cs, Services/BuildOrchestrator.cs, UI/SettingsWindow.xaml.cs
+
+[ ] S05 - Decide and implement behavior for static few-shot mode.
+Notes: AICAD_FORCE_STATIC_FEWSHOT is read and logged, but I did not find the flag applied to example loading.
+Files: UI/TextToCADTaskpaneWpf.xaml.cs, Services/BuildOrchestrator.cs, example store classes
+
+[ ] S06 - Decide and implement behavior for randomize examples.
+Notes: AICAD_SAMPLES_RANDOMIZE is saved and logged, but I did not find the flag applied.
+Files: UI/TextToCADTaskpaneWpf.xaml.cs, Services/BuildOrchestrator.cs, example store classes
+
+Priority 2: Visible UI debt
+[ ] S07 - Either implement Theme setting or remove it from the window.
+Notes: ThemeComboBox has no persistence or runtime effect.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs, UI/Theme.xaml, UI/UITheme.cs
+
+[ ] S08 - Either implement Check for Updates or remove the button.
+Notes: No click handler exists.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs
+
+[ ] S09 - Either implement Reset to Factory Defaults or remove the button.
+Notes: No click handler exists. If implemented, define exactly which env vars and registry keys reset.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs, Services/SettingsManager.cs
+
+[ ] S10 - Make Save All truly save all relevant sections, or rename it.
+Notes: It currently saves Mongo, AI, Samples, and units, but not NameEasy, Theme, or Account-related preferences.
+Files: UI/SettingsWindow.xaml.cs
+
+[ ] S11 - Clean up Account wording.
+Notes: Current UI promises cloud sync for settings, but implemented behavior is auth plus optional Mongo user creation.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs
+
+[ ] S12 - Expose prompt refinement "priority" mode or remove backend-only support.
+Notes: Code supports it, UI does not.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs, UI/TextToCADTaskpaneWpf.xaml.cs
+
+Priority 3: NameEasy cleanup
+[ ] S13 - Rename NameEasy path UI to match actual behavior.
+Notes: It stores a NameEasy.db file path, not a preset folder.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs
+
+[ ] S14 - Decide whether AutoUpdateMaterial and AutoUpdateDescription should have real runtime behavior.
+Notes: They are persisted and logged, but I did not find actual metadata application driven by these flags.
+Files: UI/SettingsWindow.xaml.cs, UI/TextToCADTaskpaneWpf.xaml.cs, NameEasy-related execution code
+
+[ ] S15 - If Description is always required, keep it read-only but explain why in UI.
+Notes: Current checkbox is disabled without enough explanation.
+Files: UI/SettingsWindow.xaml
+
+Priority 4: Stability and verification
+[ ] S16 - Add regression tests or at least deterministic verification scripts for settings persistence.
+Files: verify_build/, scripts/, targeted unit/integration coverage if present
+
+[ ] S17 - Add a manual settings verification checklist.
+Notes: Cover load, save, restart persistence, and runtime effect for every visible option.
+Files: todo.txt or a dedicated docs file
+
+[ ] S18 - Remove or hide any remaining dead controls after implementation decisions.
+Files: UI/SettingsWindow.xaml, UI/SettingsWindow.xaml.cs
+
+Day-by-Day Plan
+
+2026-05-11
+[ ] Finalize implementation policy for each setting: implement, rename, or remove.
+[ ] Start S01 provider priority consistency fix.
+[ ] Start S02 LM Studio endpoint normalization fix.
+
+2026-05-12
+[ ] Finish S01 provider priority consistency.
+[ ] Finish S02 LM Studio endpoint normalization.
+[ ] Smoke test provider selection, fallback, and refinement paths.
+
+2026-05-13
+[ ] Fix S03 training data path mismatch.
+[ ] Decide whether AICAD_SAMPLES_DB_PATH should point to JSONL, SQLite, or Mongo-backed data.
+[ ] Update labels, browse behavior, and load/save logic to match the real source type.
+
+2026-05-14
+[ ] Implement or remove S04 smart example selection.
+[ ] Wire SmartExampleSelector into the actual few-shot selection path if kept.
+[ ] Verify behavior with zero-shot, one-shot, and few-shot modes.
+
+2026-05-15
+[ ] Implement or remove S05 static few-shot mode.
+[ ] Implement or remove S06 randomize examples.
+[ ] Verify key-shot, static, and randomized flows do not conflict.
+
+2026-05-16
+[ ] Resolve S07 Theme setting.
+[ ] Resolve S08 Check for Updates.
+[ ] Resolve S09 Reset to Factory Defaults.
+[ ] Resolve S10 Save All behavior.
+
+2026-05-17
+[ ] Resolve S11 Account wording and capability alignment.
+[ ] Resolve S12 prompt refinement priority mode exposure.
+[ ] Resolve S13 NameEasy path wording.
+
+2026-05-18
+[ ] Resolve S14 and S15 NameEasy auto-update behavior.
+[ ] Either wire the flags into metadata application or remove misleading controls.
+[ ] Verify registry persistence and runtime effect.
+
+2026-05-19
+[ ] Complete S16 regression checks.
+[ ] Complete S17 manual verification checklist.
+[ ] Complete S18 final UI cleanup pass.
+[ ] Run full settings sanity review before closing the settings workstream.
+
+Daily Log
+2026-05-11
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-12
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-13
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-14
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-15
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-16
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-17
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-18
+Status:
+Notes:
+Files changed:
+Blocked by:
+
+2026-05-19
+Status:
+Notes:
+Files changed:
+Blocked by:

@@ -16,6 +16,9 @@ namespace AICAD.Services
         [DllImport("advapi32.dll", SetLastError = true)]
         private static extern void CredFree([In] IntPtr cred);
 
+        [DllImport("advapi32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CredDelete(string target, int type, int flags);
+
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         private struct CREDENTIAL
         {
@@ -77,6 +80,19 @@ namespace AICAD.Services
                     p.WaitForExit(5000);
                     return p.ExitCode == 0;
                 }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        public static bool DeleteGenericSecret(string targetName)
+        {
+            if (string.IsNullOrWhiteSpace(targetName)) return false;
+            try
+            {
+                return CredDelete(targetName, CRED_TYPE_GENERIC, 0);
             }
             catch
             {

@@ -70,6 +70,7 @@
       <HintPath>References\SolidWorks.Interop.SWRoutingLib.dll</HintPath>
       <EmbedInteropTypes>True</EmbedInteropTypes>
     </Reference>
+    <Reference Include="System.Security" />
   </ItemGroup>
   <!-- Exclude helper scripts and nested projects from the SDK-style default compile/include behavior -->
   <ItemGroup>

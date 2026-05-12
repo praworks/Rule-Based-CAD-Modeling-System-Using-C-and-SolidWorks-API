@@ -6,6 +6,7 @@ using System.Text;
 using System.Web;
 using System.Runtime.Serialization.Json;
 using System.IO;
+using System.Security.Cryptography;
 using Newtonsoft.Json.Linq;
 using Google.Apis.Auth.OAuth2;
 using System.Threading;
@@ -15,6 +16,7 @@ namespace AICAD.Services
     public static class TokenManager
     {
         private const string CredentialTarget = "SolidWorksTextToCAD_OAuthToken";
+        private const string TokenFileName = "google_oauth_token.dat";
 
         // Load token JSON from Credential Manager and return access_token; refresh if needed.
         // If no stored token exists or refresh fails, try service-account flow using
@@ -22,7 +24,7 @@ namespace AICAD.Services
         public static async Task<string> GetAccessTokenAsync(GoogleOAuthConfig config)
         {
             // If OAuth client config isn't available, we can still attempt service-account flow below.
-            var tokenJson = CredentialManager.ReadGenericSecret(CredentialTarget);
+            var tokenJson = LoadStoredTokenJson();
             if (!string.IsNullOrWhiteSpace(tokenJson))
             {
                 try
@@ -46,8 +48,9 @@ namespace AICAD.Services
                         var newToken = await RefreshAsync(config, refresh).ConfigureAwait(false);
                         if (!string.IsNullOrWhiteSpace(newToken))
                         {
-                            CredentialManager.WriteGenericSecret(CredentialTarget, newToken);
-                            var j2 = JObject.Parse(newToken);
+                            var mergedToken = MergePersistedTokenData(j, newToken);
+                            SaveTokenJson(mergedToken);
+                            var j2 = JObject.Parse(mergedToken);
                             return j2.Value<string>("access_token");
                         }
                     }
@@ -74,12 +77,71 @@ namespace AICAD.Services
             try
             {
                 var j = JObject.Parse(tokenJson);
+                var existingJson = CredentialManager.ReadGenericSecret(CredentialTarget);
+                if (!string.IsNullOrWhiteSpace(existingJson))
+                {
+                    try
+                    {
+                        var existing = JObject.Parse(existingJson);
+                        CopyIfMissing(existing, j, "refresh_token");
+                        CopyIfMissing(existing, j, "id_token");
+                        CopyIfMissing(existing, j, "profile_name");
+                        CopyIfMissing(existing, j, "profile_email");
+                    }
+                    catch { }
+                }
+
+                TryStampProfileFromIdToken(j);
                 // add obtained timestamp if missing
                 if (j.Value<long?>("obtained_at") == null)
                 {
                     j["obtained_at"] = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
                 }
-                    CredentialManager.WriteGenericSecret(CredentialTarget, AICAD.Services.JsonUtils.SerializeCompact(j));
+                var normalized = AICAD.Services.JsonUtils.SerializeCompact(j);
+                SaveProtectedTokenToFile(normalized);
+            }
+            catch { }
+        }
+
+        public static string LoadStoredTokenJson()
+        {
+            try
+            {
+                var fromFile = LoadProtectedTokenFromFile();
+                if (!string.IsNullOrWhiteSpace(fromFile)) return fromFile;
+            }
+            catch { }
+
+            try
+            {
+                var legacy = CredentialManager.ReadGenericSecret(CredentialTarget);
+                if (string.IsNullOrWhiteSpace(legacy)) return null;
+
+                // Validate before migrating.
+                var parsed = JObject.Parse(legacy);
+                TryStampProfileFromIdToken(parsed);
+                var normalized = AICAD.Services.JsonUtils.SerializeCompact(parsed);
+                SaveProtectedTokenToFile(normalized);
+                return normalized;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        public static void ClearToken()
+        {
+            try
+            {
+                var path = GetTokenFilePath();
+                if (File.Exists(path)) File.Delete(path);
+            }
+            catch { }
+
+            try
+            {
+                CredentialManager.DeleteGenericSecret(CredentialTarget);
             }
             catch { }
         }
@@ -115,7 +177,7 @@ namespace AICAD.Services
                         ["expires_in"] = 3600,
                         ["obtained_at"] = now
                     };
-                    CredentialManager.WriteGenericSecret(CredentialTarget, AICAD.Services.JsonUtils.SerializeCompact(json));
+                    SaveTokenJson(AICAD.Services.JsonUtils.SerializeCompact(json));
                 }
                 catch { }
 
@@ -156,6 +218,100 @@ namespace AICAD.Services
             {
                 return null;
             }
+        }
+
+        private static string MergePersistedTokenData(JObject existingToken, string refreshedTokenJson)
+        {
+            var refreshed = JObject.Parse(refreshedTokenJson);
+            if (existingToken != null)
+            {
+                CopyIfMissing(existingToken, refreshed, "refresh_token");
+                CopyIfMissing(existingToken, refreshed, "id_token");
+                CopyIfMissing(existingToken, refreshed, "profile_name");
+                CopyIfMissing(existingToken, refreshed, "profile_email");
+            }
+
+            TryStampProfileFromIdToken(refreshed);
+            return AICAD.Services.JsonUtils.SerializeCompact(refreshed);
+        }
+
+        private static void CopyIfMissing(JObject source, JObject target, string propertyName)
+        {
+            if (source == null || target == null || string.IsNullOrWhiteSpace(propertyName)) return;
+            if (target[propertyName] != null) return;
+            var token = source[propertyName];
+            if (token != null) target[propertyName] = token.DeepClone();
+        }
+
+        private static void TryStampProfileFromIdToken(JObject tokenJson)
+        {
+            if (tokenJson == null) return;
+            var idToken = tokenJson.Value<string>("id_token");
+            if (string.IsNullOrWhiteSpace(idToken)) return;
+
+            try
+            {
+                var payload = DecodeJwtPayload(idToken);
+                if (payload == null) return;
+
+                var name = payload.Value<string>("name") ?? payload.Value<string>("preferred_username");
+                var email = payload.Value<string>("email");
+                if (!string.IsNullOrWhiteSpace(name)) tokenJson["profile_name"] = name;
+                if (!string.IsNullOrWhiteSpace(email)) tokenJson["profile_email"] = email;
+            }
+            catch { }
+        }
+
+        private static JObject DecodeJwtPayload(string jwt)
+        {
+            try
+            {
+                var parts = jwt.Split('.');
+                if (parts.Length < 2) return null;
+                var payload = parts[1];
+                payload = payload.Replace('-', '+').Replace('_', '/');
+                switch (payload.Length % 4)
+                {
+                    case 2: payload += "=="; break;
+                    case 3: payload += "="; break;
+                }
+
+                var bytes = Convert.FromBase64String(payload);
+                var json = Encoding.UTF8.GetString(bytes);
+                return JObject.Parse(json);
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static string GetTokenFilePath()
+        {
+            var root = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "AI-CAD");
+            Directory.CreateDirectory(root);
+            return Path.Combine(root, TokenFileName);
+        }
+
+        private static void SaveProtectedTokenToFile(string tokenJson)
+        {
+            if (string.IsNullOrWhiteSpace(tokenJson)) return;
+            var path = GetTokenFilePath();
+            var plainBytes = Encoding.UTF8.GetBytes(tokenJson);
+            var protectedBytes = ProtectedData.Protect(plainBytes, null, DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(path, protectedBytes);
+        }
+
+        private static string LoadProtectedTokenFromFile()
+        {
+            var path = GetTokenFilePath();
+            if (!File.Exists(path)) return null;
+            var protectedBytes = File.ReadAllBytes(path);
+            if (protectedBytes == null || protectedBytes.Length == 0) return null;
+            var plainBytes = ProtectedData.Unprotect(protectedBytes, null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(plainBytes);
         }
     }
 }

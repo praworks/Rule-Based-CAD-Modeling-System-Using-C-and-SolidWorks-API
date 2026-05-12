@@ -142,9 +142,28 @@ Blocked by:
 
 2026-05-12
 Status:
+[~] Unplanned auth and MongoDB admin work completed alongside the settings workstream.
 Notes:
+- Wired Google OAuth to use the existing client secret file in `Services/Login/OAuth/client_secret_*.json`.
+- Reorganized login-related files into `Services/Login/`, `Services/Login/OAuth/`, and `Services/Login/Identity/` to keep auth code grouped.
+- Updated OAuth discovery so the app auto-finds `client_secret*.json` from `Services/Login/OAuth` and the Settings window registers that path automatically.
+- Verified MongoDB connectivity against Atlas and confirmed the `admin` database is reachable.
+- Added admin-management and user-count actions to `Tools/mongo_check/Program.cs`.
+- Granted admin to `e2240156@bit.uom.lk`, then enforced single-admin policy so all other users are non-admin.
+- Updated user creation so new Google sign-ins are inserted with `isAdmin=false`, `role=user`, and `roles=[user]` by default.
+- Confirmed the `users` collection currently contains 2 user records.
 Files changed:
+- `Services/Login/CredentialManager.cs`
+- `Services/Login/SecretProvider.cs`
+- `Services/Login/Identity/UserService.cs`
+- `Services/Login/OAuth/GoogleOAuthConfig.cs`
+- `Services/Login/OAuth/OAuthDesktopHelper.cs`
+- `Services/Login/OAuth/TokenManager.cs`
+- `UI/SettingsWindow.xaml.cs`
+- `Tools/mongo_check/Program.cs`
+- `Readme.txt`
 Blocked by:
+- Rebuilding the main add-in to `bin/Debug/net48` was temporarily blocked while `SLDWORKS.exe` held `AI-CAD-December.dll` open. Source verification still passed via alternate output build.
 
 2026-05-13
 Status:

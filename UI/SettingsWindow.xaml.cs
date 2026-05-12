@@ -165,7 +165,7 @@ namespace AICAD.UI
         {
             try
             {
-                var tokenJson = AICAD.Services.CredentialManager.ReadGenericSecret("SolidWorksTextToCAD_OAuthToken");
+                var tokenJson = AICAD.Services.TokenManager.LoadStoredTokenJson();
                 System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: tokenJson is {(string.IsNullOrWhiteSpace(tokenJson) ? "null/empty" : $"{tokenJson.Length} chars")}");
                 
                 if (string.IsNullOrWhiteSpace(tokenJson))
@@ -177,25 +177,30 @@ namespace AICAD.UI
                 var j = JObject.Parse(tokenJson);
                 var idToken = j.Value<string>("id_token");
                 System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: idToken is {(string.IsNullOrWhiteSpace(idToken) ? "null/empty" : "present")}");
-                
-                if (string.IsNullOrWhiteSpace(idToken))
+
+                JObject payload = null;
+                if (!string.IsNullOrWhiteSpace(idToken))
                 {
-                    ShowSignedOutState();
-                    return;
+                    payload = DecodeJwtPayload(idToken);
+                    if (payload == null)
+                    {
+                        System.Diagnostics.Debug.WriteLine("LoadAccountInfo: payload is null");
+                    }
                 }
 
-                var payload = DecodeJwtPayload(idToken);
-                if (payload == null)
-                {
-                    System.Diagnostics.Debug.WriteLine("LoadAccountInfo: payload is null");
-                    ShowSignedOutState();
-                    return;
-                }
-
-                var name = payload.Value<string>("name") ?? payload.Value<string>("preferred_username");
-                var email = payload.Value<string>("email");
+                var name = payload?.Value<string>("name")
+                           ?? payload?.Value<string>("preferred_username")
+                           ?? j.Value<string>("profile_name");
+                var email = payload?.Value<string>("email")
+                            ?? j.Value<string>("profile_email");
                 System.Diagnostics.Debug.WriteLine($"LoadAccountInfo: name={name}, email={email}");
-                
+
+                if (string.IsNullOrWhiteSpace(name) && string.IsNullOrWhiteSpace(email))
+                {
+                    ShowSignedOutState();
+                    return;
+                }
+
                 if (!string.IsNullOrWhiteSpace(name))
                 {
                     DisplayNameTextBox.Text = name;
@@ -1171,22 +1176,7 @@ namespace AICAD.UI
         {
             try
             {
-                // Remove stored credential (cmdkey /delete)
-                var target = "SolidWorksTextToCAD_OAuthToken";
-                try
-                {
-                    var psi = new ProcessStartInfo
-                    {
-                        FileName = "cmdkey",
-                        Arguments = $"/delete:{target}",
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true
-                    };
-                    using (var p = Process.Start(psi)) { p.WaitForExit(3000); }
-                }
-                catch { }
+                AICAD.Services.TokenManager.ClearToken();
 
                 DisplayNameTextBox.Text = string.Empty;
                 EmailTextBox.Text = string.Empty;

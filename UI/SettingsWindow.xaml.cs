@@ -1056,15 +1056,11 @@ namespace AICAD.UI
                 try { System.Diagnostics.Debug.WriteLine($"Sample mode saved: {mode}, AICAD_USE_FEWSHOT={useFewFromRadio}"); } catch { }
                 Environment.SetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", SamplesFileTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
-                // Randomize setting
-                var randomize = RandomizeSamplesCheckBox.IsChecked == true ? "1" : "0";
-                Environment.SetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", randomize, EnvironmentVariableTarget.User);
-
-                // Persist few-shot related flags from the SamplesPanel checkboxes (if present)
-                // Note: `AICAD_USE_FEWSHOT` is already driven by the radio buttons above; keep key/static flags from checkboxes
-                try { Environment.SetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", (ChkForceKeyShots?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
-                try { Environment.SetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", (ChkForceStaticFewShot?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
-                try { Environment.SetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION", (ChkSmartExampleSelection?.IsChecked == true) ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
+                // Reset removed advanced options to defaults so hidden stale values do not keep affecting runtime.
+                try { Environment.SetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", "0", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", "0", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", "0", EnvironmentVariableTarget.User); } catch { }
+                try { Environment.SetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION", null, EnvironmentVariableTarget.User); } catch { }
 
                 System.Windows.MessageBox.Show("Samples settings saved to environment variables. Restart SolidWorks for changes to take effect.", "Saved", MessageBoxButton.OK, MessageBoxImage.Information);
             }
@@ -1222,46 +1218,6 @@ namespace AICAD.UI
                 SampleModeFewRadio.IsChecked = string.IsNullOrWhiteSpace(mode) || mode == "few";
 
                 SamplesFileTextBox.Text = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? "";
-
-                var rand = Environment.GetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", EnvironmentVariableTarget.User) ?? "0";
-                RandomizeSamplesCheckBox.IsChecked = rand == "1" || (rand != null && rand.Equals("true", StringComparison.OrdinalIgnoreCase));
-
-                // Load few-shot and related flags (if controls present). If AICAD_USE_FEWSHOT isn't set, derive from radio selection.
-                try
-                {
-                    var useFew = Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_USE_FEWSHOT");
-                    if (string.IsNullOrEmpty(useFew))
-                    {
-                        // derive from radio: zero-shot -> false, otherwise true
-                        ChkUseFewShot.IsChecked = !(SampleModeZeroRadio.IsChecked == true);
-                    }
-                    else
-                    {
-                        ChkUseFewShot.IsChecked = (useFew == "1" || (useFew != null && useFew.Equals("true", StringComparison.OrdinalIgnoreCase)));
-                    }
-                }
-                catch { if (ChkUseFewShot != null) ChkUseFewShot.IsChecked = true; }
-
-                try
-                {
-                    var fk = Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_FORCE_KEY_SHOTS");
-                    ChkForceKeyShots.IsChecked = fk == "1" || (fk != null && fk.Equals("true", StringComparison.OrdinalIgnoreCase));
-                }
-                catch { if (ChkForceKeyShots != null) ChkForceKeyShots.IsChecked = false; }
-
-                try
-                {
-                    var fs = Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_FORCE_STATIC_FEWSHOT");
-                    ChkForceStaticFewShot.IsChecked = fs == "1" || (fs != null && fs.Equals("true", StringComparison.OrdinalIgnoreCase));
-                }
-                catch { if (ChkForceStaticFewShot != null) ChkForceStaticFewShot.IsChecked = false; }
-
-                try
-                {
-                    var smartSel = Environment.GetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION", EnvironmentVariableTarget.User) ?? Environment.GetEnvironmentVariable("AICAD_SMART_EXAMPLE_SELECTION");
-                    ChkSmartExampleSelection.IsChecked = smartSel == "1" || (smartSel != null && smartSel.Equals("true", StringComparison.OrdinalIgnoreCase));
-                }
-                catch { if (ChkSmartExampleSelection != null) ChkSmartExampleSelection.IsChecked = true; }
             }
             catch { }
         }
@@ -1273,10 +1229,6 @@ namespace AICAD.UI
             {
                 // zero-shot -> disable few-shot; one/few -> enable few-shot
                 bool useFew = !(SampleModeZeroRadio.IsChecked == true);
-                if (ChkUseFewShot != null)
-                {
-                    ChkUseFewShot.IsChecked = useFew;
-                }
                 try { Environment.SetEnvironmentVariable("AICAD_USE_FEWSHOT", useFew ? "1" : "0", EnvironmentVariableTarget.User); } catch { }
             }
             catch { }

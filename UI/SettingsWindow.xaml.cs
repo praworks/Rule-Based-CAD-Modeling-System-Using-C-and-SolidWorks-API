@@ -1018,25 +1018,6 @@ namespace AICAD.UI
             catch { }
         }
 
-        private void BrowseSamplesButton_Click(object sender, RoutedEventArgs e)
-        {
-            using (var dlg = new System.Windows.Forms.FolderBrowserDialog())
-            {
-                dlg.Description = "Select folder where sample shots are stored";
-                dlg.ShowNewFolderButton = true;
-                var current = SamplesFileTextBox.Text;
-                if (!string.IsNullOrEmpty(current))
-                {
-                    try { dlg.SelectedPath = System.IO.Path.GetDirectoryName(current); } catch { }
-                }
-
-                if (dlg.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-                {
-                    SamplesFileTextBox.Text = System.IO.Path.Combine(dlg.SelectedPath, "samples.db");
-                }
-            }
-        }
-
         private void SaveSamplesButton_Click(object sender, RoutedEventArgs e)
         {
             try
@@ -1054,7 +1035,6 @@ namespace AICAD.UI
                 
                 // Log for debugging
                 try { System.Diagnostics.Debug.WriteLine($"Sample mode saved: {mode}, AICAD_USE_FEWSHOT={useFewFromRadio}"); } catch { }
-                Environment.SetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", SamplesFileTextBox.Text ?? "", EnvironmentVariableTarget.User);
 
                 // Reset removed advanced options to defaults so hidden stale values do not keep affecting runtime.
                 try { Environment.SetEnvironmentVariable("AICAD_SAMPLES_RANDOMIZE", "0", EnvironmentVariableTarget.User); } catch { }
@@ -1216,8 +1196,6 @@ namespace AICAD.UI
                 SampleModeZeroRadio.IsChecked = mode == "zero";
                 SampleModeOneRadio.IsChecked = mode == "one";
                 SampleModeFewRadio.IsChecked = string.IsNullOrWhiteSpace(mode) || mode == "few";
-
-                SamplesFileTextBox.Text = Environment.GetEnvironmentVariable("AICAD_SAMPLES_DB_PATH", EnvironmentVariableTarget.User) ?? "";
             }
             catch { }
         }

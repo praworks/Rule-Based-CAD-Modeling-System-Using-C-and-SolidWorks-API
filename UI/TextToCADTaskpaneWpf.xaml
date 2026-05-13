@@ -142,6 +142,9 @@
                                 </StackPanel>
                             </StackPanel>
                         </Border>
+                        <Border x:Name="FeedbackMessageContainer" Background="{StaticResource InputBorderBrush}" CornerRadius="4" Padding="8,6" Margin="0,6,0,0" Visibility="Collapsed">
+                            <TextBlock x:Name="FeedbackMessageText" Text="" TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource TextMutedBrush}"/>
+                        </Border>
                     </StackPanel>
                 </ScrollViewer>
             </Border>
@@ -189,8 +192,8 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel Grid.Column="0" Orientation="Horizontal">
-                <Button x:Name="btnThumbDown" Content="👎" Background="Transparent" BorderThickness="0" Margin="0,0,3,0"/>
-                <Button x:Name="btnThumbUp" Content="👍" Background="Transparent" BorderThickness="0"/>
+                <Button x:Name="btnThumbUp" Content="👍" Background="Transparent" BorderThickness="0" Margin="0,0,3,0"/>
+                <Button x:Name="btnThumbDown" Content="👎" Background="Transparent" BorderThickness="0"/>
                 <Label x:Name="feedbackLabel" Content="Successful?" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="3,0,0,0" FontSize="{StaticResource FontSizeTask}"/>
             </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal">

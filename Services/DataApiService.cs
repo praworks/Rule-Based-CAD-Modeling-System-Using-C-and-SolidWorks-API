@@ -28,6 +28,7 @@ namespace AICAD.Services
         private readonly bool _useDirectMongo;
         private readonly MongoClient _mongoClient;
         public string LastError { get; private set; }
+        public bool UsesDirectMongo => _useDirectMongo;
 
         /// <summary>
         /// Initialize with MongoDB Data API credentials

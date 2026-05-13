@@ -109,6 +109,73 @@ class Program
                 return 0;
             }
 
+            if (action == "inspect-feedback")
+            {
+                var good = db.GetCollection<BsonDocument>("good_feedback");
+                var runFeedback = db.GetCollection<BsonDocument>("run_feedback");
+                var genericFeedback = db.GetCollection<BsonDocument>("Feedback");
+
+                var goodCount = await good.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
+                var runCount = await runFeedback.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
+                var genericCount = await genericFeedback.CountDocumentsAsync(FilterDefinition<BsonDocument>.Empty);
+
+                Console.WriteLine($"good_feedback_count={goodCount}");
+                Console.WriteLine($"run_feedback_count={runCount}");
+                Console.WriteLine($"Feedback_count={genericCount}");
+
+                var goodLatest = await good.Find(FilterDefinition<BsonDocument>.Empty)
+                    .Sort(Builders<BsonDocument>.Sort.Descending("ts"))
+                    .Limit(3)
+                    .ToListAsync();
+                foreach (var doc in goodLatest)
+                {
+                    Console.WriteLine("good_feedback_latest=" + doc.ToJson());
+                }
+
+                var runLatest = await runFeedback.Find(FilterDefinition<BsonDocument>.Empty)
+                    .Sort(Builders<BsonDocument>.Sort.Descending("ts"))
+                    .Limit(5)
+                    .ToListAsync();
+                foreach (var doc in runLatest)
+                {
+                    Console.WriteLine("run_feedback_latest=" + doc.ToJson());
+                }
+
+                var genericLatest = await genericFeedback.Find(FilterDefinition<BsonDocument>.Empty)
+                    .Sort(Builders<BsonDocument>.Sort.Descending("timestamp"))
+                    .Limit(5)
+                    .ToListAsync();
+                foreach (var doc in genericLatest)
+                {
+                    Console.WriteLine("Feedback_latest=" + doc.ToJson());
+                }
+                return 0;
+            }
+
+            if (action == "clear-feedback")
+            {
+                var good = db.GetCollection<BsonDocument>("good_feedback");
+                var runFeedback = db.GetCollection<BsonDocument>("run_feedback");
+                var genericFeedback = db.GetCollection<BsonDocument>("Feedback");
+
+                var goodResult = await good.DeleteManyAsync(FilterDefinition<BsonDocument>.Empty);
+                var runResult = await runFeedback.DeleteManyAsync(FilterDefinition<BsonDocument>.Empty);
+                var genericResult = await genericFeedback.DeleteManyAsync(FilterDefinition<BsonDocument>.Empty);
+
+                Console.WriteLine($"good_feedback_deleted={goodResult.DeletedCount}");
+                Console.WriteLine($"run_feedback_deleted={runResult.DeletedCount}");
+                Console.WriteLine($"Feedback_deleted={genericResult.DeletedCount}");
+                return 0;
+            }
+
+            if (action == "clear-good-feedback")
+            {
+                var good = db.GetCollection<BsonDocument>("good_feedback");
+                var goodResult = await good.DeleteManyAsync(FilterDefinition<BsonDocument>.Empty);
+                Console.WriteLine($"good_feedback_deleted={goodResult.DeletedCount}");
+                return 0;
+            }
+
             using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             var dbNamesCursor = await client.ListDatabaseNamesAsync(cts.Token);
 

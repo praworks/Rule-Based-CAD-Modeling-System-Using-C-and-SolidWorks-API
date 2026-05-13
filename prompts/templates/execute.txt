@@ -1,7 +1,7 @@
 ALLOWED OPS (use only these, do NOT invent new ops):
 {allowedOps}
 
-{factsSection}FEATURE INDEX:
+{factsSection}{fewShotSection}FEATURE INDEX:
 {featureIndex}
 
 FEATURE TASK:

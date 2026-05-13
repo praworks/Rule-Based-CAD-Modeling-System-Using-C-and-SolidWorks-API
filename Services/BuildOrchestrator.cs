@@ -159,10 +159,27 @@ namespace AICAD.Services
                             DiagnosticLogWriter.FeatureHeader(effectiveRunId, ti, featureType);
                             _logger.LogWithContext(LogLevel.Information, featureCtx, $"Feature start index={ti} feature_type={featureType} intent={LogRedactor.Sanitize(intent)}");
 
-                            _logger.LogWithContext(LogLevel.Debug, featureCtx, $"FewShot disabled for plan stage");
+                            string fewShotExamples = null;
+                            if (fewShotEnabled && maxFewShotCount > 0)
+                            {
+                                try
+                                {
+                                    fewShotExamples = FewShotSelector.SelectFeatureFewShot(task, _goodStore, _stepStore, maxFewShotCount);
+                                    var exampleCount = CountFewShotExamples(fewShotExamples);
+                                    _logger.LogWithContext(LogLevel.Information, featureCtx, $"FewShot enabled example_count={exampleCount} max={maxFewShotCount}");
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWithContext(LogLevel.Warning, featureCtx, $"FewShot selection failed: {ex.Message}");
+                                }
+                            }
+                            else
+                            {
+                                _logger.LogWithContext(LogLevel.Debug, featureCtx, "FewShot disabled for plan stage");
+                            }
 
                             _logger.LogWithContext(LogLevel.Information, featureCtx, $"Build prompt model_state={(modelFacts != null)}");
-                        var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, effectiveRunId, reqId, expandTimeout);
+                        var plan = LlmPlanService.PlanFeatureSubtask(task, modelFacts, effectiveRunId, reqId, expandTimeout, fewShotExamples);
                         if (plan == null)
                         {
                             result.Success = false;
@@ -309,6 +326,14 @@ namespace AICAD.Services
                 if (tasks[i] is JObject task)
                     task["index"] = i;
             }
+        }
+
+        private static int CountFewShotExamples(string fewShotExamples)
+        {
+            if (string.IsNullOrWhiteSpace(fewShotExamples))
+                return 0;
+
+            return Regex.Matches(fewShotExamples, @"\bInput:", RegexOptions.IgnoreCase).Count;
         }
 
         private static bool HasMaterialTask(JArray tasks)

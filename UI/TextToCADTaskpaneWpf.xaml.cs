@@ -214,6 +214,7 @@ namespace AICAD.UI
         private string _lastRunId;
         private string _lastThinkingSignature;
         private string _pendingRunId;
+        private int _feedbackMessageVersion;
         private bool _isBuilding = false;
         private System.Threading.CancellationTokenSource _buildCts;
         private bool _lastRunCreatedModel = false;
@@ -3954,6 +3955,7 @@ namespace AICAD.UI
                 if (!hasFeedbackBackend)
                 {
                     SetDbStatus("Feedback not saved (no feedback backend)", Colors.DarkOrange);
+                    ShowFeedbackMessage("Feedback backend is not available.", Colors.DarkOrange);
                     return;
                 }
                 var fb = new JObject
@@ -3994,7 +3996,7 @@ namespace AICAD.UI
                 }
 
                 // Post feedback via Data API (no credentials needed from users)
-                if (up && _dataApiService != null)
+                if (up && _dataApiService != null && !_dataApiService.UsesDirectMongo)
                 {
                     attempted = true;
                     string plan = ExtractRawJson(_lastReply ?? "{}");
@@ -4024,16 +4026,68 @@ namespace AICAD.UI
                 if (!attempted)
                 {
                     SetDbStatus("Feedback not saved (no active backend)", Colors.DarkOrange);
+                    ShowFeedbackMessage("Feedback was not saved.", Colors.DarkOrange);
                 }
                 else
                 {
                     SetDbStatus(ok ? "Feedback saved" : "Feedback error", ok ? Colors.DarkGreen : Colors.Firebrick);
+                    ShowFeedbackMessage(
+                        ok
+                            ? (up ? "Thanks. Thumbs up saved." : "Feedback noted. Thumbs down saved.")
+                            : "Feedback could not be saved.",
+                        ok ? Colors.DarkGreen : Colors.Firebrick);
                 }
             }
             catch (Exception ex)
             {
                 SetDbStatus("Feedback error: " + ex.Message, Colors.Firebrick);
+                ShowFeedbackMessage("Feedback error: " + ex.Message, Colors.Firebrick);
             }
+        }
+
+        private void ShowFeedbackMessage(string message, Color color)
+        {
+            var version = Interlocked.Increment(ref _feedbackMessageVersion);
+
+            void show()
+            {
+                try
+                {
+                    if (FeedbackMessageText != null)
+                    {
+                        FeedbackMessageText.Text = message ?? string.Empty;
+                        FeedbackMessageText.Foreground = new SolidColorBrush(color);
+                    }
+
+                    if (FeedbackMessageContainer != null)
+                    {
+                        FeedbackMessageContainer.Visibility = string.IsNullOrWhiteSpace(message)
+                            ? Visibility.Collapsed
+                            : Visibility.Visible;
+                    }
+                }
+                catch { }
+            }
+
+            if (Dispatcher.CheckAccess()) show();
+            else Dispatcher.Invoke(show);
+
+            _ = Task.Run(async () =>
+            {
+                try { await Task.Delay(2500).ConfigureAwait(false); } catch { }
+                if (version != Volatile.Read(ref _feedbackMessageVersion)) return;
+
+                try
+                {
+                    await Dispatcher.InvokeAsync(() =>
+                    {
+                        if (version != _feedbackMessageVersion) return;
+                        if (FeedbackMessageText != null) FeedbackMessageText.Text = string.Empty;
+                        if (FeedbackMessageContainer != null) FeedbackMessageContainer.Visibility = Visibility.Collapsed;
+                    }, System.Windows.Threading.DispatcherPriority.Background);
+                }
+                catch { }
+            });
         }
 
         private string ExtractRawJson(string text)
@@ -4436,13 +4490,15 @@ namespace AICAD.UI
                     {
                         if (ProgressStatusPanel == null) return;
                         
-                        // Preserve ThinkingContainer before clearing
+                        // Preserve fixed status blocks before clearing
                         var thinkingContainer = ThinkingContainer;
+                        var feedbackMessageContainer = FeedbackMessageContainer;
                         
                         ProgressStatusPanel.Children.Clear();
 
-                        // Restore ThinkingContainer at the beginning
+                        // Restore fixed status blocks at the beginning
                         try { if (thinkingContainer != null) ProgressStatusPanel.Children.Add(thinkingContainer); } catch { }
+                        try { if (feedbackMessageContainer != null) ProgressStatusPanel.Children.Add(feedbackMessageContainer); } catch { }
                     }
                     catch { }
                 }), System.Windows.Threading.DispatcherPriority.Background);

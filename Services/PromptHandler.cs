@@ -242,17 +242,21 @@ namespace AICAD.Services
                 ("userRequest", userRequest ?? string.Empty));
         }
 
-        public static string BuildFeaturePlanPrompt(string systemPrompt, JObject featureTask, JObject facts)
+        public static string BuildFeaturePlanPrompt(string systemPrompt, JObject featureTask, JObject facts, string fewShotExamples = null)
         {
             var activePrompt = string.IsNullOrWhiteSpace(systemPrompt) ? EXECUTE_SYSTEM_PROMPT : systemPrompt;
             var systemBlock = (activePrompt ?? string.Empty).TrimEnd() + "\n\n";
             var factsSection = BuildFactsSection(facts);
+            var fewShotSection = string.IsNullOrWhiteSpace(fewShotExamples)
+                ? string.Empty
+                : "FEW-SHOT EXAMPLES:\n" + fewShotExamples.Trim() + "\n\n";
             var taskJson = featureTask == null ? "{}" : featureTask.ToString();
             var featureIndex = featureTask?.Value<int?>("index")?.ToString() ?? "0";
             var allowedOps = string.Join(", ", Operations.OperationRegistry.CreateDefault().GetRegisteredOperations());
             var rendered = FormatTemplate("execute_template",
                 ("systemPrompt", systemBlock),
                 ("factsSection", factsSection),
+                ("fewShotSection", fewShotSection),
                 ("featureTask", taskJson),
                 ("featureIndex", featureIndex),
                 ("allowedOps", allowedOps));

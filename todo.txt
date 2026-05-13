@@ -100,6 +100,7 @@ Day-by-Day Plan
 [ ] Fix S03 training data path mismatch.
 [ ] Decide whether AICAD_SAMPLES_DB_PATH should point to JSONL, SQLite, or Mongo-backed data.
 [ ] Update labels, browse behavior, and load/save logic to match the real source type.
+[x] Finish wiring Learning Mode end-to-end so zero/one/few-shot settings affect the active orchestrator pipeline, not just runtime flags.
 
 2026-05-14
 [ ] Implement or remove S04 smart example selection.
@@ -152,6 +153,7 @@ Notes:
 - Granted admin to `e2240156@bit.uom.lk`, then enforced single-admin policy so all other users are non-admin.
 - Updated user creation so new Google sign-ins are inserted with `isAdmin=false`, `role=user`, and `roles=[user]` by default.
 - Confirmed the `users` collection currently contains 2 user records.
+- Analyzed Training Data settings and confirmed Learning Mode is only partially wired: the UI saves and runtime reads zero/one/few mode, but the active orchestrator path does not appear to inject few-shot examples yet.
 Files changed:
 - `Services/Login/CredentialManager.cs`
 - `Services/Login/SecretProvider.cs`
@@ -167,9 +169,20 @@ Blocked by:
 
 2026-05-13
 Status:
+[~] Resumed Training Data workstream and wired Learning Mode into the active orchestrator path.
 Notes:
+- Traced the active feature-planning path and confirmed few-shot mode was previously computed but never injected into `PlanFeatureSubtask`.
+- Updated `BuildOrchestrator` to fetch few-shot examples from the existing feedback/step stores when Learning Mode is enabled.
+- Updated the feature-plan prompt path so `zero` sends no examples, `one` sends up to 1 example, and `few` sends up to 3 examples.
+- Added a dedicated prompt section for few-shot examples in the execute template instead of relying on dormant legacy UI logic.
+- Verified the source builds successfully via alternate output folder build.
 Files changed:
+- `Services/BuildOrchestrator.cs`
+- `Services/LlmPlanService.cs`
+- `Services/PromptHandler.cs`
+- `prompts/templates/execute.txt`
 Blocked by:
+- `S03` remains open: the Training Data source path/UI labeling is still inconsistent with the actual example backends.
 
 2026-05-14
 Status:

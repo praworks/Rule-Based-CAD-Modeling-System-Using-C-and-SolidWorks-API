@@ -168,7 +168,7 @@ namespace AICAD.Services
             }
         }
 
-        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null, string runId = null, string requestId = null, int timeoutSeconds = 120)
+        public static FeaturePlanResult PlanFeatureSubtask(JObject featureTask, JObject modelFacts = null, string runId = null, string requestId = null, int timeoutSeconds = 120, string fewShotExamples = null)
         {
             try
             {
@@ -213,7 +213,7 @@ namespace AICAD.Services
                 var resolvedSystemPrompt = string.IsNullOrWhiteSpace(systemPromptOverride)
                     ? (string.IsNullOrWhiteSpace(PromptHandler.EXECUTE_SYSTEM_PROMPT) ? PromptHandler.DEFAULT_SYSTEM_PROMPT : PromptHandler.EXECUTE_SYSTEM_PROMPT)
                     : systemPromptOverride;
-                var prompt = PromptHandler.BuildFeaturePlanPrompt(resolvedSystemPrompt, featureTask, modelFacts);
+                var prompt = PromptHandler.BuildFeaturePlanPrompt(resolvedSystemPrompt, featureTask, modelFacts, fewShotExamples);
                 var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = label, StartTimeUtc = DateTimeOffset.UtcNow };
                 var logger = LoggerFactoryBuilder.Factory.CreateLogger("LlmPlanService");
                 int effectiveTimeoutSeconds = timeoutSeconds > 0 ? timeoutSeconds : 120;

@@ -21,6 +21,7 @@ namespace AICAD.UI
         private const int DefaultMongoPort = 27017;
         private const string DefaultMongoDatabase = "TaskPaneAddin";
         private const string PreferredSwUnitsKey = "PreferredSwUnitSystem";
+        private const string AdminEmail = "e2240156@bit.uom.lk";
 
         public class ProviderItem
         {
@@ -60,9 +61,9 @@ namespace AICAD.UI
 
         private void AddProviderById(string id)
         {
-            if (id == "local") _providers.Add(new ProviderItem { Id = "local", DisplayName = "💻 LM Studio (Local)" });
-            else if (id == "gemini") _providers.Add(new ProviderItem { Id = "gemini", DisplayName = "☁️ Google Gemini" });
-            else if (id == "groq") _providers.Add(new ProviderItem { Id = "groq", DisplayName = "⚡ Groq" });
+            if (id == "local") _providers.Add(new ProviderItem { Id = "local", DisplayName = "LM Studio (Local)" });
+            else if (id == "gemini") _providers.Add(new ProviderItem { Id = "gemini", DisplayName = "Google Gemini" });
+            else if (id == "groq") _providers.Add(new ProviderItem { Id = "groq", DisplayName = "Groq" });
         }
 
         private void MoveProviderUp_Click(object sender, RoutedEventArgs e)
@@ -91,6 +92,12 @@ namespace AICAD.UI
         {
             if (sender is System.Windows.Controls.Button btn && btn.Tag is string tag)
             {
+                if (IsAdminOnlyPanel(tag) && !IsCurrentUserAdmin())
+                {
+                    System.Windows.MessageBox.Show("Only the admin account can edit AI Provider and Database settings.", "Admin Only", MessageBoxButton.OK, MessageBoxImage.Information);
+                    return;
+                }
+
                 contentTitle.Text = btn.Content?.ToString() ?? "";
                 HighlightSelectedNav(btn);
                 ShowPanel(tag);
@@ -120,6 +127,13 @@ namespace AICAD.UI
 
         private void ShowPanel(string panelName)
         {
+            if (IsAdminOnlyPanel(panelName) && !IsCurrentUserAdmin())
+            {
+                panelName = "GeneralPanel";
+                contentTitle.Text = "General";
+                HighlightSelectedNav(btnGeneral);
+            }
+
             GeneralPanel.Visibility = panelName == "GeneralPanel" ? Visibility.Visible : Visibility.Collapsed;
             MongoPanel.Visibility = panelName == "MongoPanel" ? Visibility.Visible : Visibility.Collapsed;
             ApiKeysPanel.Visibility = panelName == "ApiKeysPanel" ? Visibility.Visible : Visibility.Collapsed;
@@ -131,6 +145,88 @@ namespace AICAD.UI
             {
                 CheckAllLlmStatuses();
             }
+        }
+
+        private static bool IsAdminOnlyPanel(string panelName)
+        {
+            return string.Equals(panelName, "MongoPanel", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(panelName, "ApiKeysPanel", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsCurrentUserAdmin()
+        {
+            var email = GetCurrentAccountEmail();
+            return string.Equals(email, AdminEmail, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsSignedIn()
+        {
+            return !string.IsNullOrWhiteSpace(GetCurrentAccountEmail());
+        }
+
+        private string GetCurrentAccountRole()
+        {
+            if (!IsSignedIn()) return "Guest";
+            return IsCurrentUserAdmin() ? "Admin" : "User";
+        }
+
+        private string GetCurrentAccountEmail()
+        {
+            try
+            {
+                var email = EmailTextBox?.Text;
+                if (!string.IsNullOrWhiteSpace(email)) return email.Trim();
+                email = EmailText?.Text;
+                return string.IsNullOrWhiteSpace(email) ? string.Empty : email.Trim();
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private void ApplyAdminAccess()
+        {
+            try
+            {
+                var isAdmin = IsCurrentUserAdmin();
+                UpdateAccountRoleDisplay();
+                if (btnMongo != null)
+                {
+                    btnMongo.IsEnabled = isAdmin;
+                    btnMongo.ToolTip = isAdmin ? "MongoDB connection settings" : "Admin only: e2240156@bit.uom.lk";
+                    btnMongo.Opacity = isAdmin ? 1.0 : 0.45;
+                }
+
+                if (btnApiKeys != null)
+                {
+                    btnApiKeys.IsEnabled = isAdmin;
+                    btnApiKeys.ToolTip = isAdmin ? "Configure AI language model settings" : "Admin only: e2240156@bit.uom.lk";
+                    btnApiKeys.Opacity = isAdmin ? 1.0 : 0.45;
+                }
+
+                if (!isAdmin && (MongoPanel.Visibility == Visibility.Visible || ApiKeysPanel.Visibility == Visibility.Visible))
+                {
+                    ShowPanel("GeneralPanel");
+                }
+            }
+            catch { }
+        }
+
+        private void UpdateAccountRoleDisplay()
+        {
+            try
+            {
+                var roleText = "Role: " + GetCurrentAccountRole();
+                if (AccountRoleText != null)
+                {
+                    AccountRoleText.Text = roleText;
+                    AccountRoleText.Foreground = IsCurrentUserAdmin()
+                        ? new SolidColorBrush(Colors.DarkGreen)
+                        : (System.Windows.Media.Brush)FindResource("TextMutedBrush");
+                }
+            }
+            catch { }
         }
 
         private void LoadAllSettings()
@@ -158,6 +254,10 @@ namespace AICAD.UI
                 }
             }
             catch { }
+            finally
+            {
+                ApplyAdminAccess();
+            }
         }
 
         // Load existing Google account info from stored tokens
@@ -227,12 +327,24 @@ namespace AICAD.UI
         {
             SignedInCard.Visibility = Visibility.Visible;
             SignedOutCard.Visibility = Visibility.Collapsed;
+            UpdateAccountRoleDisplay();
+            ApplyAdminAccess();
         }
 
         private void ShowSignedOutState()
         {
+            try
+            {
+                DisplayNameTextBox.Text = string.Empty;
+                EmailTextBox.Text = string.Empty;
+                DisplayNameText.Text = string.Empty;
+                EmailText.Text = string.Empty;
+            }
+            catch { }
             SignedInCard.Visibility = Visibility.Collapsed;
             SignedOutCard.Visibility = Visibility.Visible;
+            UpdateAccountRoleDisplay();
+            ApplyAdminAccess();
         }
 
         // If a local Secrets/client_secret*.json exists in a parent directory, register it
@@ -337,6 +449,12 @@ namespace AICAD.UI
 
         private void SaveMongoButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!IsCurrentUserAdmin())
+            {
+                UpdateDatabaseStatus("local", "Admin only", false);
+                return;
+            }
+
             try
             {
                 var connectionString = BuildMongoConnectionString(validate: true, out var validationMessage);
@@ -367,6 +485,12 @@ namespace AICAD.UI
 
         private async void TestMongoButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!IsCurrentUserAdmin())
+            {
+                UpdateDatabaseStatus("local", "Admin only", false);
+                return;
+            }
+
             // Disable button to prevent re-entry
             TestMongoButton.IsEnabled = false;
             UpdateDatabaseStatus("local", "Testing connection...", null);
@@ -572,17 +696,7 @@ namespace AICAD.UI
                 // Gemini key is stored in a PasswordBox in the UI
                 try { GeminiApiKeyPasswordBox.Password = Environment.GetEnvironmentVariable("GEMINI_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
                 try { GroqApiKeyPasswordBox.Password = Environment.GetEnvironmentVariable("GROQ_API_KEY", EnvironmentVariableTarget.User) ?? ""; } catch { }
-                
-                // Load Prompt Refinement Provider
-                var refineProvider = Environment.GetEnvironmentVariable("PROMPT_REFINE_PROVIDER", EnvironmentVariableTarget.User) ?? "disabled";
-                foreach (ComboBoxItem item in PromptRefineProviderComboBox.Items)
-                {
-                    if (item.Tag.ToString() == refineProvider)
-                    {
-                        PromptRefineProviderComboBox.SelectedItem = item;
-                        break;
-                    }
-                }
+                try { Environment.SetEnvironmentVariable("PROMPT_REFINE_PROVIDER", "disabled", EnvironmentVariableTarget.User); } catch { }
 
                 ApiStatusTextBlock.Text = "Loaded from environment variables";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
@@ -598,6 +712,13 @@ namespace AICAD.UI
 
         private void SaveApiKeysButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!IsCurrentUserAdmin())
+            {
+                ApiStatusTextBlock.Text = "Admin only";
+                ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkOrange);
+                return;
+            }
+
             try
             {
                 Environment.SetEnvironmentVariable("LOCAL_LLM_ENDPOINT", LocalLlmEndpointTextBox.Text ?? "", EnvironmentVariableTarget.User);
@@ -609,12 +730,7 @@ namespace AICAD.UI
                 // Persist provider priority globally when possible; fall back to user-level if not permitted.
                 AICAD.Services.LlmPriorityManager.SetPriority(priority);
 
-                // Save Prompt Refinement Provider
-                var selectedRefineItem = PromptRefineProviderComboBox.SelectedItem as ComboBoxItem;
-                if (selectedRefineItem != null)
-                {
-                    Environment.SetEnvironmentVariable("PROMPT_REFINE_PROVIDER", selectedRefineItem.Tag.ToString(), EnvironmentVariableTarget.User);
-                }
+                try { Environment.SetEnvironmentVariable("PROMPT_REFINE_PROVIDER", "disabled", EnvironmentVariableTarget.User); } catch { }
 
                 ApiStatusTextBlock.Text = "Saved! Restart SolidWorks.";
                 ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkGreen);
@@ -630,6 +746,13 @@ namespace AICAD.UI
 
         private async void TestApiButton_Click(object sender, RoutedEventArgs e)
         {
+            if (!IsCurrentUserAdmin())
+            {
+                ApiStatusTextBlock.Text = "Admin only";
+                ApiStatusTextBlock.Foreground = new SolidColorBrush(Colors.DarkOrange);
+                return;
+            }
+
             var btn = sender as System.Windows.Controls.Button;
             if (btn == null) return;
 
@@ -913,6 +1036,7 @@ namespace AICAD.UI
                         GeminiApiKeyPasswordBox.Password = GeminiApiKeyTextBox.Text;
                         GeminiApiKeyTextBox.Visibility = Visibility.Collapsed;
                         GeminiApiKeyPasswordBox.Visibility = Visibility.Visible;
+                        btn.Content = "Show";
                     }
                     else
                     {
@@ -920,6 +1044,7 @@ namespace AICAD.UI
                         GeminiApiKeyTextBox.Text = GeminiApiKeyPasswordBox.Password;
                         GeminiApiKeyPasswordBox.Visibility = Visibility.Collapsed;
                         GeminiApiKeyTextBox.Visibility = Visibility.Visible;
+                        btn.Content = "Hide";
                     }
                 }
                 else if (provider == "Groq")
@@ -931,6 +1056,7 @@ namespace AICAD.UI
                         GroqApiKeyPasswordBox.Password = GroqApiKeyTextBox.Text;
                         GroqApiKeyTextBox.Visibility = Visibility.Collapsed;
                         GroqApiKeyPasswordBox.Visibility = Visibility.Visible;
+                        btn.Content = "Show";
                     }
                     else
                     {
@@ -938,6 +1064,7 @@ namespace AICAD.UI
                         GroqApiKeyTextBox.Text = GroqApiKeyPasswordBox.Password;
                         GroqApiKeyPasswordBox.Visibility = Visibility.Collapsed;
                         GroqApiKeyTextBox.Visibility = Visibility.Visible;
+                        btn.Content = "Hide";
                     }
                 }
             }
@@ -1214,8 +1341,11 @@ namespace AICAD.UI
 
         private void SaveAll_Click(object sender, RoutedEventArgs e)
         {
-            SaveMongoButton_Click(sender, e);
-            SaveApiKeysButton_Click(sender, e);
+            if (IsCurrentUserAdmin())
+            {
+                SaveMongoButton_Click(sender, e);
+                SaveApiKeysButton_Click(sender, e);
+            }
             SaveSamplesButton_Click(sender, e);
             try
             {

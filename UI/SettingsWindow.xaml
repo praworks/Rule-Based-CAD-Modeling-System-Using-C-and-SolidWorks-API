@@ -67,12 +67,12 @@
                         <TextBlock Text="AI-CAD" Foreground="{StaticResource AccentBrush}" FontSize="{StaticResource FontSizeHeader}" FontWeight="Bold" Margin="4,0,0,4" />
                         <TextBlock Text="Settings" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="4,0,0,12" />
 
-                        <Button x:Name="btnGeneral" Content="âš™ï¸ General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" ToolTip="General preferences and appearance" />
-                        <Button x:Name="btnApiKeys" Content="ðŸ¤– AI Provider" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" ToolTip="Configure AI language model settings" />
-                        <Button x:Name="btnMongo" Content="ðŸ’¾ Database" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" ToolTip="MongoDB connection settings" />
-                        <Button x:Name="btnSamples" Content="ðŸ“š Training Data" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" ToolTip="Configure AI examples and learning" />
-                        <Button x:Name="btnNameEasy" Content="ðŸ“ NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" ToolTip="Smart naming and metadata settings" />
-                        <Button x:Name="btnAccount" Content="ðŸ‘¤ Account" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="AccountPanel" ToolTip="User account and cloud sync" />
+                        <Button x:Name="btnGeneral" Content="General" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="GeneralPanel" ToolTip="General preferences" />
+                        <Button x:Name="btnApiKeys" Content="AI Provider" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="ApiKeysPanel" ToolTip="Configure AI language model settings" />
+                        <Button x:Name="btnMongo" Content="Database" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="MongoPanel" ToolTip="MongoDB connection settings" />
+                        <Button x:Name="btnSamples" Content="Training Data" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="SamplesPanel" ToolTip="Configure AI examples and learning" />
+                        <Button x:Name="btnNameEasy" Content="NameEasy" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="NameEasyPanel" ToolTip="Smart naming and metadata settings" />
+                        <Button x:Name="btnAccount" Content="Account" Style="{StaticResource FlatNavButton}" Click="NavButton_Click" Tag="AccountPanel" ToolTip="User account and cloud sync" />
                     </StackPanel>
 
                 <!-- Spacer row (Grid.Row=1) intentionally left empty to push the save button to the bottom -->
@@ -105,20 +105,6 @@
                                     <RadioButton x:Name="SwUnitsMmgsRadio" Content="MMGS (millimeter, gram, second)" GroupName="SwUnits" Margin="0,4" />
                                     <RadioButton x:Name="SwUnitsIpsRadio" Content="IPS (inch, pound, second)" GroupName="SwUnits" Margin="0,4" />
                                     <TextBlock Text="This preference is applied to the active or newly created document when the AI executor prepares a part." Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" FontSize="11" TextWrapping="Wrap" />
-                                </StackPanel>
-                            </GroupBox>
-
-                            <GroupBox Header="ðŸŽ¨ Appearance" Margin="0,8,0,0">
-                                <StackPanel>
-                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Label Content="UI Theme:" VerticalAlignment="Center" Width="80" />
-                                        <ComboBox x:Name="ThemeComboBox" Width="280" Margin="8,0,0,0">
-                                            <ComboBoxItem IsSelected="True">Auto (Match SolidWorks)</ComboBoxItem>
-                                            <ComboBoxItem>Light Mode</ComboBoxItem>
-                                            <ComboBoxItem>Dark Mode</ComboBoxItem>
-                                        </ComboBox>
-                                    </StackPanel>
-                                    <TextBlock Text="Changes will apply after restarting SolidWorks" Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="88,4,0,0" />
                                 </StackPanel>
                             </GroupBox>
 
@@ -190,7 +176,7 @@
                                         </Grid.ColumnDefinitions>
                                         <Ellipse x:Name="MongoStatusCircle" Fill="Gray" Width="12" Height="12" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                         <TextBlock x:Name="MongoStatusText" Text="Unknown" Grid.Column="1" VerticalAlignment="Center" Foreground="{StaticResource TextMutedBrush}"/>
-                                        <TextBlock x:Name="MongoLoadedInfoIcon" Text="ðŸ›ˆ" Grid.Column="1" Margin="8,0,0,0" Visibility="Collapsed" Foreground="{StaticResource AccentBrush}" ToolTip="Value loaded from System Environment Variables." HorizontalAlignment="Right" />
+                                        <TextBlock x:Name="MongoLoadedInfoIcon" Text="Env" Grid.Column="1" Margin="8,0,0,0" Visibility="Collapsed" Foreground="{StaticResource AccentBrush}" ToolTip="Value loaded from System Environment Variables." HorizontalAlignment="Right" />
                                         <Button x:Name="TestMongoButton" Content="Test" Grid.Column="2" Margin="8,0,0,0" Style="{StaticResource FlatNavButton}" Click="TestMongoButton_Click" />
                                         <Button x:Name="ApplyMongoButton" Content="Apply" Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource PrimaryButton}" Click="SaveMongoButton_Click" />
                                     </Grid>
@@ -202,7 +188,7 @@
                             <TextBlock Text="Choose your AI language model provider for intelligent CAD feature generation" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
 
                             <!-- Provider Priority & Fallback -->
-                            <GroupBox Header="ðŸ”„ Provider Priority &amp; Fallback Order" Margin="0,0,0,12">
+                            <GroupBox Header="Provider Priority &amp; Fallback Order" Margin="0,0,0,12">
                                 <Grid Margin="4">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
@@ -212,8 +198,8 @@
                                         <!-- Items: Local LM, Google Gemini, Groq -->
                                     </ListBox>
                                     <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                        <Button x:Name="MoveProviderUpButton" Content="â–²" Width="34" Height="34" Margin="0,0,0,8" Click="MoveProviderUp_Click" ToolTip="Move Up" Style="{StaticResource FlatNavButton}" />
-                                        <Button x:Name="MoveProviderDownButton" Content="â–¼" Width="34" Height="34" Click="MoveProviderDown_Click" ToolTip="Move Down" Style="{StaticResource FlatNavButton}" />
+                                        <Button x:Name="MoveProviderUpButton" Content="Up" Width="52" Height="34" Margin="0,0,0,8" Click="MoveProviderUp_Click" ToolTip="Move Up" Style="{StaticResource FlatNavButton}" />
+                                        <Button x:Name="MoveProviderDownButton" Content="Down" Width="52" Height="34" Click="MoveProviderDown_Click" ToolTip="Move Down" Style="{StaticResource FlatNavButton}" />
                                     </StackPanel>
                                 </Grid>
                             </GroupBox>
@@ -221,12 +207,12 @@
                             <!-- Provider Toggle (for configuration only) -->
                             <Label Content="Configure Provider Settings" FontWeight="SemiBold" Margin="0,0,0,4" />
                             <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
-                                <RadioButton x:Name="LmStudioRadio" Content="ðŸ’» LM Studio (Local)" GroupName="Provider" IsChecked="True" ToolTip="Configure locally hosted AI models" />
-                                <RadioButton x:Name="GeminiRadio" Content="â˜ï¸ Google Gemini" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Google's cloud AI service" />
-                                <RadioButton x:Name="GroqRadio" Content="âš¡ Groq" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Groq's high-speed AI service" />
+                                <RadioButton x:Name="LmStudioRadio" Content="LM Studio (Local)" GroupName="Provider" IsChecked="True" ToolTip="Configure locally hosted AI models" />
+                                <RadioButton x:Name="GeminiRadio" Content="Google Gemini" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Google's cloud AI service" />
+                                <RadioButton x:Name="GroqRadio" Content="Groq" GroupName="Provider" Margin="16,0,0,0" ToolTip="Configure Groq's high-speed AI service" />
                             </StackPanel>
 
-                            <!-- Quick access removed: use the single "Traffic Cop" checkbox under General â†’ Safety & Backup -->
+                            <!-- Quick access removed: use the single Traffic Cop checkbox under General / Safety & Backup. -->
 
                             <!-- Dynamic Content Area -->
                             <StackPanel Margin="0,8,0,0">
@@ -289,7 +275,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <PasswordBox x:Name="GeminiApiKeyPasswordBox" Height="28" Grid.Column="0" />
                                                 <TextBox x:Name="GeminiApiKeyTextBox" Height="28" Grid.Column="0" Visibility="Collapsed" />
-                                                <Button x:Name="GeminiToggleVisibilityButton" Content="ðŸ‘ï¸" Width="34" Height="28" Grid.Column="1" Margin="6,0,0,0" Click="ToggleApiKeyVisibility_Click" Tag="Gemini" Style="{StaticResource FlatNavButton}" />
+                                                <Button x:Name="GeminiToggleVisibilityButton" Content="Show" Width="52" Height="28" Grid.Column="1" Margin="6,0,0,0" Click="ToggleApiKeyVisibility_Click" Tag="Gemini" Style="{StaticResource FlatNavButton}" />
                                             </Grid>
 
                                             <Grid Margin="0,12,0,0">
@@ -332,7 +318,7 @@
                                                 </Grid.ColumnDefinitions>
                                                 <PasswordBox x:Name="GroqApiKeyPasswordBox" Height="28" Grid.Column="0" />
                                                 <TextBox x:Name="GroqApiKeyTextBox" Height="28" Grid.Column="0" Visibility="Collapsed" />
-                                                <Button x:Name="GroqToggleVisibilityButton" Content="ðŸ‘ï¸" Width="34" Height="28" Grid.Column="1" Margin="6,0,0,0" Click="ToggleApiKeyVisibility_Click" Tag="Groq" Style="{StaticResource FlatNavButton}" />
+                                                <Button x:Name="GroqToggleVisibilityButton" Content="Show" Width="52" Height="28" Grid.Column="1" Margin="6,0,0,0" Click="ToggleApiKeyVisibility_Click" Tag="Groq" Style="{StaticResource FlatNavButton}" />
                                             </Grid>
 
                                             <Grid Margin="0,12,0,0">
@@ -356,12 +342,12 @@
                                                             <ColumnDefinition Width="*"/>
                                                             <ColumnDefinition Width="Auto"/>
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="âš¡ Rate Limit Protection (Free Tier)" FontWeight="SemiBold" FontSize="12" Foreground="#2E7D32" Grid.Column="0"/>
+                                                        <TextBlock Text="Rate Limit Protection (Free Tier)" FontWeight="SemiBold" FontSize="12" Foreground="#2E7D32" Grid.Column="0"/>
                                                         <Button x:Name="ResetGroqLimitsButton" Content="Reset" Grid.Column="1" Padding="4,2" FontSize="10" Click="ResetGroqLimits_Click" ToolTip="Reset rate limit tracking (use if stuck)"/>
                                                     </Grid>
                                                     <TextBlock x:Name="GroqUsageStatsText" Text="Loading..." FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                                                     <TextBlock FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" TextWrapping="Wrap">
-                                                        <Run Text="Limits: 20/min â€¢ 300/hour â€¢ 12,000/day â€¢ 2s delay between requests"/>
+                                                        <Run Text="Limits: 20/min, 300/hour, 12,000/day, 2s delay between requests"/>
                                                     </TextBlock>
                                                 </StackPanel>
                                             </Border>
@@ -369,29 +355,6 @@
                                     </Border>
                                 </StackPanel>
                             </StackPanel>
-
-                            <!-- Prompt Refinement Section -->
-                            <GroupBox Header="âœ¨ Prompt Refinement (Optional)" Margin="0,16,0,0">
-                                <StackPanel Margin="4">
-                                    <TextBlock Text="Automatically improve and clarify user prompts before sending to the main AI" 
-                                               Foreground="{StaticResource TextMutedBrush}" 
-                                               FontSize="12" 
-                                               Margin="0,0,0,8" 
-                                               TextWrapping="Wrap" />
-                                    
-                                    <Label Content="Refinement Provider" FontWeight="SemiBold" />
-                                    <ComboBox x:Name="PromptRefineProviderComboBox" Height="28" Margin="0,4,0,0">
-                                        <ComboBoxItem Tag="disabled" IsSelected="True">Disabled (Use raw user input)</ComboBoxItem>
-                                        <ComboBoxItem Tag="local">ðŸ’» Local LM Studio</ComboBoxItem>
-                                        <ComboBoxItem Tag="gemini">â˜ï¸ Google Gemini</ComboBoxItem>
-                                        <ComboBoxItem Tag="groq">âš¡ Groq</ComboBoxItem>
-                                    </ComboBox>
-                                    
-                                    <TextBlock Margin="0,6,0,0" Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap">
-                                        <Run Text="Note: Refinement adds an extra AI call before generation. Best used with fast providers like Groq or Local LM."/>
-                                    </TextBlock>
-                                </StackPanel>
-                            </GroupBox>
 
                             <Grid Margin="0,16,0,0">
                                 <Grid.ColumnDefinitions>
@@ -410,9 +373,10 @@
                             <Border x:Name="SignedOutCard" Background="{StaticResource CardBackground}" BorderBrush="{StaticResource BorderLightBrush}" BorderThickness="1" Padding="20" CornerRadius="{StaticResource StandardCornerRadius}" Visibility="Visible">
                                 <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                                     <Border Width="80" Height="80" Background="{StaticResource BorderLightBrush}" CornerRadius="40" HorizontalAlignment="Center" Margin="0,0,0,16">
-                                        <TextBlock Text="ðŸ‘¤" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="36" />
+                                        <TextBlock Text="User" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="36" />
                                     </Border>
                                     <TextBlock Text="Sign in to sync your account" FontSize="16" FontWeight="SemiBold" HorizontalAlignment="Center" Margin="0,0,0,8" />
+                                    <TextBlock Text="Role: Guest" Foreground="{StaticResource TextMutedBrush}" FontSize="13" HorizontalAlignment="Center" Margin="0,0,0,8" />
                                     <TextBlock Text="Connect with Google to access cloud features and sync your settings" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" HorizontalAlignment="Center" TextAlignment="Center" MaxWidth="400" Margin="0,0,0,20" />
                                     <Button x:Name="GoogleSignInButton" Content="Sign in with Google" Style="{StaticResource PrimaryButton}" Click="GoogleSignIn_Click" Padding="20,10" />
                                 </StackPanel>
@@ -423,11 +387,12 @@
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,20">
                                         <Border Width="64" Height="64" Background="{StaticResource BorderLightBrush}" CornerRadius="32" VerticalAlignment="Top">
-                                            <TextBlock Text="ðŸ‘¤" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="28" />
+                                            <TextBlock Text="User" HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="28" />
                                         </Border>
                                         <StackPanel Margin="16,0,0,0" VerticalAlignment="Center">
                                             <TextBlock x:Name="DisplayNameText" Text="" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,4" />
                                             <TextBlock x:Name="EmailText" Text="" Foreground="{StaticResource TextMutedBrush}" FontSize="14" />
+                                            <TextBlock x:Name="AccountRoleText" Text="Role: User" Foreground="{StaticResource AccentBrush}" FontSize="13" FontWeight="SemiBold" Margin="0,4,0,0" />
                                         </StackPanel>
                                     </StackPanel>
 
@@ -449,7 +414,7 @@
                         <StackPanel x:Name="NameEasyPanel" Visibility="Collapsed">
                             <TextBlock Text="Configure smart naming presets and automatic metadata updates" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
                             
-                            <GroupBox Header="ðŸ“ Naming Presets" Margin="0,0,0,8">
+                            <GroupBox Header="Naming Presets" Margin="0,0,0,8">
                                 <StackPanel>
                                     <Label Content="Preset Folder Location" />
                                     <TextBox x:Name="NameEasyFolderTextBox" Height="28" ToolTip="Folder containing naming preset templates" />
@@ -457,7 +422,7 @@
                                 </StackPanel>
                             </GroupBox>
                             
-                            <GroupBox Header="ðŸ”„ Auto-Update Options" Margin="0,8,0,0">
+                            <GroupBox Header="Auto-Update Options" Margin="0,8,0,0">
                                 <StackPanel>
                                     <CheckBox x:Name="ChkAutoUpdateDescription" Content="Always update Description field" ToolTip="Description metadata is always written from the generated description or the build prompt." Margin="0,4" IsChecked="True" IsEnabled="False" />
                                 </StackPanel>
@@ -472,7 +437,7 @@
                         <StackPanel x:Name="SamplesPanel" Visibility="Collapsed">
                             <TextBlock Text="Learning examples are pulled from stored feedback history in MongoDB." Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,12" FontSize="13" TextWrapping="Wrap" />
                             
-                            <GroupBox Header="ðŸŽ¯ Learning Mode" Margin="0,8,0,0">
+                            <GroupBox Header="Learning Mode" Margin="0,8,0,0">
                                 <StackPanel>
                                     <TextBlock Text="Choose how many examples the AI uses for learning:" Foreground="{StaticResource TextMutedBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
                                     <RadioButton x:Name="SampleModeZeroRadio" Content="Zero-shot (No examples - fastest)" GroupName="SampleMode" ToolTip="AI generates features without examples" Margin="0,4" Checked="SampleModeRadio_Checked" />
@@ -481,9 +446,9 @@
                                 </StackPanel>
                             </GroupBox>
 
-                            <GroupBox Header="âš™ï¸ Advanced Options" Margin="0,8,0,0" Visibility="Collapsed">
+                            <GroupBox Header="Advanced Options" Margin="0,8,0,0" Visibility="Collapsed">
                                 <StackPanel>
-                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Include example inputâ†’output pairs in prompts so the AI can learn from examples. Improves accuracy but may increase response time and prompt size.</TextBlock>
+                                    <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Include example input-output pairs in prompts so the AI can learn from examples. Improves accuracy but may increase response time and prompt size.</TextBlock>
 
                                     <TextBlock Foreground="{StaticResource TextMutedBrush}" FontSize="11" TextWrapping="Wrap" Margin="16,0,0,8">Intelligently select examples that match the current sketch context, improving relevance and response quality. Uses semantic similarity to find the best matching examples.</TextBlock>
 

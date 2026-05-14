@@ -21,6 +21,7 @@ namespace AICAD.Services
             public JArray FeatureTasks { get; set; }
             public StepExecutionResult Execution { get; set; }
             public JObject ModelState { get; set; }
+            public JObject ExecutedPlan { get; set; }
             public int? FailedTaskIndex { get; set; }
             public int? FailedStepIndex { get; set; }
             public string LastOp { get; set; }
@@ -140,6 +141,7 @@ namespace AICAD.Services
                 }
 
                 result.FeatureTasks = tasks;
+                var executedSteps = new JArray();
                 result.Description = decomposeResult.Description ?? string.Empty;
                 result.Category = "Unknown";
                 context.Stage = "EXECUTE";
@@ -232,6 +234,17 @@ namespace AICAD.Services
                             buildOp.MarkFailure(null, "Execution failed", userVisible: true);
                             return result;
                         }
+                        foreach (var step in plan.Steps)
+                        {
+                            executedSteps.Add(step.DeepClone());
+                        }
+                        result.ExecutedPlan = new JObject
+                        {
+                            ["steps"] = executedSteps,
+                            ["features"] = tasks.DeepClone(),
+                            ["description"] = result.Description ?? string.Empty,
+                            ["user_prompt"] = userPrompt ?? string.Empty
+                        };
 
                             // Gate Task0 before proceeding to Task1+
                             if (ti == 0)

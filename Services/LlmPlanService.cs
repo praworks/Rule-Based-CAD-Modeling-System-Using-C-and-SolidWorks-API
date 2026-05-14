@@ -50,6 +50,8 @@ namespace AICAD.Services
         private static readonly object _rateLimitLock = new object();
         private static readonly Dictionary<string, DateTime> _lastProviderCall = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
         internal static Func<string, string> OpRepairResponder; // test hook: if set, used instead of LLM during op repair
+        public static string LastSuccessfulProvider { get; private set; }
+        public static string LastSuccessfulModel { get; private set; }
 
         private static void EnforceProviderPacing(string provider, int minIntervalMs)
         {
@@ -593,7 +595,10 @@ namespace AICAD.Services
                                     var reply = AwaitWithTimeout(() => localClient.GenerateAsync(promptText), "local", timeoutSeconds);
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=local reply_len=" + (reply?.Length ?? 0));
                                     if (!string.IsNullOrWhiteSpace(reply))
+                                    {
+                                        RememberSuccessfulProvider("local", preferredModel);
                                         return reply;
+                                    }
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "provider=local empty_reply continuing");
                                 }
                             }
@@ -616,7 +621,10 @@ namespace AICAD.Services
                                     var reply = AwaitWithTimeout(() => gemClient.GenerateAsync(promptText), "gemini", timeoutSeconds);
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=gemini reply_len=" + (reply?.Length ?? 0));
                                     if (!string.IsNullOrWhiteSpace(reply))
+                                    {
+                                        RememberSuccessfulProvider("gemini", gemModel);
                                         return reply;
+                                    }
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "provider=gemini empty_reply continuing");
                                 }
                             }
@@ -643,7 +651,10 @@ namespace AICAD.Services
                                     var reply = AwaitWithTimeout(() => groqClient.GenerateAsync(promptText), "groq", timeoutSeconds);
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "provider=groq reply_len=" + (reply?.Length ?? 0));
                                     if (!string.IsNullOrWhiteSpace(reply))
+                                    {
+                                        RememberSuccessfulProvider("groq", groqModel);
                                         return reply;
+                                    }
                                     DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "WARN", "provider=groq empty_reply continuing");
                                 }
                             }
@@ -673,6 +684,12 @@ namespace AICAD.Services
                 DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "ERROR", "GenerateWithPriority failed: " + ex.Message);
             }
             return null;
+        }
+
+        private static void RememberSuccessfulProvider(string provider, string model)
+        {
+            LastSuccessfulProvider = provider ?? string.Empty;
+            LastSuccessfulModel = model ?? string.Empty;
         }
 
         private static JArray ExtractJsonArray(string txt)

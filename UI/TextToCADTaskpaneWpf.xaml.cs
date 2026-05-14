@@ -2496,6 +2496,8 @@ namespace AICAD.UI
                 // Keep Build button enabled so the user can request Stop
                 try { build.IsEnabled = true; } catch { }
                 _lastPrompt = text;
+                _lastReply = null;
+                _lastModel = null;
                 
                 // Refine prompt is skipped to preserve strict pipeline ordering (Classify is LLM call #1).
                 try
@@ -2755,6 +2757,10 @@ namespace AICAD.UI
 
                     classifiedCategory = orchResult.Category;
                     _generatedDescription = NormalizeDescriptionForMetadata(orchResult.Description, text);
+                    _lastReply = orchResult.ExecutedPlan != null
+                        ? AICAD.Services.JsonUtils.SerializeCompact(orchResult.ExecutedPlan)
+                        : "{}";
+                    _lastModel = BuildFeedbackModelLabel();
                     if (!string.IsNullOrWhiteSpace(_generatedDescription))
                     {
                         try { AppendStatusLine($"[Description] Generated: {_generatedDescription}"); } catch { }
@@ -4042,6 +4048,28 @@ namespace AICAD.UI
             {
                 SetDbStatus("Feedback error: " + ex.Message, Colors.Firebrick);
                 ShowFeedbackMessage("Feedback error: " + ex.Message, Colors.Firebrick);
+            }
+        }
+
+        private static string BuildFeedbackModelLabel()
+        {
+            try
+            {
+                var provider = AICAD.Services.LlmPlanService.LastSuccessfulProvider;
+                var model = AICAD.Services.LlmPlanService.LastSuccessfulModel;
+                if (!string.IsNullOrWhiteSpace(provider) && !string.IsNullOrWhiteSpace(model))
+                    return provider + ":" + model;
+                if (!string.IsNullOrWhiteSpace(model))
+                    return model;
+                if (!string.IsNullOrWhiteSpace(provider))
+                    return provider;
+
+                var priority = AICAD.Services.LlmPriorityManager.GetPriority();
+                return string.IsNullOrWhiteSpace(priority) ? string.Empty : priority;
+            }
+            catch
+            {
+                return string.Empty;
             }
         }
 

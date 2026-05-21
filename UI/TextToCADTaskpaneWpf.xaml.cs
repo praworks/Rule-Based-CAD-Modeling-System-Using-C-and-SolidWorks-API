@@ -2857,6 +2857,15 @@ namespace AICAD.UI
 
                             SetPartPropertiesOnDocument(doc, material ?? string.Empty, desc ?? string.Empty, weight ?? string.Empty, partName);
                             try { doc.ForceRebuild3(false); DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Model rebuilt after auto-apply properties (ForceRebuild3 false)"); } catch (Exception ex) { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", $"Model rebuild after auto-apply properties failed: {ex.Message}"); }
+                            try
+                            {
+                                var applied = AICAD.Services.PostBuildViewService.ApplyConfiguredView(doc);
+                                DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", $"Post-build view applied={applied} mode={AICAD.Services.PostBuildViewService.GetConfiguredMode()}");
+                            }
+                            catch (Exception ex)
+                            {
+                                DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", $"Post-build view apply failed: {ex.Message}");
+                            }
                         }
                     }
                     catch (Exception propEx)

@@ -21,6 +21,7 @@ namespace AICAD.UI
         private const int DefaultMongoPort = 27017;
         private const string DefaultMongoDatabase = "TaskPaneAddin";
         private const string PreferredSwUnitsKey = "PreferredSwUnitSystem";
+        private const string PostBuildViewModeKey = AICAD.Services.PostBuildViewService.PostBuildViewModeKey;
         private const string AdminEmail = "e2240156@bit.uom.lk";
 
         public class ProviderItem
@@ -252,12 +253,45 @@ namespace AICAD.UI
                 {
                     if (SwUnitsMmgsRadio != null) SwUnitsMmgsRadio.IsChecked = true;
                 }
+
+                try
+                {
+                    SelectPostBuildViewMode(AICAD.Services.SettingsManager.GetString(PostBuildViewModeKey, AICAD.Services.PostBuildViewService.IsometricMode));
+                }
+                catch
+                {
+                    SelectPostBuildViewMode(AICAD.Services.PostBuildViewService.IsometricMode);
+                }
             }
             catch { }
             finally
             {
                 ApplyAdminAccess();
             }
+        }
+
+        private void SelectPostBuildViewMode(string mode)
+        {
+            var normalized = AICAD.Services.PostBuildViewService.NormalizeMode(mode);
+            foreach (var item in PostBuildViewComboBox.Items)
+            {
+                if (item is ComboBoxItem comboItem
+                    && string.Equals(comboItem.Tag?.ToString(), normalized, StringComparison.OrdinalIgnoreCase))
+                {
+                    PostBuildViewComboBox.SelectedItem = comboItem;
+                    return;
+                }
+            }
+
+            PostBuildViewComboBox.SelectedIndex = 1;
+        }
+
+        private string GetSelectedPostBuildViewMode()
+        {
+            if (PostBuildViewComboBox.SelectedItem is ComboBoxItem comboItem)
+                return AICAD.Services.PostBuildViewService.NormalizeMode(comboItem.Tag?.ToString());
+
+            return AICAD.Services.PostBuildViewService.IsometricMode;
         }
 
         // Load existing Google account info from stored tokens
@@ -1351,6 +1385,7 @@ namespace AICAD.UI
             {
                 var preferredUnits = (SwUnitsIpsRadio.IsChecked == true) ? "IPS" : "MMGS";
                 AICAD.Services.SettingsManager.SetString(PreferredSwUnitsKey, preferredUnits);
+                AICAD.Services.SettingsManager.SetString(PostBuildViewModeKey, GetSelectedPostBuildViewMode());
             }
             catch { }
             System.Windows.MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButton.OK, MessageBoxImage.Information);

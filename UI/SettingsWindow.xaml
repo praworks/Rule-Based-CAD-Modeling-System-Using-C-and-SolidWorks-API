@@ -108,6 +108,21 @@
                                 </StackPanel>
                             </GroupBox>
 
+                            <GroupBox Header="Post-Build View" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <TextBlock Text="Choose the view AI-CAD applies after a successful build. Every option except 'No change' also zooms the model to fit." Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,8" FontSize="12" TextWrapping="Wrap" />
+                                    <ComboBox x:Name="PostBuildViewComboBox" Height="28" SelectedValuePath="Tag">
+                                        <ComboBoxItem Tag="none">No change</ComboBoxItem>
+                                        <ComboBoxItem Tag="isometric">Isometric</ComboBoxItem>
+                                        <ComboBoxItem Tag="top">Top</ComboBoxItem>
+                                        <ComboBoxItem Tag="front">Front</ComboBoxItem>
+                                        <ComboBoxItem Tag="right">Right</ComboBoxItem>
+                                        <ComboBoxItem Tag="left">Left</ComboBoxItem>
+                                    </ComboBox>
+                                    <TextBlock Text="This is applied only after the model is created successfully." Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" FontSize="11" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </GroupBox>
+
                             <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />

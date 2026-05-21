@@ -3353,10 +3353,11 @@ namespace AICAD.UI
                 _seriesManager.AddSeries(_selectedSeries, "Auto-added", "0000");
                 _nextSequence = _seriesManager.GetNextSequence(_selectedSeries);
                 var partName = _seriesManager.GeneratePartName(_selectedSeries, _nextSequence);
+                var safePartName = FileNameRules.SanitizeFileStem(partName, "PART-0001");
                 var nextSeqLbl2 = FindName("nextSequenceLabel") as Label;
                 if (nextSeqLbl2 != null) nextSeqLbl2.Content = $"Next Sequence: {_nextSequence:0000}";
-                previewTextBox.Text = partName;
-                saveWithNameButton.IsEnabled = true;
+                previewTextBox.Text = safePartName;
+                saveWithNameButton.IsEnabled = !string.IsNullOrWhiteSpace(safePartName);
             }
             catch (Exception ex)
             {
@@ -3426,35 +3427,24 @@ namespace AICAD.UI
                     return;
                 }
 
-                // Enforce: properties may only be applied to a model created by the add-in's last successful run
-                try
+                var partDoc = doc as PartDoc;
+                if (partDoc == null)
                 {
-                    if (!_lastRunCreatedModel)
-                    {
-                        SetRealTimeStatus("No created model to apply properties to", Colors.Firebrick);
-                        return;
-                    }
-                    if (!string.IsNullOrWhiteSpace(_lastCreatedModelTitle))
-                    {
-                        try
-                        {
-                            var title = doc.GetTitle();
-                            if (!string.Equals(title, _lastCreatedModelTitle, StringComparison.OrdinalIgnoreCase))
-                            {
-                                SetRealTimeStatus("Active document does not match the created model", Colors.Firebrick);
-                                return;
-                            }
-                        }
-                        catch { }
-                    }
+                    SetRealTimeStatus("Active document is not a part", Colors.Firebrick);
+                    return;
                 }
-                catch { }
+
+                var safeSuggestedName = FileNameRules.SanitizeFileStem(partName, "PART-0001");
+                if (!string.Equals(partName, safeSuggestedName, StringComparison.Ordinal))
+                {
+                    previewTextBox.Text = safeSuggestedName;
+                }
 
                 // Use SaveFileDialog
                 var sfd = new System.Windows.Forms.SaveFileDialog
                 {
                     Title = "Save Part As",
-                    FileName = partName + ".SLDPRT",
+                    FileName = safeSuggestedName + ".SLDPRT",
                     Filter = "Part files (*.sldprt)|*.sldprt",
                     DefaultExt = "sldprt"
                 };
@@ -3466,6 +3456,7 @@ namespace AICAD.UI
                 }
 
                 var fullPath = sfd.FileName;
+                var actualPartName = FileNameRules.SanitizeFileStem(Path.GetFileNameWithoutExtension(fullPath), safeSuggestedName);
 
                 // Save using SaveAs4
                 int errors = 0;
@@ -3480,11 +3471,11 @@ namespace AICAD.UI
                 }
 
                 // Set properties after successful save
-                SetPartPropertiesOnDocument(doc, material, typeDesc, weightTextBox.Text, partName);
+                SetPartPropertiesOnDocument(doc, material, typeDesc, weightTextBox.Text, actualPartName);
 
                 // Commit sequence
-                _seriesManager.CommitSequence(seriesId, _nextSequence, partName, fullPath);
-                SetRealTimeStatus($"Saved as {partName}", Colors.DarkGreen);
+                _seriesManager.CommitSequence(seriesId, _nextSequence, actualPartName, fullPath);
+                SetRealTimeStatus($"Saved as {actualPartName}", Colors.DarkGreen);
                 UpdatePreview();
 
                 // Rebuild to apply material
@@ -3890,10 +3881,10 @@ namespace AICAD.UI
 
             ok.Click += (_, __) =>
             {
-                var id = idBox.Text.Trim();
-                if (string.IsNullOrWhiteSpace(id))
+                var id = (idBox.Text ?? string.Empty).Trim().ToUpperInvariant();
+                if (!FileNameRules.TryValidateSeriesId(id, out var error))
                 {
-                    MessageBox.Show(dialog, "Please enter a series ID.", "NameEasy", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(dialog, error, "NameEasy", MessageBoxButton.OK, MessageBoxImage.Warning);
                     return;
                 }
                 pendingSeries = id;

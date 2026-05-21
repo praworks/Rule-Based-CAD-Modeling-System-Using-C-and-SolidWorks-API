@@ -53,7 +53,9 @@ namespace AICAD.Services
                 result.Error = "Empty prompt";
                 return result;
             }
+            var originalUserPrompt = userPrompt;
             userPrompt = NormalizeUserPrompt(userPrompt);
+            var llmUserPrompt = userPrompt;
 
             var correlationId = string.IsNullOrWhiteSpace(runId) ? Guid.NewGuid().ToString("N") : runId;
             var context = new LoggingContext
@@ -78,6 +80,23 @@ namespace AICAD.Services
                     {
                 try
                 {
+                    var fastenerLookup = FastenerInternetLookupService.TryEnrichPrompt(userPrompt);
+                    if (fastenerLookup != null && fastenerLookup.Applied && !string.IsNullOrWhiteSpace(fastenerLookup.EnrichedPrompt))
+                    {
+                        llmUserPrompt = fastenerLookup.EnrichedPrompt;
+                        _logger.LogWithContext(LogLevel.Information, context, fastenerLookup.Summary ?? "Fastener lookup applied.");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(fastenerLookup?.Summary))
+                    {
+                        _logger.LogWithContext(LogLevel.Debug, context, fastenerLookup.Summary);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWithContext(LogLevel.Warning, context, $"Fastener internet lookup failed: {ex.Message}");
+                }
+                try
+                {
                     var providerPriority = settings?.ProviderPriority ?? string.Join(",", ProviderRouter.GetFallbackOrder());
                     _logger.LogWithContext(LogLevel.Information, context, $"Settings loaded provider_priority={providerPriority} classify_timeout={classifyTimeout}s decompose_timeout={decomposeTimeout}s expand_timeout={expandTimeout}s few_shot={fewShotEnabled}");
                 }
@@ -91,7 +110,7 @@ namespace AICAD.Services
                 {
                     var decomposeOp = OperationLogger.Start(_logger, _telemetry, decomposeCtx, "Decompose");
                     _logger.LogWithContext(LogLevel.Information, decomposeCtx, "Decompose start");
-                    decomposeResult = LlmPlanService.DecomposeByFeature(userPrompt, effectiveRunId, decomposeReqId, decomposeTimeout);
+                    decomposeResult = LlmPlanService.DecomposeByFeature(llmUserPrompt, effectiveRunId, decomposeReqId, decomposeTimeout);
                     decomposeOp.MarkSuccess();
                 }
                 if (decomposeResult == null)
@@ -220,7 +239,7 @@ namespace AICAD.Services
                             ["steps"] = plan.Steps,
                             ["__llm_prompt"] = "feature_plan",
                             ["__llm_raw"] = string.Empty,
-                            ["__user_prompt"] = userPrompt ?? string.Empty
+                            ["__user_prompt"] = originalUserPrompt ?? string.Empty
                         };
 
                         _logger.LogWithContext(LogLevel.Information, featureCtx, "Execute start");
@@ -243,7 +262,7 @@ namespace AICAD.Services
                             ["steps"] = executedSteps,
                             ["features"] = tasks.DeepClone(),
                             ["description"] = result.Description ?? string.Empty,
-                            ["user_prompt"] = userPrompt ?? string.Empty
+                            ["user_prompt"] = originalUserPrompt ?? string.Empty
                         };
 
                             // Gate Task0 before proceeding to Task1+

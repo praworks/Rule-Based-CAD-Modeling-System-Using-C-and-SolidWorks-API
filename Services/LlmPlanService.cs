@@ -134,6 +134,20 @@ namespace AICAD.Services
                     };
                 }
 
+                var localMetricBolt = TryBuildMetricHexBoltDecomposeResult(userRequest);
+                if (localMetricBolt != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "Decompose shortcut: detected metric hex-head bolt request, using local tasks"); } catch { }
+                    return localMetricBolt;
+                }
+
+                var localMetricNut = TryBuildMetricHexNutDecomposeResult(userRequest);
+                if (localMetricNut != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "Decompose shortcut: detected metric hex nut request, using local tasks"); } catch { }
+                    return localMetricNut;
+                }
+
                 var prompt = PromptHandler.BuildFeatureDecomposePrompt(PromptHandler.DEFAULT_DECOMPOSE_SYSTEM_PROMPT, userRequest);
                 var sw = Stopwatch.StartNew();
                 var ctx = new LoggingContext { CorrelationId = runId, Operation = "Build", Provider = "decompose", StartTimeUtc = DateTimeOffset.UtcNow };
@@ -990,6 +1004,109 @@ namespace AICAD.Services
                    || featureType.Equals("ubolt", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static DecomposeResult TryBuildMetricHexBoltDecomposeResult(string userRequest)
+        {
+            if (string.IsNullOrWhiteSpace(userRequest)) return null;
+
+            var lower = userRequest.ToLowerInvariant();
+            if (IsUBoltRequest(userRequest)) return null;
+            if (!Regex.IsMatch(lower, @"\bbolts?\b", RegexOptions.IgnoreCase)) return null;
+            if (Regex.IsMatch(lower, @"\bthread(ed|ing)?\b", RegexOptions.IgnoreCase)) return null;
+
+            var designation = TryExtractMetricDesignation(userRequest);
+            if (string.IsNullOrWhiteSpace(designation)) return null;
+
+            var shankDiameterMm = TryExtractMetricMajorDiameterMm(userRequest);
+            var shankLengthMm = TryExtractBoltLengthMm(userRequest, shankDiameterMm);
+            var headAcrossFlatsMm = TryExtractBoltHeadAcrossFlatsMm(userRequest);
+            var headHeightMm = TryExtractBoltHeadHeightMm(userRequest);
+            var resolvedBoltInfo = (!headAcrossFlatsMm.HasValue || !headHeightMm.HasValue)
+                ? FastenerInternetLookupService.TryResolveMetricBoltInfo(userRequest)
+                : null;
+            if ((!headAcrossFlatsMm.HasValue || headAcrossFlatsMm.Value <= 0) && resolvedBoltInfo != null)
+                headAcrossFlatsMm = resolvedBoltInfo.WidthAcrossFlatsMaxMm;
+            if ((!headHeightMm.HasValue || headHeightMm.Value <= 0) && resolvedBoltInfo != null)
+                headHeightMm = resolvedBoltInfo.HeadHeightMaxMm;
+
+            var boltStandardName = resolvedBoltInfo?.StandardName ?? FastenerInternetLookupService.ResolveBoltStandardName(userRequest);
+            if (!shankDiameterMm.HasValue || shankDiameterMm.Value <= 0) return null;
+            if (!shankLengthMm.HasValue || shankLengthMm.Value <= 0) return null;
+            if (!headAcrossFlatsMm.HasValue || headAcrossFlatsMm.Value <= 0) return null;
+            if (!headHeightMm.HasValue || headHeightMm.Value <= 0) return null;
+
+            var description = $"Hex-head bolt {designation} x {shankLengthMm.Value:0.###} mm ({boltStandardName})";
+            var features = new JArray
+            {
+                new JObject
+                {
+                    ["feature_type"] = "extrude",
+                    ["role"] = "base",
+                    ["intent"] = $"create a cylinder {shankDiameterMm.Value:0.###} mm diameter and {shankLengthMm.Value:0.###} mm height",
+                    ["depends_on"] = new JArray()
+                },
+                new JObject
+                {
+                    ["feature_type"] = "extrude",
+                    ["role"] = "dependent",
+                    ["intent"] = $"create a hex head {headAcrossFlatsMm.Value:0.###} mm across flats and {headHeightMm.Value:0.###} mm height on top",
+                    ["depends_on"] = new JArray(0)
+                }
+            };
+
+            return new DecomposeResult
+            {
+                Description = description,
+                NeedsDescription = false,
+                Question = string.Empty,
+                Features = features
+            };
+        }
+
+        private static DecomposeResult TryBuildMetricHexNutDecomposeResult(string userRequest)
+        {
+            if (string.IsNullOrWhiteSpace(userRequest)) return null;
+
+            var lower = userRequest.ToLowerInvariant();
+            if (!Regex.IsMatch(lower, @"\bnuts?\b", RegexOptions.IgnoreCase)) return null;
+            if (Regex.IsMatch(lower, @"\bthread(ed|ing)?\b", RegexOptions.IgnoreCase)) return null;
+
+            var designation = TryExtractMetricDesignation(userRequest);
+            if (string.IsNullOrWhiteSpace(designation)) return null;
+
+            var holeDiameterMm = TryExtractMetricMajorDiameterMm(userRequest);
+            var bodyAcrossFlatsMm = TryExtractNutAcrossFlatsMm(userRequest);
+            var bodyHeightMm = TryExtractNutHeightMm(userRequest);
+            if (!holeDiameterMm.HasValue || holeDiameterMm.Value <= 0) return null;
+            if (!bodyAcrossFlatsMm.HasValue || bodyAcrossFlatsMm.Value <= 0) return null;
+            if (!bodyHeightMm.HasValue || bodyHeightMm.Value <= 0) return null;
+
+            var features = new JArray
+            {
+                new JObject
+                {
+                    ["feature_type"] = "extrude",
+                    ["role"] = "base",
+                    ["intent"] = $"create a hex nut body {bodyAcrossFlatsMm.Value:0.###} mm across flats and {bodyHeightMm.Value:0.###} mm height",
+                    ["depends_on"] = new JArray()
+                },
+                new JObject
+                {
+                    ["feature_type"] = "hole",
+                    ["role"] = "dependent",
+                    ["intent"] = $"create a {holeDiameterMm.Value:0.###} mm diameter hole at the center of the top face",
+                    ["depends_on"] = new JArray(0)
+                }
+            };
+
+            return new DecomposeResult
+            {
+                Description = $"Hex nut {designation}",
+                NeedsDescription = false,
+                Question = string.Empty,
+                Features = features
+            };
+        }
+
         private static bool IsMaterialFeature(string featureType)
         {
             if (string.IsNullOrWhiteSpace(featureType)) return false;
@@ -1010,6 +1127,34 @@ namespace AICAD.Services
 
             var lower = intent.ToLowerInvariant();
             var plane = NormalizePlaneName(TryExtractPlaneName(intent));
+
+            if (IsHexLikeIntent(lower))
+            {
+                var acrossFlatsMm = TryExtractAcrossFlatsMm(intent);
+                var hexHeightMm = TryExtractHeightMm(intent);
+                if (!acrossFlatsMm.HasValue || acrossFlatsMm.Value <= 0 || !hexHeightMm.HasValue || hexHeightMm.Value <= 0)
+                {
+                    return new FeaturePlanResult
+                    {
+                        ClarificationNeeded = true,
+                        Clarification = new JObject
+                        {
+                            ["clarification_needed"] = true,
+                            ["feature_index"] = featureTask.Value<int?>("index") ?? 0,
+                            ["feature_type"] = "extrude",
+                            ["questions"] = new JArray("Please provide the hex size across flats and height in millimeters.")
+                        },
+                        Thinking = "Hex prism dimensions are incomplete."
+                    };
+                }
+
+                return BuildBaseExtrudePlanFromSketchSteps(
+                    modelFacts,
+                    plane,
+                    BuildHexSketchSteps(acrossFlatsMm.Value),
+                    hexHeightMm.Value,
+                    $"Sketch a centered regular hexagon {acrossFlatsMm.Value} mm across flats on {plane} and extrude it {hexHeightMm.Value} mm.");
+            }
 
             if (IsCylinderLikeIntent(lower))
             {
@@ -1214,6 +1359,34 @@ namespace AICAD.Services
                 return null;
 
             var dimMatch = Regex.Match(intent, @"(\d+(?:\.\d+)?)\s*(?:mm)?\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?\s*[xX]\s*(\d+(?:\.\d+)?)\s*(?:mm)?", RegexOptions.IgnoreCase);
+            if (IsHexLikeIntent(lower))
+            {
+                var acrossFlatsMm = TryExtractAcrossFlatsMm(intent);
+                var hexDepthMm = TryExtractHeightMm(intent);
+                if (!acrossFlatsMm.HasValue || acrossFlatsMm.Value <= 0 || !hexDepthMm.HasValue || hexDepthMm.Value <= 0) return null;
+
+                var steps = new JArray
+                {
+                    new JObject { ["op"] = "select_face", ["face"] = "top" },
+                    new JObject { ["op"] = "sketch_begin" }
+                };
+                foreach (var step in BuildHexSketchSteps(acrossFlatsMm.Value))
+                    steps.Add(step);
+                steps.Add(new JObject { ["op"] = "auto_dimension" });
+                steps.Add(new JObject { ["op"] = "sketch_end" });
+                steps.Add(new JObject
+                {
+                    ["op"] = "extrude",
+                    ["depth"] = hexDepthMm.Value,
+                    ["type"] = "boss"
+                });
+
+                return new FeaturePlanResult
+                {
+                    Steps = steps,
+                    Thinking = $"Select the top face, sketch a centered hexagon {acrossFlatsMm.Value} mm across flats, and extrude it {hexDepthMm.Value} mm as a boss."
+                };
+            }
             if (!dimMatch.Success) return null;
 
             if (!double.TryParse(dimMatch.Groups[1].Value, out var widthMm)) return null;
@@ -1487,6 +1660,56 @@ namespace AICAD.Services
             };
         }
 
+        private static FeaturePlanResult BuildBaseExtrudePlanFromSketchSteps(JObject modelFacts, string plane, JArray sketchSteps, double depthMm, string thinking)
+        {
+            var steps = new JArray();
+            if (modelFacts == null)
+                steps.Add(new JObject { ["op"] = "new_part" });
+
+            steps.Add(new JObject { ["op"] = "select_plane", ["name"] = plane });
+            steps.Add(new JObject { ["op"] = "sketch_begin" });
+            foreach (var step in sketchSteps ?? new JArray())
+                steps.Add(step.DeepClone());
+            steps.Add(new JObject { ["op"] = "auto_dimension" });
+            steps.Add(new JObject { ["op"] = "sketch_end" });
+            steps.Add(new JObject { ["op"] = "extrude", ["depth"] = depthMm });
+
+            return new FeaturePlanResult
+            {
+                Steps = steps,
+                Thinking = thinking
+            };
+        }
+
+        private static JArray BuildHexSketchSteps(double acrossFlatsMm)
+        {
+            var steps = new JArray();
+            var radiusMm = acrossFlatsMm / Math.Sqrt(3.0);
+            var points = new List<(double X, double Y)>();
+            for (var i = 0; i < 6; i++)
+            {
+                var angleDeg = 30.0 + (60.0 * i);
+                var angleRad = angleDeg * Math.PI / 180.0;
+                points.Add((radiusMm * Math.Cos(angleRad), radiusMm * Math.Sin(angleRad)));
+            }
+
+            for (var i = 0; i < points.Count; i++)
+            {
+                var start = points[i];
+                var end = points[(i + 1) % points.Count];
+                steps.Add(new JObject
+                {
+                    ["op"] = "line",
+                    ["x1"] = Math.Round(start.X, 3),
+                    ["y1"] = Math.Round(start.Y, 3),
+                    ["x2"] = Math.Round(end.X, 3),
+                    ["y2"] = Math.Round(end.Y, 3)
+                });
+            }
+
+            return steps;
+        }
+
         private static void CopyParamIfPresent(JObject src, JObject dst, string key)
         {
             if (src == null || dst == null || string.IsNullOrWhiteSpace(key)) return;
@@ -1603,6 +1826,20 @@ namespace AICAD.Services
                 RegexOptions.IgnoreCase);
         }
 
+        private static bool IsHexLikeIntent(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return false;
+            return Regex.IsMatch(text, @"\b(hex|hexagon|hexagonal)\b", RegexOptions.IgnoreCase);
+        }
+
+        private static string TryExtractMetricDesignation(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+            var match = Regex.Match(text, @"\bM\s*(\d+(?:\.\d+)?)\b", RegexOptions.IgnoreCase);
+            if (!match.Success) return null;
+            return "M" + match.Groups[1].Value;
+        }
+
         private static string TryExtractPlaneName(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
@@ -1697,6 +1934,138 @@ namespace AICAD.Services
             }
 
             return TryExtractDiameterMm(text);
+        }
+
+        private static double? TryExtractAcrossFlatsMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var taggedMatch = Regex.Match(
+                text,
+                @"(?:across\s+flats|wrench\s+size|af)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:across\s+flats|wrench\s+size)",
+                RegexOptions.IgnoreCase);
+            if (taggedMatch.Success)
+            {
+                var raw = !string.IsNullOrWhiteSpace(taggedMatch.Groups[1].Value)
+                    ? taggedMatch.Groups[1].Value
+                    : taggedMatch.Groups[2].Value;
+                if (double.TryParse(raw, out var value))
+                    return value;
+            }
+
+            var dims = ExtractOrderedNumbers(text);
+            return dims.Count > 0 ? (double?)dims[0] : null;
+        }
+
+        private static double? TryExtractMetricMajorDiameterMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var match = Regex.Match(text, @"\bM\s*(\d+(?:\.\d+)?)\b", RegexOptions.IgnoreCase);
+            if (match.Success && double.TryParse(match.Groups[1].Value, out var metricDiameterMm))
+                return metricDiameterMm;
+
+            return null;
+        }
+
+        private static double? TryExtractBoltLengthMm(string text, double? shankDiameterMm)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var explicitMatch = Regex.Match(
+                text,
+                @"(?:length|long|shank)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:long|length)",
+                RegexOptions.IgnoreCase);
+            if (explicitMatch.Success)
+            {
+                var raw = !string.IsNullOrWhiteSpace(explicitMatch.Groups[1].Value)
+                    ? explicitMatch.Groups[1].Value
+                    : explicitMatch.Groups[2].Value;
+                if (double.TryParse(raw, out var explicitLengthMm) && explicitLengthMm > 0)
+                    return explicitLengthMm;
+            }
+
+            var mxlMatch = Regex.Match(text, @"\bM\s*(\d+(?:\.\d+)?)\s*[xX]\s*(\d+(?:\.\d+)?)\b", RegexOptions.IgnoreCase);
+            if (mxlMatch.Success
+                && double.TryParse(mxlMatch.Groups[2].Value, out var compactLengthMm)
+                && compactLengthMm > 0)
+            {
+                var minExpectedLength = shankDiameterMm.GetValueOrDefault(0d);
+                if (compactLengthMm > minExpectedLength)
+                    return compactLengthMm;
+            }
+
+            return null;
+        }
+
+        private static double? TryExtractBoltHeadAcrossFlatsMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var chartMatch = Regex.Match(
+                text,
+                @"width\s+across\s+flats\s+(\d+(?:\.\d+)?)\s*(?:mm)?\s+max",
+                RegexOptions.IgnoreCase);
+            if (chartMatch.Success && double.TryParse(chartMatch.Groups[1].Value, out var chartAcrossFlatsMm))
+                return chartAcrossFlatsMm;
+
+            var hintMatch = Regex.Match(
+                text,
+                @"hex\s+head\s+near\s+(\d+(?:\.\d+)?)\s*(?:mm)?\s+across\s+flats",
+                RegexOptions.IgnoreCase);
+            if (hintMatch.Success && double.TryParse(hintMatch.Groups[1].Value, out var hintedAcrossFlatsMm))
+                return hintedAcrossFlatsMm;
+
+            return null;
+        }
+
+        private static double? TryExtractBoltHeadHeightMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var chartMatch = Regex.Match(
+                text,
+                @"head\s+height\s+(\d+(?:\.\d+)?)\s*(?:mm)?\s+max",
+                RegexOptions.IgnoreCase);
+            if (chartMatch.Success && double.TryParse(chartMatch.Groups[1].Value, out var chartHeadHeightMm))
+                return chartHeadHeightMm;
+
+            var hintMatch = Regex.Match(
+                text,
+                @"head\s+height\s+about\s+(\d+(?:\.\d+)?)\s*(?:mm)?",
+                RegexOptions.IgnoreCase);
+            if (hintMatch.Success && double.TryParse(hintMatch.Groups[1].Value, out var hintedHeadHeightMm))
+                return hintedHeadHeightMm;
+
+            return null;
+        }
+
+        private static double? TryExtractNutAcrossFlatsMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var chartMatch = Regex.Match(
+                text,
+                @"width\s+across\s+flats\s+(\d+(?:\.\d+)?)\s*(?:mm)?\s+max",
+                RegexOptions.IgnoreCase);
+            if (chartMatch.Success && double.TryParse(chartMatch.Groups[1].Value, out var chartAcrossFlatsMm))
+                return chartAcrossFlatsMm;
+
+            return TryExtractAcrossFlatsMm(text);
+        }
+
+        private static double? TryExtractNutHeightMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var chartMatch = Regex.Match(
+                text,
+                @"nut\s+height\s+(\d+(?:\.\d+)?)\s*(?:mm)?\s+max",
+                RegexOptions.IgnoreCase);
+            if (chartMatch.Success && double.TryParse(chartMatch.Groups[1].Value, out var chartHeightMm))
+                return chartHeightMm;
+
+            return TryExtractHeightMm(text);
         }
 
         private static double? TryExtractHeightMm(string text)

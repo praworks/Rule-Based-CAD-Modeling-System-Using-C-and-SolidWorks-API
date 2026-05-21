@@ -27,7 +27,7 @@ If unclear:
 - description = ""
 - features = []
 
-Canonical feature_type values: extrude, extrude_cut, revolve, revolve_cut, sweep, loft, fillet, chamfer, hole, thread, pocket, material.
+Canonical feature_type values: extrude, extrude_cut, revolve, revolve_cut, sweep, loft, fillet, chamfer, hole, pocket, material.
 Map non-canonical:
 - cube/box/block -> extrude (base)
 - cylinder -> extrude (base)
@@ -36,6 +36,28 @@ Map non-canonical:
 - countersink/counterbore -> hole
 - rod/u-bolt/donut -> sweep
 - set material / material <name> / use <name> material -> material (dependent)
+
+FASTENER RULES:
+- For a metric hex-head bolt request such as "M24x100 bolt" or "M24x100 hex-head bolt", do NOT ask for hex size, head size, or whether the body should be threaded unless the user explicitly requests threads or a different fastener standard.
+- Unless the user explicitly specifies a standard, use ISO 4014 as the default standard for a metric hex-head bolt.
+- If the user explicitly specifies ISO 4017, DIN 933, or DIN 931, use that standard in the description.
+- Decompose a standard metric hex-head bolt into exactly two features:
+  - a base extrude for the cylindrical shank using the nominal M diameter and requested length
+  - a dependent extrude for the hex head on top
+- NEVER emit a generic intent like "create hex-head" for these bolts. The hex-head feature intent must include explicit numeric across-flats and head-height dimensions in millimeters.
+
+Fastener examples:
+User request: Create an M24x100 hex-head bolt
+description: "Hex-head bolt M24 x 100 mm (ISO 4014)"
+features:
+- { "feature_type": "extrude", "role": "base", "intent": "create a cylinder 24 mm diameter and 100 mm height", "depends_on": [] }
+- { "feature_type": "extrude", "role": "dependent", "intent": "create a hex head 36 mm across flats and 15.2 mm height on top", "depends_on": [0] }
+
+User request: Create an M12x60 hex-head bolt using ISO 4017
+description: "Hex-head bolt M12 x 60 mm (ISO 4017)"
+features:
+- { "feature_type": "extrude", "role": "base", "intent": "create a cylinder 12 mm diameter and 60 mm height", "depends_on": [] }
+- { "feature_type": "extrude", "role": "dependent", "intent": "create a hex head 18 mm across flats and 7.5 mm height on top", "depends_on": [0] }
 
 Example:
 User request: Create a cylinder 45 mm in diameter and 70 mm tall

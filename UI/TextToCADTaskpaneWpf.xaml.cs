@@ -213,6 +213,14 @@ namespace AICAD.UI
         private bool? _lastDbLogged;
         private string _lastRunId;
         private string _lastThinkingSignature;
+        private readonly Queue<string> _aiActivityLines = new Queue<string>();
+        private const int MaxAiActivityLines = 8;
+        private string _lastAiActivityNormalized;
+        private string _lastAiProvider;
+        private string _lastAiModel;
+        private string _lastAiStage;
+        private string _lastAiFeature;
+        private bool _aiTraceSubscribed;
         private string _pendingRunId;
         private int _feedbackMessageVersion;
         private bool _isBuilding = false;
@@ -243,6 +251,7 @@ namespace AICAD.UI
             InitializeComponent();
             _swApp = swApp;
             try { AICAD.Services.LlmPlanService.ThinkingUpdated += OnThinkingUpdated; } catch { }
+            TrySubscribeAiTrace();
 
             // Initialize the background key-log flush timer only if key logging is enabled via env var.
             try
@@ -318,9 +327,10 @@ namespace AICAD.UI
                     {
                         var source = PresentationSource.FromVisual(this) as HwndSource;
                         source?.RemoveHook(ChildHwndSourceHook);
+                        try { AICAD.Services.LlmPlanService.ThinkingUpdated -= OnThinkingUpdated; } catch { }
+                        TryUnsubscribeAiTrace();
                     }
                     catch { }
-                    try { AICAD.Services.LlmPlanService.ThinkingUpdated -= OnThinkingUpdated; } catch { }
                 };
                 // If user clicks anywhere in the WPF control, try to move focus into the clicked TextBox
                 // (handles tricky host focus capture when hosted inside SolidWorks WinForms panes).
@@ -908,8 +918,232 @@ namespace AICAD.UI
                     }
                     catch { }
                 }), System.Windows.Threading.DispatcherPriority.Background);
+                SetAiActivityStatus("Waiting for clarification from the user.");
+                AppendAiActivityLine("Clarification needed before execution can continue.");
             }
             catch { }
+        }
+
+        private void TrySubscribeAiTrace()
+        {
+            try
+            {
+                if (_aiTraceSubscribed) return;
+                LlmTraceLogger.OnTraceEvent += HandleAiTraceEvent;
+                _aiTraceSubscribed = true;
+            }
+            catch { }
+        }
+
+        private void TryUnsubscribeAiTrace()
+        {
+            try
+            {
+                if (!_aiTraceSubscribed) return;
+                LlmTraceLogger.OnTraceEvent -= HandleAiTraceEvent;
+                _aiTraceSubscribed = false;
+            }
+            catch { }
+        }
+
+        private void ResetAiActivity(string goal)
+        {
+            try
+            {
+                _aiActivityLines.Clear();
+                _lastAiActivityNormalized = null;
+                _lastAiProvider = string.Empty;
+                _lastAiModel = string.Empty;
+                _lastAiStage = string.Empty;
+                _lastAiFeature = string.Empty;
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (ThinkingContainer != null) ThinkingContainer.Visibility = Visibility.Visible;
+                        if (ActivityGoalText != null) ActivityGoalText.Text = CompactActivityText(goal, 220);
+                        if (ActivityStatusText != null) ActivityStatusText.Text = "Preparing build request.";
+                        if (ActivityEvidenceText != null) ActivityEvidenceText.Text = "Waiting for provider selection.";
+                        if (ActivityTimelineText != null) ActivityTimelineText.Text = "- Build requested";
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        private void SetAiActivityStatus(string status, string evidence = null)
+        {
+            try
+            {
+                var cleanStatus = CompactActivityText(status, 180);
+                var cleanEvidence = CompactActivityText(evidence, 220);
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        if (ThinkingContainer != null) ThinkingContainer.Visibility = Visibility.Visible;
+                        if (!string.IsNullOrWhiteSpace(cleanStatus) && ActivityStatusText != null)
+                            ActivityStatusText.Text = cleanStatus;
+                        if (!string.IsNullOrWhiteSpace(cleanEvidence) && ActivityEvidenceText != null)
+                            ActivityEvidenceText.Text = cleanEvidence;
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        private void AppendAiActivityLine(string line)
+        {
+            try
+            {
+                var clean = CompactActivityText(line, 180);
+                if (string.IsNullOrWhiteSpace(clean)) return;
+                var normalized = clean.ToLowerInvariant();
+                if (string.Equals(normalized, _lastAiActivityNormalized, StringComparison.Ordinal))
+                    return;
+                _lastAiActivityNormalized = normalized;
+
+                Dispatcher.BeginInvoke(new Action(() =>
+                {
+                    try
+                    {
+                        while (_aiActivityLines.Count >= MaxAiActivityLines)
+                            _aiActivityLines.Dequeue();
+                        _aiActivityLines.Enqueue(clean);
+                        if (ActivityTimelineText != null)
+                            ActivityTimelineText.Text = string.Join(System.Environment.NewLine, _aiActivityLines.Select(l => "- " + l));
+                    }
+                    catch { }
+                }), System.Windows.Threading.DispatcherPriority.Background);
+            }
+            catch { }
+        }
+
+        private void UpdateAiActivityEvidence()
+        {
+            try
+            {
+                var parts = new List<string>();
+                if (!string.IsNullOrWhiteSpace(_lastAiProvider))
+                    parts.Add(_lastAiProvider.Trim());
+                if (!string.IsNullOrWhiteSpace(_lastAiModel))
+                    parts.Add(_lastAiModel.Trim());
+                if (!string.IsNullOrWhiteSpace(_lastAiStage))
+                    parts.Add("stage=" + _lastAiStage.Trim());
+                if (!string.IsNullOrWhiteSpace(_lastAiFeature))
+                    parts.Add("feature=" + _lastAiFeature.Trim());
+                if (parts.Count == 0)
+                    return;
+                SetAiActivityStatus(null, string.Join(" | ", parts));
+            }
+            catch { }
+        }
+
+        private void HandleAiTraceEvent(LlmTraceEvent evt)
+        {
+            try
+            {
+                if (evt == null) return;
+                if (!string.IsNullOrWhiteSpace(evt.Provider)) _lastAiProvider = evt.Provider;
+                if (!string.IsNullOrWhiteSpace(evt.Model)) _lastAiModel = evt.Model;
+                if (!string.IsNullOrWhiteSpace(evt.Stage)) _lastAiStage = evt.Stage;
+                UpdateAiActivityEvidence();
+
+                var providerLabel = string.IsNullOrWhiteSpace(evt.Provider) ? "model" : evt.Provider.Trim();
+                var stageLabel = string.IsNullOrWhiteSpace(evt.Stage) ? "request" : evt.Stage.Trim().ToLowerInvariant();
+                if (string.Equals(evt.EventType, "SEND", StringComparison.OrdinalIgnoreCase))
+                {
+                    SetAiActivityStatus("Sending " + stageLabel + " request.");
+                    AppendAiActivityLine("Sent " + stageLabel + " request to " + providerLabel + ".");
+                }
+                else if (string.Equals(evt.EventType, "RECV", StringComparison.OrdinalIgnoreCase))
+                {
+                    var elapsed = evt.ElapsedMs.HasValue ? " in " + evt.ElapsedMs.Value + " ms" : string.Empty;
+                    SetAiActivityStatus("Received " + stageLabel + " response.");
+                    AppendAiActivityLine("Received " + stageLabel + " response from " + providerLabel + elapsed + ".");
+                }
+            }
+            catch { }
+        }
+
+        private void TryMirrorAiActivityFromStatusLine(string line)
+        {
+            try
+            {
+                var friendly = BuildUserFacingActivityLine(line);
+                if (string.IsNullOrWhiteSpace(friendly)) return;
+                AppendAiActivityLine(friendly);
+            }
+            catch { }
+        }
+
+        private string BuildUserFacingActivityLine(string line)
+        {
+            try
+            {
+                var text = (line ?? string.Empty).Trim();
+                if (string.IsNullOrWhiteSpace(text) || IsDiagnosticHeaderLine(text))
+                    return null;
+
+                if (text.StartsWith("> ", StringComparison.Ordinal))
+                    return null;
+                if (text.StartsWith("[Settings]", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("[Training]", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("[FewShot]", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("[AutoUpdate]", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("[DB]", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("[Feedback]", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("[Timing]", StringComparison.OrdinalIgnoreCase))
+                    return null;
+
+                if (text.StartsWith("[Run:", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (text.IndexOf("Build Start", StringComparison.OrdinalIgnoreCase) >= 0) return "Build started.";
+                    if (text.IndexOf("success=True", StringComparison.OrdinalIgnoreCase) >= 0) return "Build finished successfully.";
+                    if (text.IndexOf("Build End", StringComparison.OrdinalIgnoreCase) >= 0) return "Build finished with an error.";
+                    return null;
+                }
+
+                if (text.StartsWith("[LLM-STATUS]", StringComparison.OrdinalIgnoreCase))
+                    return text.Substring("[LLM-STATUS]".Length).Trim();
+                if (text.StartsWith("[LLM]", StringComparison.OrdinalIgnoreCase))
+                    return text.Substring("[LLM]".Length).Trim();
+                if (text.StartsWith("[Classify]", StringComparison.OrdinalIgnoreCase))
+                    return text.Substring("[Classify]".Length).Trim();
+                if (text.StartsWith("[Refine]", StringComparison.OrdinalIgnoreCase))
+                    return text.Substring("[Refine]".Length).Trim();
+                if (text.StartsWith("[Description]", StringComparison.OrdinalIgnoreCase))
+                    return text.Substring("[Description]".Length).Trim();
+                if (text.StartsWith("[VALIDATION]", StringComparison.OrdinalIgnoreCase))
+                    return text.Substring("[VALIDATION]".Length).Trim();
+                if (text.StartsWith(StatusConsole.StatusPrefix, StringComparison.OrdinalIgnoreCase))
+                    return text.Substring(StatusConsole.StatusPrefix.Length).Trim();
+                if (text.StartsWith("[ERROR]", StringComparison.OrdinalIgnoreCase))
+                    return text.Substring("[ERROR]".Length).Trim();
+                if (text.StartsWith("Error:", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("SOLIDWORKS error:", StringComparison.OrdinalIgnoreCase)
+                    || text.StartsWith("Model created.", StringComparison.OrdinalIgnoreCase))
+                    return text;
+            }
+            catch { }
+            return null;
+        }
+
+        private static string CompactActivityText(string text, int maxLength)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(text)) return string.Empty;
+                var compact = Regex.Replace(text, "\\s+", " ").Trim();
+                if (compact.Length <= maxLength) return compact;
+                return compact.Substring(0, Math.Max(0, maxLength - 3)) + "...";
+            }
+            catch
+            {
+                return text ?? string.Empty;
+            }
         }
 
         private void TryLoadPromptPresets()
@@ -1707,6 +1941,7 @@ namespace AICAD.UI
         private void SetRealTimeStatus(string text, Color color)
         {
             // `lblRealTimeStatus` removed from UI; mirror status to logs instead.
+            SetAiActivityStatus(text);
             AppendStatusLine(StatusConsole.StatusPrefix + " " + (text ?? string.Empty));
         }
 
@@ -1797,6 +2032,34 @@ namespace AICAD.UI
         // Start a realistic progress phase: communicating, awaiting_response, executing, success, error
         private void StartProgressPhase(string phase)
         {
+            try
+            {
+                switch ((phase ?? string.Empty).ToLowerInvariant())
+                {
+                    case "communicating":
+                        SetAiActivityStatus("Preparing AI request.");
+                        AppendAiActivityLine("Preparing request for the model.");
+                        break;
+                    case "awaiting_response":
+                        SetAiActivityStatus("Waiting for model response.");
+                        AppendAiActivityLine("Waiting for the model to respond.");
+                        break;
+                    case "executing":
+                        SetAiActivityStatus("Applying CAD steps in SolidWorks.");
+                        AppendAiActivityLine("Executing approved CAD steps in SolidWorks.");
+                        break;
+                    case "success":
+                        SetAiActivityStatus("Completed.");
+                        AppendAiActivityLine("Build completed successfully.");
+                        break;
+                    case "error":
+                        SetAiActivityStatus("Stopped because of an error.");
+                        AppendAiActivityLine("Build stopped on an error.");
+                        break;
+                }
+            }
+            catch { }
+
             switch ((phase ?? string.Empty).ToLowerInvariant())
             {
                 case "communicating":
@@ -2498,6 +2761,7 @@ namespace AICAD.UI
                 _lastPrompt = text;
                 _lastReply = null;
                 _lastModel = null;
+                ResetAiActivity(text);
                 
                 // Refine prompt is skipped to preserve strict pipeline ordering (Classify is LLM call #1).
                 try
@@ -4332,6 +4596,10 @@ namespace AICAD.UI
 
                 var feature = string.IsNullOrWhiteSpace(featureType) ? "feature" : featureType.Trim();
                 var cleanThinking = thinking.Trim();
+                _lastAiFeature = feature;
+                UpdateAiActivityEvidence();
+                SetAiActivityStatus("Planning " + feature + " feature.");
+                AppendAiActivityLine("Planned " + feature + " feature.");
                 var signature = (incomingRun + "|" + feature + "|" + cleanThinking).ToLowerInvariant();
                 if (string.Equals(signature, _lastThinkingSignature, StringComparison.Ordinal))
                     return;
@@ -4683,6 +4951,8 @@ namespace AICAD.UI
                 }
             }
             catch { }
+
+            try { TryMirrorAiActivityFromStatusLine(line); } catch { }
 
             // Also render into the taskpane progressive status panel (karaoke-driven)
             try

@@ -146,6 +146,7 @@ namespace AICAD.Services
                     return result;
                 }
                 var tasks = decomposeResult.Features ?? new JArray();
+                NormalizeRepeatedCornerHoleTasks(tasks, decomposeCtx);
                 AppendMaterialTaskFromPrompt(tasks, userPrompt, decomposeCtx);
                 EnsureTaskIndexes(tasks);
                 if (tasks.Count == 0)
@@ -366,6 +367,73 @@ namespace AICAD.Services
                 return 0;
 
             return Regex.Matches(fewShotExamples, @"\bInput:", RegexOptions.IgnoreCase).Count;
+        }
+
+        private void NormalizeRepeatedCornerHoleTasks(JArray tasks, LoggingContext logContext)
+        {
+            if (tasks == null || tasks.Count < 4) return;
+
+            try
+            {
+                var groups = tasks
+                    .Select((token, index) => new { Task = token as JObject, Index = index })
+                    .Where(x => x.Task != null)
+                    .GroupBy(x =>
+                    {
+                        var featureType = (x.Task.Value<string>("feature_type") ?? string.Empty).Trim().ToLowerInvariant();
+                        var role = (x.Task.Value<string>("role") ?? string.Empty).Trim().ToLowerInvariant();
+                        var intent = NormalizeCornerHoleIntentKey(x.Task.Value<string>("intent") ?? string.Empty);
+                        var dependsOn = string.Join(",", (x.Task["depends_on"] as JArray ?? new JArray()).Values<int>());
+                        return featureType + "|" + role + "|" + intent + "|" + dependsOn;
+                    })
+                    .ToList();
+
+                foreach (var group in groups)
+                {
+                    var first = group.FirstOrDefault()?.Task;
+                    if (first == null || group.Count() < 4) continue;
+
+                    var featureType = first.Value<string>("feature_type") ?? string.Empty;
+                    var role = first.Value<string>("role") ?? string.Empty;
+                    var intent = first.Value<string>("intent") ?? string.Empty;
+                    if (!featureType.Equals("hole", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!role.Equals("dependent", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (!LooksLikeSingleCornerHoleIntent(intent)) continue;
+
+                    first["intent"] = intent.TrimEnd().TrimEnd('.') + " on all four corners";
+
+                    foreach (var duplicate in group.OrderByDescending(g => g.Index).Skip(1))
+                    {
+                        tasks.RemoveAt(duplicate.Index);
+                    }
+
+                    try
+                    {
+                        _logger.LogWithContext(LogLevel.Information, logContext, "Collapsed repeated single-corner hole tasks into one four-corner hole pattern.");
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+        }
+
+        private static bool LooksLikeSingleCornerHoleIntent(string intent)
+        {
+            if (string.IsNullOrWhiteSpace(intent)) return false;
+            var lower = intent.ToLowerInvariant();
+            if (!lower.Contains("corner")) return false;
+            if (!Regex.IsMatch(lower, @"\bhole\b|\bdia(?:meter)?\b")) return false;
+            if (lower.Contains("all four corners") || lower.Contains("each corner") || lower.Contains("one near each corner") || lower.Contains("corner holes"))
+                return false;
+            if (lower.Contains("edge")) return true;
+            if (Regex.IsMatch(lower, @"\bfrom\s+(?:the\s+)?corner\b")) return true;
+            return true;
+        }
+
+        private static string NormalizeCornerHoleIntentKey(string intent)
+        {
+            if (string.IsNullOrWhiteSpace(intent)) return string.Empty;
+            return Regex.Replace(intent.Trim().ToLowerInvariant(), @"\s+", " ");
         }
 
         private static bool HasMaterialTask(JArray tasks)

@@ -4,6 +4,11 @@ Output RAW JSON only (no markdown, no prose).
 Handle ONLY the current hole feature.
 Use ONLY the allowed ops; never invent new ops.
 
+INPUT ROBUSTNESS:
+- User input may be short, broken, or keyword-based.
+- Accept inputs like "4 corner holes 8 mm", "hole center dia 10", or "plate hole each corner".
+- Infer intent from numbers and geometry words before sentence grammar.
+
 If inputs are missing, return:
 {
   "clarification_needed": true,
@@ -23,8 +28,12 @@ CRITICAL:
 - diameter is in mm and must come from intent.
 - face must be "top" for holes on the plate.
 - If intent says "in center", use target="center" and edge_offset must be null.
+- Treat "center", "middle", and "centre" as the same meaning.
 - If intent says "blind hole" or gives a depth like "20 mm deep", include `"depth": <number>` in mm.
 - If intent says the hole is through / through-all, omit `depth`.
-- If intent says "at all corners" and the offset from edges is not given, ask ONE question:
-  "What edge offset (distance from the plate edges) should the corner holes use?"
+- Treat "4 corner holes", "corner holes", "hole each corner", and "one near each corner" as the same corner-pattern intent.
+- "corner" means near a plate corner, not exactly on the vertex.
+- For a rectangular plate, corner holes mean one hole near each corner, offset inward from the two nearest edges.
+- If intent says corner holes and the offset from edges is not given, ask ONE question:
+  "Hole distance from edges?"
 - Do NOT ask for coordinates.

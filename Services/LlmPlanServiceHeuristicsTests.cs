@@ -162,6 +162,129 @@ namespace AICAD.Services
         }
 
         [TestMethod]
+        public void CornerHolePattern_UsesExplicitCoordinates()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "hole",
+                ["role"] = "dependent",
+                ["intent"] = "create four 10 mm diameter through holes, one near each corner, each hole center 20 mm from the two nearest edges"
+            };
+            var modelFacts = new JObject
+            {
+                ["feature_count"] = 1,
+                ["bounding_box_mm"] = new JObject
+                {
+                    ["x_size_mm"] = 100.0,
+                    ["y_size_mm"] = 10.0,
+                    ["z_size_mm"] = 100.0
+                }
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, modelFacts);
+
+            Assert.IsNotNull(plan, "Plan should be generated for a four-corner hole pattern.");
+            Assert.IsNotNull(plan.Steps, "Corner-hole plan should contain executable steps.");
+            Assert.AreEqual(4, plan.Steps.Count, "Corner-hole shortcut should emit four explicit hole steps.");
+            Assert.AreEqual(-30d, ((JObject)plan.Steps[0])["x"]?.Value<double>(), "First corner hole should be offset 30 mm left of center.");
+            Assert.AreEqual(-30d, ((JObject)plan.Steps[0])["y"]?.Value<double>(), "First corner hole should be offset 30 mm below center.");
+            Assert.AreEqual(30d, ((JObject)plan.Steps[3])["x"]?.Value<double>(), "Last corner hole should be offset 30 mm right of center.");
+            Assert.AreEqual(30d, ((JObject)plan.Steps[3])["y"]?.Value<double>(), "Last corner hole should be offset 30 mm above center.");
+            Assert.AreEqual("top", ((JObject)plan.Steps[0])["face"]?.ToString(), "Corner-hole shortcut should target the top face.");
+        }
+
+        [TestMethod]
+        public void CornerHolePattern_FromCornerShorthand_UsesExplicitCoordinates()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "hole",
+                ["role"] = "dependent",
+                ["intent"] = "create a 10mm dia hole 10mm from corner on all four corners"
+            };
+            var modelFacts = new JObject
+            {
+                ["feature_count"] = 1,
+                ["bounding_box_mm"] = new JObject
+                {
+                    ["x_size_mm"] = 100.0,
+                    ["y_size_mm"] = 6.0,
+                    ["z_size_mm"] = 100.0
+                }
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, modelFacts);
+
+            Assert.IsNotNull(plan, "Plan should be generated for the collapsed four-corner shorthand.");
+            Assert.IsNotNull(plan.Steps, "Corner-hole shorthand plan should contain executable steps.");
+            Assert.AreEqual(4, plan.Steps.Count, "Collapsed corner-hole shorthand should emit four explicit hole steps.");
+            Assert.AreEqual(-40d, ((JObject)plan.Steps[0])["x"]?.Value<double>(), "First hole should be offset 40 mm left of center.");
+            Assert.AreEqual(-40d, ((JObject)plan.Steps[0])["y"]?.Value<double>(), "First hole should be offset 40 mm below center.");
+            Assert.AreEqual(40d, ((JObject)plan.Steps[3])["x"]?.Value<double>(), "Last hole should be offset 40 mm right of center.");
+            Assert.AreEqual(40d, ((JObject)plan.Steps[3])["y"]?.Value<double>(), "Last hole should be offset 40 mm above center.");
+        }
+
+        [TestMethod]
+        public void ExplicitCoordinateHole_ConvertsAbsolutePlateCoordinatesToCenteredCoordinates()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "hole",
+                ["role"] = "dependent",
+                ["intent"] = "create a hole 10 mm diameter at (10,10)"
+            };
+            var modelFacts = new JObject
+            {
+                ["feature_count"] = 1,
+                ["bounding_box_mm"] = new JObject
+                {
+                    ["x_size_mm"] = 100.0,
+                    ["y_size_mm"] = 6.0,
+                    ["z_size_mm"] = 100.0
+                }
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, modelFacts);
+
+            Assert.IsNotNull(plan, "Plan should be generated for explicit coordinate hole shorthand.");
+            Assert.IsNotNull(plan.Steps, "Explicit coordinate hole plan should contain executable steps.");
+            Assert.AreEqual(1, plan.Steps.Count, "Explicit coordinate hole plan should emit one hole step.");
+            Assert.AreEqual(-40d, ((JObject)plan.Steps[0])["x"]?.Value<double>(), "Absolute plate coordinate x=10 should map to centered x=-40.");
+            Assert.AreEqual(-40d, ((JObject)plan.Steps[0])["y"]?.Value<double>(), "Absolute plate coordinate y=10 should map to centered y=-40.");
+            Assert.AreEqual("top", ((JObject)plan.Steps[0])["face"]?.ToString(), "Explicit coordinate hole should target the top face.");
+        }
+
+        [TestMethod]
+        public void SingleNamedCornerHole_UsesExplicitCoordinates()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "hole",
+                ["role"] = "dependent",
+                ["intent"] = "create a hole 10 mm diameter near the top-left corner, 10 mm from the two nearest edges"
+            };
+            var modelFacts = new JObject
+            {
+                ["feature_count"] = 1,
+                ["bounding_box_mm"] = new JObject
+                {
+                    ["x_size_mm"] = 100.0,
+                    ["y_size_mm"] = 6.0,
+                    ["z_size_mm"] = 100.0
+                }
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, modelFacts);
+
+            Assert.IsNotNull(plan, "Plan should be generated for a named single-corner hole.");
+            Assert.IsNotNull(plan.Steps, "Single-corner hole plan should contain executable steps.");
+            Assert.AreEqual(1, plan.Steps.Count, "Single-corner hole plan should emit one explicit hole step.");
+            Assert.AreEqual(-40d, ((JObject)plan.Steps[0])["x"]?.Value<double>(), "Top-left corner hole should be offset 40 mm left of center.");
+            Assert.AreEqual(40d, ((JObject)plan.Steps[0])["y"]?.Value<double>(), "Top-left corner hole should be offset 40 mm above center.");
+            Assert.AreEqual("top", ((JObject)plan.Steps[0])["face"]?.ToString(), "Single-corner hole should target the top face.");
+        }
+
+        [TestMethod]
         public void Pocket_WithThreeDimensions_KeepsExplicitDepthFallback()
         {
             var featureTask = new JObject

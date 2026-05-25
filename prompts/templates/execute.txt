@@ -1,6 +1,31 @@
 ALLOWED OPS (use only these, do NOT invent new ops):
 {allowedOps}
 
+INPUT ROBUSTNESS:
+- User input may be short, ungrammatical, misspelled, or keyword-based.
+- Do not require full English sentences.
+- Extract meaning primarily from numbers, units, shape words, feature words, count words, and material names.
+- Treat short inputs like commands, not prose.
+- Do not reject intent only because grammar is poor.
+
+NORMALIZATION RULES:
+- Treat equivalent phrases as the same intent.
+- Examples:
+  - "4 corner holes" = "four holes at the corners"
+  - "hole center" = "center hole"
+  - "dia 10" = "10 mm diameter"
+  - "thru" = "through" = "through all"
+  - "rect plate" = "rectangular plate"
+
+INTERPRETATION PRIORITY:
+- Prefer explicit numbers over guessed meaning.
+- Prefer geometry words over sentence grammar.
+- Use safe defaults only when standard and unambiguous.
+
+CLARIFICATION POLICY:
+- Ask only when a required geometric value is missing.
+- Ask one short, simple question only.
+
 {factsSection}{fewShotSection}FEATURE INDEX:
 {featureIndex}
 

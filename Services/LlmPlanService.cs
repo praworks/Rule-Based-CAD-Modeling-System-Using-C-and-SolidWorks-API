@@ -211,6 +211,24 @@ namespace AICAD.Services
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local top-center hole plan"); } catch { }
                     return localTopHolePlan;
                 }
+                var localCoordinateHolePlan = TryBuildExplicitCoordinateHolePlan(featureTask, modelFacts);
+                if (localCoordinateHolePlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local explicit-coordinate hole plan"); } catch { }
+                    return localCoordinateHolePlan;
+                }
+                var localSingleCornerHolePlan = TryBuildSingleCornerHolePlan(featureTask, modelFacts);
+                if (localSingleCornerHolePlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local single-corner hole plan"); } catch { }
+                    return localSingleCornerHolePlan;
+                }
+                var localCornerHolePlan = TryBuildCornerHolePatternPlan(featureTask, modelFacts);
+                if (localCornerHolePlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local corner-hole pattern plan"); } catch { }
+                    return localCornerHolePlan;
+                }
                 var localTopBossPlan = TryBuildTopMountedBossPlan(featureTask, modelFacts);
                 if (localTopBossPlan != null)
                 {
@@ -1343,6 +1361,198 @@ namespace AICAD.Services
             };
         }
 
+        private static FeaturePlanResult TryBuildExplicitCoordinateHolePlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null || modelFacts == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var role = featureTask.Value<string>("role") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!featureType.Equals("hole", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!role.Equals("dependent", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            var match = Regex.Match(
+                intent,
+                @"\bat\s*\(\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*\)",
+                RegexOptions.IgnoreCase);
+            if (!match.Success) return null;
+
+            if (!double.TryParse(match.Groups[1].Value, out var rawXmm)) return null;
+            if (!double.TryParse(match.Groups[2].Value, out var rawYmm)) return null;
+
+            var diameterMm = TryExtractDiameterMm(intent);
+            if (!diameterMm.HasValue || diameterMm.Value <= 0) return null;
+
+            var xMm = rawXmm;
+            var yMm = rawYmm;
+            var footprint = TryExtractTopFaceFootprintMm(modelFacts);
+            if (footprint.HasValue)
+            {
+                var widthMm = footprint.Value.WidthMm;
+                var heightMm = footprint.Value.HeightMm;
+                var looksLikeAbsolutePlateCoordinates =
+                    rawXmm >= 0 && rawYmm >= 0
+                    && rawXmm <= widthMm && rawYmm <= heightMm;
+                if (looksLikeAbsolutePlateCoordinates)
+                {
+                    xMm = Math.Round(rawXmm - (widthMm / 2.0), 6);
+                    yMm = Math.Round(rawYmm - (heightMm / 2.0), 6);
+                }
+            }
+
+            var depthMm = TryExtractDepthMm(intent);
+            var lower = intent.ToLowerInvariant();
+            var isBlind = lower.Contains("blind");
+
+            var holeStep = new JObject
+            {
+                ["op"] = "hole",
+                ["diameter"] = diameterMm.Value,
+                ["x"] = xMm,
+                ["y"] = yMm,
+                ["face"] = "top"
+            };
+
+            if (isBlind || (depthMm.HasValue && depthMm.Value > 0 && !IsThroughAllIntent(intent)))
+                holeStep["depth"] = depthMm.Value;
+
+            return new FeaturePlanResult
+            {
+                Steps = new JArray { holeStep },
+                Thinking = $"Create a {diameterMm.Value} mm hole on the top face at ({xMm}, {yMm}) mm in model-centered coordinates."
+            };
+        }
+
+        private static FeaturePlanResult TryBuildSingleCornerHolePlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null || modelFacts == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var role = featureTask.Value<string>("role") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!featureType.Equals("hole", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!role.Equals("dependent", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            var lower = intent.ToLowerInvariant();
+            if (!lower.Contains("corner")) return null;
+            if (lower.Contains("all four corners") || lower.Contains("each corner") || lower.Contains("one near each corner") || lower.Contains("corner holes"))
+                return null;
+
+            bool isLeft = lower.Contains("top-left") || lower.Contains("upper-left") || lower.Contains("bottom-left") || lower.Contains("lower-left") || lower.Contains("left corner");
+            bool isRight = lower.Contains("top-right") || lower.Contains("upper-right") || lower.Contains("bottom-right") || lower.Contains("lower-right") || lower.Contains("right corner");
+            bool isTop = lower.Contains("top-left") || lower.Contains("top-right") || lower.Contains("upper-left") || lower.Contains("upper-right") || lower.Contains("top corner") || lower.Contains("upper corner");
+            bool isBottom = lower.Contains("bottom-left") || lower.Contains("bottom-right") || lower.Contains("lower-left") || lower.Contains("lower-right") || lower.Contains("bottom corner") || lower.Contains("lower corner");
+            if ((isLeft == isRight) || (isTop == isBottom))
+                return null;
+
+            var diameterMm = TryExtractDiameterMm(intent);
+            var edgeOffsetMm = TryExtractEdgeOffsetMm(intent);
+            var footprint = TryExtractTopFaceFootprintMm(modelFacts);
+            if (!diameterMm.HasValue || diameterMm.Value <= 0) return null;
+            if (!edgeOffsetMm.HasValue || edgeOffsetMm.Value <= 0) return null;
+            if (footprint == null) return null;
+
+            var widthMm = footprint.Value.WidthMm;
+            var heightMm = footprint.Value.HeightMm;
+            if (widthMm <= edgeOffsetMm.Value * 2.0 || heightMm <= edgeOffsetMm.Value * 2.0) return null;
+
+            var xMm = isLeft
+                ? Math.Round(-(widthMm / 2.0) + edgeOffsetMm.Value, 6)
+                : Math.Round((widthMm / 2.0) - edgeOffsetMm.Value, 6);
+            var yMm = isBottom
+                ? Math.Round(-(heightMm / 2.0) + edgeOffsetMm.Value, 6)
+                : Math.Round((heightMm / 2.0) - edgeOffsetMm.Value, 6);
+
+            var depthMm = TryExtractDepthMm(intent);
+            var isBlind = lower.Contains("blind");
+            var holeStep = new JObject
+            {
+                ["op"] = "hole",
+                ["diameter"] = diameterMm.Value,
+                ["x"] = xMm,
+                ["y"] = yMm,
+                ["face"] = "top"
+            };
+            if (isBlind || (depthMm.HasValue && depthMm.Value > 0 && !IsThroughAllIntent(intent)))
+                holeStep["depth"] = depthMm.Value;
+
+            var cornerName = isTop ? (isLeft ? "top-left" : "top-right") : (isLeft ? "bottom-left" : "bottom-right");
+            return new FeaturePlanResult
+            {
+                Steps = new JArray { holeStep },
+                Thinking = $"Create a {diameterMm.Value} mm hole on the top face near the {cornerName} corner at ({xMm}, {yMm}) mm using a {edgeOffsetMm.Value} mm edge offset."
+            };
+        }
+
+        private static FeaturePlanResult TryBuildCornerHolePatternPlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null || modelFacts == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var role = featureTask.Value<string>("role") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!featureType.Equals("hole", StringComparison.OrdinalIgnoreCase)) return null;
+            if (!role.Equals("dependent", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            var lower = intent.ToLowerInvariant();
+            var mentionsCornerPattern =
+                lower.Contains("all four corners")
+                || lower.Contains("each corner")
+                || lower.Contains("one near each corner")
+                || lower.Contains("corner holes")
+                || (lower.Contains("corner") && (lower.Contains("four") || Regex.IsMatch(lower, @"\b4\b")));
+            if (!mentionsCornerPattern) return null;
+            if (lower.Contains("bolt circle") || lower.Contains("centerline")) return null;
+
+            var diameterMm = TryExtractDiameterMm(intent);
+            var edgeOffsetMm = TryExtractEdgeOffsetMm(intent);
+            var footprint = TryExtractTopFaceFootprintMm(modelFacts);
+            if (!diameterMm.HasValue || diameterMm.Value <= 0) return null;
+            if (!edgeOffsetMm.HasValue || edgeOffsetMm.Value <= 0) return null;
+            if (footprint == null) return null;
+
+            var widthMm = footprint.Value.WidthMm;
+            var heightMm = footprint.Value.HeightMm;
+            if (widthMm <= edgeOffsetMm.Value * 2.0 || heightMm <= edgeOffsetMm.Value * 2.0) return null;
+
+            var x = Math.Round((widthMm / 2.0) - edgeOffsetMm.Value, 6);
+            var y = Math.Round((heightMm / 2.0) - edgeOffsetMm.Value, 6);
+            if (x <= 0 || y <= 0) return null;
+
+            var depthMm = TryExtractDepthMm(intent);
+            var isBlind = lower.Contains("blind");
+            var steps = new JArray();
+            foreach (var point in new[]
+            {
+                (X: -x, Y: -y),
+                (X: -x, Y: y),
+                (X: x, Y: -y),
+                (X: x, Y: y)
+            })
+            {
+                var step = new JObject
+                {
+                    ["op"] = "hole",
+                    ["diameter"] = diameterMm.Value,
+                    ["x"] = point.X,
+                    ["y"] = point.Y,
+                    ["face"] = "top"
+                };
+                if (isBlind || (depthMm.HasValue && depthMm.Value > 0 && !IsThroughAllIntent(intent)))
+                    step["depth"] = depthMm.Value;
+                steps.Add(step);
+            }
+
+            return new FeaturePlanResult
+            {
+                Steps = steps,
+                Thinking = $"Create four {diameterMm.Value} mm holes on the top face at the plate corners using {edgeOffsetMm.Value} mm edge offsets, which resolves to centers at (+/-{x}, +/-{y}) mm."
+            };
+        }
+
         private static FeaturePlanResult TryBuildTopMountedBossPlan(JObject featureTask, JObject modelFacts)
         {
             if (featureTask == null || modelFacts == null) return null;
@@ -2087,6 +2297,50 @@ namespace AICAD.Services
 
             var dims = ExtractOrderedNumbers(text);
             return dims.Count > 1 ? (double?)dims[dims.Count - 1] : null;
+        }
+
+        private static double? TryExtractEdgeOffsetMm(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return null;
+
+            var offsetMatch = Regex.Match(
+                text,
+                @"(\d+(?:\.\d+)?)\s*(?:mm)?\s+from\s+(?:the\s+)?(?:two\s+nearest\s+)?edges?|offset\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s+from\s+(?:the\s+)?corner",
+                RegexOptions.IgnoreCase);
+            if (offsetMatch.Success)
+            {
+                var raw = !string.IsNullOrWhiteSpace(offsetMatch.Groups[1].Value)
+                    ? offsetMatch.Groups[1].Value
+                    : (!string.IsNullOrWhiteSpace(offsetMatch.Groups[2].Value)
+                        ? offsetMatch.Groups[2].Value
+                        : offsetMatch.Groups[3].Value);
+                if (double.TryParse(raw, out var offsetMm))
+                    return offsetMm;
+            }
+
+            return null;
+        }
+
+        private static (double WidthMm, double HeightMm)? TryExtractTopFaceFootprintMm(JObject modelFacts)
+        {
+            try
+            {
+                var box = modelFacts?["bounding_box_mm"] as JObject;
+                var dims = new[]
+                {
+                    box?.Value<double?>("x_size_mm") ?? 0.0,
+                    box?.Value<double?>("y_size_mm") ?? 0.0,
+                    box?.Value<double?>("z_size_mm") ?? 0.0
+                }
+                .Where(v => v > 0)
+                .OrderByDescending(v => v)
+                .ToArray();
+                if (dims.Length >= 2)
+                    return (dims[0], dims[1]);
+            }
+            catch { }
+
+            return null;
         }
 
         private static List<double> ExtractOrderedNumbers(string text)

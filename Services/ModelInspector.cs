@@ -75,6 +75,9 @@ namespace AICAD.Services
                     {
                         var bodyInfo = new JArray();
                         int totalEdges = 0, totalFaces = 0;
+                        bool hasBounds = false;
+                        double minX = double.MaxValue, minY = double.MaxValue, minZ = double.MaxValue;
+                        double maxX = double.MinValue, maxY = double.MinValue, maxZ = double.MinValue;
 
                         foreach (IBody2 body in bodies)
                         {
@@ -86,11 +89,42 @@ namespace AICAD.Services
                             totalEdges += edgeCount;
                             totalFaces += faceCount;
                             bodyInfo.Add(new JObject { ["edge_count"] = edgeCount, ["face_count"] = faceCount });
+
+                            try
+                            {
+                                var box = body.GetBodyBox() as double[];
+                                if (box != null && box.Length >= 6)
+                                {
+                                    minX = Math.Min(minX, box[0]);
+                                    minY = Math.Min(minY, box[1]);
+                                    minZ = Math.Min(minZ, box[2]);
+                                    maxX = Math.Max(maxX, box[3]);
+                                    maxY = Math.Max(maxY, box[4]);
+                                    maxZ = Math.Max(maxZ, box[5]);
+                                    hasBounds = true;
+                                }
+                            }
+                            catch { }
                         }
 
                         result["bodies"] = bodyInfo;
                         result["total_edges"] = totalEdges;
                         result["total_faces"] = totalFaces;
+                        if (hasBounds)
+                        {
+                            result["bounding_box_mm"] = new JObject
+                            {
+                                ["min_x_mm"] = Math.Round(minX * 1000.0, 6),
+                                ["min_y_mm"] = Math.Round(minY * 1000.0, 6),
+                                ["min_z_mm"] = Math.Round(minZ * 1000.0, 6),
+                                ["max_x_mm"] = Math.Round(maxX * 1000.0, 6),
+                                ["max_y_mm"] = Math.Round(maxY * 1000.0, 6),
+                                ["max_z_mm"] = Math.Round(maxZ * 1000.0, 6),
+                                ["x_size_mm"] = Math.Round((maxX - minX) * 1000.0, 6),
+                                ["y_size_mm"] = Math.Round((maxY - minY) * 1000.0, 6),
+                                ["z_size_mm"] = Math.Round((maxZ - minZ) * 1000.0, 6)
+                            };
+                        }
                     }
                 }
 

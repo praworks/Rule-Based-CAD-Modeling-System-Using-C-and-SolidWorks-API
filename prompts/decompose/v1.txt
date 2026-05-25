@@ -5,6 +5,7 @@ DECOMPOSE RULES (STRICT):
 - Otherwise, decompose into an ordered list of CAD features with dependencies.
 - DO NOT request dimensions, units, planes, sketch details, or edge/face selections.
 - DO NOT output execution instructions or ops.
+- DO NOT output raw sketch coordinates, XY points, vertices, or execution-ready placement like "(10,10)".
 - Output exactly one RAW JSON object.
 - If the user provides dimensions or size, include them explicitly in each feature's intent (e.g., "create cube 100x100x100mm").
 - The description must be a short engineering-style part description, not a full sentence when a compact form is possible.
@@ -36,6 +37,11 @@ Map non-canonical:
 - countersink/counterbore -> hole
 - rod/u-bolt/donut -> sweep
 - set material / material <name> / use <name> material -> material (dependent)
+
+HOLE DECOMPOSE RULES:
+- Preserve relative geometric intent for holes.
+- Prefer phrases like "at the center of the top face" or "one near each corner, 10 mm from the two nearest edges".
+- Do NOT convert relative hole placement into explicit coordinates.
 
 FASTENER RULES:
 - For a metric hex-head bolt request such as "M24x100 bolt" or "M24x100 hex-head bolt", do NOT ask for hex size, head size, or whether the body should be threaded unless the user explicitly requests threads or a different fastener standard.

@@ -27,6 +27,7 @@ namespace AICAD.Services
             Assert.IsTrue(execute.Contains("\"steps\""), "execute_system must require \"steps\"");
             Assert.IsTrue(execute.ToLowerInvariant().Contains("\"op\""), "execute_system must require step objects to use the 'op' field");
             Assert.IsTrue(execute.Contains("\"questions\""), "execute_system should mention \"questions\" for clarifications");
+            Assert.IsTrue(execute.IndexOf("keyword-based", StringComparison.OrdinalIgnoreCase) >= 0, "execute_system should accept low-English, keyword-based input.");
         }
 
         [TestMethod]
@@ -72,6 +73,21 @@ namespace AICAD.Services
             Assert.IsTrue(
                 chamferPrompt.IndexOf("\"feature_type\": \"chamfer\"", StringComparison.OrdinalIgnoreCase) >= 0,
                 "Resolved execute_chamfer prompt should include the chamfer clarification contract.");
+        }
+
+        [TestMethod]
+        public void HoleFeaturePrompt_SupportsCornerHoleShorthand()
+        {
+            PromptCatalog.EnsureCatalogLoaded();
+            var holePrompt = PromptCatalog.GetSystemPromptForFeature("execute_hole");
+
+            Assert.IsFalse(string.IsNullOrWhiteSpace(holePrompt), "execute_hole prompt must be present");
+            Assert.IsTrue(
+                holePrompt.IndexOf("4 corner holes", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Resolved execute_hole prompt should accept short corner-hole shorthand.");
+            Assert.IsTrue(
+                holePrompt.IndexOf("Hole distance from edges?", StringComparison.OrdinalIgnoreCase) >= 0,
+                "Resolved execute_hole prompt should use a short clarification question for corner-hole offsets.");
         }
 
         [TestMethod]

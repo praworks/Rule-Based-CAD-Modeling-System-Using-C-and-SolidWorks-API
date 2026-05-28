@@ -97,6 +97,23 @@ namespace AICAD.Services
                 }
                 try
                 {
+                    var pipeLookup = PipeInternetLookupService.TryEnrichPrompt(llmUserPrompt);
+                    if (pipeLookup != null && pipeLookup.Applied && !string.IsNullOrWhiteSpace(pipeLookup.EnrichedPrompt))
+                    {
+                        llmUserPrompt = pipeLookup.EnrichedPrompt;
+                        _logger.LogWithContext(LogLevel.Information, context, pipeLookup.Summary ?? "Pipe lookup applied.");
+                    }
+                    else if (!string.IsNullOrWhiteSpace(pipeLookup?.Summary))
+                    {
+                        _logger.LogWithContext(LogLevel.Debug, context, pipeLookup.Summary);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWithContext(LogLevel.Warning, context, $"Pipe internet lookup failed: {ex.Message}");
+                }
+                try
+                {
                     var providerPriority = settings?.ProviderPriority ?? string.Join(",", ProviderRouter.GetFallbackOrder());
                     _logger.LogWithContext(LogLevel.Information, context, $"Settings loaded provider_priority={providerPriority} classify_timeout={classifyTimeout}s decompose_timeout={decomposeTimeout}s expand_timeout={expandTimeout}s few_shot={fewShotEnabled}");
                 }

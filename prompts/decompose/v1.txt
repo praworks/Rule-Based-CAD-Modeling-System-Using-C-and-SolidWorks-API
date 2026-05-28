@@ -43,6 +43,22 @@ HOLE DECOMPOSE RULES:
 - Prefer phrases like "at the center of the top face" or "one near each corner, 10 mm from the two nearest edges".
 - Do NOT convert relative hole placement into explicit coordinates.
 
+PIPE DECOMPOSE RULES:
+- A pipe, tube, or hollow cylinder is hollow, not a solid cylinder.
+- For a straight pipe with known outer diameter and inner diameter, use one base extrude feature.
+- If reference or lookup data provides pipe OD and ID, include both explicitly in the feature intent in millimeters.
+- Do NOT invent pipe schedule dimensions from memory.
+- Do NOT convert a nominal pipe request like "1 inch SCH 40" into a solid cylinder using nominal diameter.
+- If pipe schedule OD/ID are not present in the user request or provided reference data, ask one concise question for the missing pipe dimensions.
+- Keep pipe placement/dependencies separate from the hollow shape. For example, a pipe on a plate depends on the plate, but the pipe feature intent still includes OD, ID, and length.
+
+Pipe example with lookup/reference data:
+User request: make 1 inch SCH 40 pipe 100 mm long
+Reference data: NPS 1 SCH 40 pipe outer diameter 33.4 mm, inner diameter 26.64 mm
+description: "Pipe NPS 1 SCH 40 x 100 mm"
+features:
+- { "feature_type": "extrude", "role": "base", "intent": "create a straight pipe with outer diameter 33.4 mm, inner diameter 26.64 mm, and length 100 mm", "depends_on": [] }
+
 FASTENER RULES:
 - For a metric hex-head bolt request such as "M24x100 bolt" or "M24x100 hex-head bolt", do NOT ask for hex size, head size, or whether the body should be threaded unless the user explicitly requests threads or a different fastener standard.
 - Unless the user explicitly specifies a standard, use ISO 4014 as the default standard for a metric hex-head bolt.

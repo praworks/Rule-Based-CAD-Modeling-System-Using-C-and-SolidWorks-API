@@ -1,0 +1,128 @@
+Document-Code Gap Analysis
+Date: 2026-06-04
+
+Scope
+- Compared the current implementation against:
+  - SRS_Prashanth_S_E2240156_V1.pdf
+  - Report_Prashanth_S_E2240156_R1.pdf
+
+Findings
+
+1. High: Core architecture in the documents does not match the active runtime
+- The SRS and report describe:
+  natural language -> C# SolidWorks API code -> sandbox -> compile -> execute
+- The active runtime is:
+  natural language -> DECOMPOSE JSON feature tasks -> EXECUTE JSON ops -> deterministic handler execution
+- Active code path:
+  - Services/BuildOrchestrator.cs:130
+  - Services/LlmPlanService.cs:187
+  - Services/PromptHandler.cs:245
+  - Services/StepExecutor.cs:27
+  - Services/Operations/OperationRegistry.cs:65
+- This is the largest gap. The documents still describe an older code-generation system, while the implementation is now an operation-plan executor.
+
+2. High: Documented Roslyn/AST security sandbox is not present on the active runtime path
+- The docs promise:
+  - AST / Roslyn-based static code analysis
+  - namespace blacklist / whitelist
+  - security violation rejection before execution
+- The active runtime instead executes registered ops directly through handlers:
+  - Services/StepExecutor.cs:176
+  - Services/Operations/OperationRegistry.cs:69
+- I did not find Microsoft.CodeAnalysis, Roslyn, CSharpSyntaxTree, or namespace-blacklist enforcement on the active execution path.
+- Current safety model is effectively:
+  allowed ops + handler boundaries + post-step validation
+- That is materially different from the documents.
+
+3. High: Few-shot / vector retrieval in the documents does not match the implementation
+- The SRS/report claim:
+  - local vector DB
+  - embeddings
+  - cosine similarity
+  - top-k retrieval
+- Actual implementation:
+  - Services/FewShotSelector.cs:9
+  - Services/MongoFeedbackStore.cs:94
+  - Services/SqliteStepStore.cs:216
+- Current behavior:
+  - concatenate recent "good feedback" examples from Mongo
+  - concatenate relevant examples from SQLite
+  - SQLite relevance is tokenization + simple overlap scoring, not embeddings/cosine similarity
+- Few-shot is inserted only into the per-feature execute prompt:
+  - Services/PromptHandler.cs:250
+- It is not used in decompose.
+- It can also be bypassed entirely if a local shortcut planner returns before prompt-building:
+  - Services/LlmPlanService.cs:202
+- SmartExampleSelector exists but has no active runtime call path:
+  - Services/SmartExampleSelector.cs
+
+4. Medium: Provider strategy in the report does not match the actual fallback order
+- The report describes a local-first architecture with cloud fallback.
+- Actual planner/provider priority comes from:
+  - Services/LlmPlanService.cs:581
+  - Services/ProviderRouter.cs:11
+- Current fallback order is hardcoded to:
+  groq, local, gemini
+- This is not local-first.
+- It also does not align cleanly with the simpler "external LLM service" framing in the SRS.
+
+5. Medium: Feedback and retention flow differs from the documents
+- The SRS says thumbs-up saves a prompt/code pair to cloud NoSQL for retraining.
+- Actual UI/runtime behavior:
+  - UI/TextToCADTaskpaneWpf.xaml.cs:4260
+  - UI/TextToCADTaskpaneWpf.xaml.cs:4289
+- Actual storage behavior:
+  - thumbs-up saves plan through _goodStore.SaveGoodAsync(...)
+  - thumbs-up/down saves run feedback through _stepStore.SaveFeedbackAsync(...)
+- Stores can be:
+  - Mongo
+  - SQLite
+  - file-backed
+- Relevant code:
+  - Services/MongoFeedbackStore.cs:63
+  - Services/SqliteFeedbackStore.cs:59
+  - Services/SqliteStepStore.cs:186
+- The saved artifact is a plan / operation sequence, not generated C# source.
+
+6. Medium: Several documented retrieval/configuration features are not wired into the active orchestrator path
+- Settings/UI mention:
+  - smart example selection
+  - static few-shot
+  - randomize examples
+- Active orchestration still uses the plain selector:
+  - Services/BuildOrchestrator.cs:206
+- Settings layer resets related flags:
+  - UI/SettingsWindow.xaml.cs:1201
+  - UI/SettingsWindow.xaml.cs:1203
+  - UI/SettingsWindow.xaml.cs:1204
+- Result:
+  the documents and UI suggest richer retrieval behavior than the active runtime actually uses.
+
+7. Low: Some documented nonfunctional controls are not clearly enforced in code
+- The SRS data dictionary says User_Prompt max length is 1000 characters.
+- I did not find an actual 1000-character input guard on the active path.
+- The SRS also says prompts should be scrubbed before cloud send.
+- What exists clearly is log redaction:
+  - Services/Logging/LogRedactor.cs:15
+- That protects logs, not necessarily outbound prompt content.
+
+Bottom Line
+- The implementation has evolved into a different system than the documents describe.
+- The main document update needed is architectural:
+  - execution model
+  - security model
+  - retrieval model
+  - provider strategy
+- The current codebase is better described as:
+  an LLM-assisted feature decomposition and operation-planning system with deterministic SolidWorks handler execution
+  rather than
+  an LLM-generated C# code compilation sandbox.
+
+Suggested next step for document revision
+- Update SRS and report sections covering:
+  - overall architecture
+  - prompt processing / few-shot retrieval
+  - execution pipeline
+  - security/sandbox design
+  - provider routing
+  - data storage and feedback loop

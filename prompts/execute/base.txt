@@ -15,6 +15,7 @@ INPUT ROBUSTNESS:
 
 NORMALIZATION RULES:
 - Treat equivalent phrases as the same intent.
+- Convert inch, centimeter, and meter dimensions to millimeters before emitting step parameters.
 - Examples:
   - "4 corner holes" = "four holes at the corners"
   - "hole center" = "hole at center" = "center hole"

@@ -1,10 +1,25 @@
 TC091 I need a plain rectangular plate, 90 by 50 by 6 mm. Keep it simple.
+Passed 
+
 TC092 Please make a round disc, 65 mm across and 12 mm thick, with a 15 mm hole in the middle.
+Passed 
+
 TC093 Start from a 120 x 70 x 10 mm plate and put a 50 x 30 x 8 mm pad right in the center on top.
+Passed 
+
 TC094 Make me a 100 mm long shaft, 18 mm diameter, and add a 28 mm diameter flange that is 10 mm thick on one end.
+Passed 
+
 TC095 Create a square block 60 x 60 x 25 mm, then cut a pocket on the top face that is 30 x 30 mm and 8 mm deep.
+Passed
+
 TC096 I want an L bracket: base 80 x 30 mm, upright 50 mm tall, thickness 6 mm, and a 10 mm hole in each leg.
+Failed
+
 TC097 Use inches for this one: make a 3 in by 2 in plate, 0.25 in thick, with a 0.5 in hole at the center.
+Passed
+
 TC098 Create a tapered transition from a 50 mm circle to a 35 mm square over 60 mm height.
+
 TC099 Make a 10 mm diameter rod swept along a path that goes 70 mm straight and then turns 90 degrees for another 40 mm.
 TC100 Create a 120 mm x 80 mm x 12 mm mounting plate, add four 8 mm corner holes, and set the material to Aluminum.

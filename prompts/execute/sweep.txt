@@ -20,6 +20,7 @@ If inputs are sufficient, return:
 
 CRITICAL:
 - Steps must be FLAT JSON objects (no nested "params").
+- Convert inch, centimeter, and meter dimensions from the feature intent to millimeters before emitting step parameters.
 - Keep steps minimal and compatible with the executor.
 
 Sweep handler behavior to follow:

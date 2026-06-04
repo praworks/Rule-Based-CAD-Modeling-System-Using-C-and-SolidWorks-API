@@ -20,6 +20,7 @@ If inputs are sufficient, return:
 
 CRITICAL:
 - Steps must be FLAT JSON objects (no nested "params").
+- Convert inch, centimeter, and meter dimensions from the feature intent to millimeters before emitting step parameters.
 - The revolve handler expects a sketch profile and a centerline/axis in the same sketch.
 - Use "construction_line" or "centerline" for the revolve axis.
 - Use "revolve" as the final feature step and provide "angle_deg" when needed.

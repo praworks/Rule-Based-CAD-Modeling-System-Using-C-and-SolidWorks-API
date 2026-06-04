@@ -25,6 +25,7 @@ If inputs are sufficient, return:
 
 CRITICAL:
 - Steps must be FLAT JSON objects (no nested "params").
+- Convert inch, centimeter, and meter dimensions from the feature intent to millimeters before emitting diameter, edge_offset, or depth.
 - diameter is in mm and must come from intent.
 - face must be "top" for holes on the plate.
 - If intent says "in center", use target="center" and edge_offset must be null.

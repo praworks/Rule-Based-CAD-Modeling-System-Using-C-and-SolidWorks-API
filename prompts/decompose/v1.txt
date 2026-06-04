@@ -8,6 +8,7 @@ DECOMPOSE RULES (STRICT):
 - DO NOT output raw sketch coordinates, XY points, vertices, or execution-ready placement like "(10,10)".
 - Output exactly one RAW JSON object.
 - If the user provides dimensions or size, include them explicitly in each feature's intent (e.g., "create cube 100x100x100mm").
+- Normalize any user-supplied inches, centimeters, or meters into millimeters in the description and feature intents.
 - The description must be a short engineering-style part description, not a full sentence when a compact form is possible.
 - Prefer compact dimension notation such as:
   - Cylinder Ø45 mm × 70 mm

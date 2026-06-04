@@ -162,6 +162,24 @@ namespace AICAD.Services
         }
 
         [TestMethod]
+        public void CenterHole_Inches_ConvertsToMillimeters()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "hole",
+                ["role"] = "dependent",
+                ["intent"] = "create a 0.5 in hole at the center of the top face"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, new JObject { ["feature_count"] = 1 });
+
+            Assert.IsNotNull(plan, "Plan should be generated for an inch-based center hole.");
+            Assert.IsNotNull(plan.Steps, "Plan should contain executable steps.");
+            var diameterMm = ((JObject)plan.Steps[0])["diameter"]?.Value<double>() ?? 0d;
+            Assert.IsTrue(System.Math.Abs(diameterMm - 12.7d) < 0.0001d, "Hole diameter should be converted from inches to millimeters.");
+        }
+
+        [TestMethod]
         public void CornerHolePattern_UsesExplicitCoordinates()
         {
             var featureTask = new JObject
@@ -342,6 +360,28 @@ namespace AICAD.Services
         }
 
         [TestMethod]
+        public void BasePlate_Inches_UsesLocalExtrudeShortcutWithMillimeterConversion()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "extrude",
+                ["role"] = "base",
+                ["intent"] = "make a rectangular plate 4 in long, 2 in wide, and 0.25 in thick"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, null);
+
+            Assert.IsNotNull(plan, "Plan should be generated for an inch-based plate.");
+            Assert.IsNotNull(plan.Steps, "Plate shortcut should return executable steps.");
+            var widthMm = ((JObject)plan.Steps[3])["w"]?.Value<double>() ?? 0d;
+            var heightMm = ((JObject)plan.Steps[3])["h"]?.Value<double>() ?? 0d;
+            var depthMm = ((JObject)plan.Steps[6])["depth"]?.Value<double>() ?? 0d;
+            Assert.IsTrue(System.Math.Abs(widthMm - 101.6d) < 0.0001d, "Plate width should be converted from inches to millimeters.");
+            Assert.IsTrue(System.Math.Abs(heightMm - 50.8d) < 0.0001d, "Plate height should be converted from inches to millimeters.");
+            Assert.IsTrue(System.Math.Abs(depthMm - 6.35d) < 0.0001d, "Plate thickness should be converted from inches to millimeters.");
+        }
+
+        [TestMethod]
         public void BaseCylinder_UsesLocalExtrudeShortcut()
         {
             var featureTask = new JObject
@@ -358,6 +398,26 @@ namespace AICAD.Services
             Assert.AreEqual("circle_center", ((JObject)plan.Steps[3])["op"]?.ToString(), "Cylinder shortcut should sketch a centered circle.");
             Assert.AreEqual(40d, ((JObject)plan.Steps[3])["diameter"]?.Value<double>(), "Cylinder diameter should come from the intent.");
             Assert.AreEqual(80d, ((JObject)plan.Steps[6])["depth"]?.Value<double>(), "Cylinder height should become extrude depth.");
+        }
+
+        [TestMethod]
+        public void BaseCylinder_Centimeters_UsesLocalExtrudeShortcutWithMillimeterConversion()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "extrude",
+                ["role"] = "base",
+                ["intent"] = "create a cylinder 5 cm in diameter and 12 cm tall"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, null);
+
+            Assert.IsNotNull(plan, "Plan should be generated for a centimeter-based cylinder.");
+            Assert.IsNotNull(plan.Steps, "Cylinder shortcut should return executable steps.");
+            var diameterMm = ((JObject)plan.Steps[3])["diameter"]?.Value<double>() ?? 0d;
+            var depthMm = ((JObject)plan.Steps[6])["depth"]?.Value<double>() ?? 0d;
+            Assert.IsTrue(System.Math.Abs(diameterMm - 50d) < 0.0001d, "Cylinder diameter should be converted from centimeters to millimeters.");
+            Assert.IsTrue(System.Math.Abs(depthMm - 120d) < 0.0001d, "Cylinder height should be converted from centimeters to millimeters.");
         }
 
         [TestMethod]

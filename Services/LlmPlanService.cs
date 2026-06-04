@@ -2062,21 +2062,148 @@ namespace AICAD.Services
             return null;
         }
 
+        private static double? TryParseLengthMm(string rawValue, string unitToken, string fullText)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue))
+                return null;
+
+            if (!double.TryParse(rawValue, out var value))
+                return null;
+
+            var normalizedUnit = NormalizeLengthUnit(unitToken);
+            if (string.IsNullOrWhiteSpace(normalizedUnit))
+                normalizedUnit = InferDefaultLengthUnit(fullText);
+
+            switch (normalizedUnit)
+            {
+                case "in":
+                    return value * 25.4;
+                case "cm":
+                    return value * 10.0;
+                case "m":
+                    return value * 1000.0;
+                default:
+                    return value;
+            }
+        }
+
+        private static string NormalizeLengthUnit(string unitToken)
+        {
+            if (string.IsNullOrWhiteSpace(unitToken))
+                return null;
+
+            switch (unitToken.Trim().ToLowerInvariant())
+            {
+                case "mm":
+                case "millimeter":
+                case "millimeters":
+                    return "mm";
+                case "cm":
+                case "centimeter":
+                case "centimeters":
+                    return "cm";
+                case "m":
+                case "meter":
+                case "meters":
+                    return "m";
+                case "in":
+                case "inch":
+                case "inches":
+                    return "in";
+                default:
+                    return null;
+            }
+        }
+
+        private static string InferDefaultLengthUnit(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return "mm";
+
+            if (Regex.IsMatch(text, @"\b(?:in|use|using)\s+inches?\b|\b(?:units?|dimensions?|all dimensions)\s*(?:are|=|:)?\s*inches?\b", RegexOptions.IgnoreCase))
+                return "in";
+            if (Regex.IsMatch(text, @"\b(?:in|use|using)\s+centimeters?\b|\b(?:units?|dimensions?|all dimensions)\s*(?:are|=|:)?\s*centimeters?\b", RegexOptions.IgnoreCase))
+                return "cm";
+            if (Regex.IsMatch(text, @"\b(?:in|use|using)\s+meters?\b|\b(?:units?|dimensions?|all dimensions)\s*(?:are|=|:)?\s*meters?\b", RegexOptions.IgnoreCase))
+                return "m";
+            if (Regex.IsMatch(text, @"\b(?:in|use|using)\s+millimeters?\b|\b(?:units?|dimensions?|all dimensions)\s*(?:are|=|:)?\s*millimeters?\b", RegexOptions.IgnoreCase))
+                return "mm";
+            if (Regex.IsMatch(text, @"\bunits?\s*(?:are|=|:)?\s*mm\b|\bdimensions?\s*(?:are|=|:)?\s*mm\b", RegexOptions.IgnoreCase))
+                return "mm";
+            if (Regex.IsMatch(text, @"\bunits?\s*(?:are|=|:)?\s*cm\b|\bdimensions?\s*(?:are|=|:)?\s*cm\b", RegexOptions.IgnoreCase))
+                return "cm";
+            if (Regex.IsMatch(text, @"\bunits?\s*(?:are|=|:)?\s*m\b|\bdimensions?\s*(?:are|=|:)?\s*m\b", RegexOptions.IgnoreCase))
+                return "m";
+            if (Regex.IsMatch(text, @"\bunits?\s*(?:are|=|:)?\s*in\b|\bdimensions?\s*(?:are|=|:)?\s*in\b", RegexOptions.IgnoreCase))
+                return "in";
+
+            return "mm";
+        }
+
+        private static bool IsLikelyInchAbbreviation(string text, Match match, Group unitGroup)
+        {
+            if (string.IsNullOrWhiteSpace(text) || match == null || unitGroup == null || !unitGroup.Success)
+                return false;
+
+            var tailIndex = unitGroup.Index + unitGroup.Length;
+            if (tailIndex >= text.Length)
+                return true;
+
+            var tail = text.Substring(tailIndex).TrimStart();
+            if (string.IsNullOrWhiteSpace(tail))
+                return true;
+
+            var nextChar = tail[0];
+            if (nextChar == ',' || nextChar == '.' || nextChar == ')' || nextChar == '(' || nextChar == '/' || nextChar == 'x')
+                return true;
+
+            var wordMatch = Regex.Match(tail, @"^[A-Za-z]+");
+            if (!wordMatch.Success)
+                return true;
+
+            switch (wordMatch.Value.ToLowerInvariant())
+            {
+                case "and":
+                case "by":
+                case "deep":
+                case "depth":
+                case "diameter":
+                case "dia":
+                case "from":
+                case "height":
+                case "high":
+                case "hole":
+                case "holes":
+                case "long":
+                case "length":
+                case "offset":
+                case "radius":
+                case "tall":
+                case "thick":
+                case "thickness":
+                case "wide":
+                case "width":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
         private static double? TryExtractDepthMm(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
 
             var taggedMatch = Regex.Match(
                 text,
-                @"(?:depth|deep|cut)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:deep|depth)",
+                @"(?:depth|deep|cut)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?|(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*(?:deep|depth)",
                 RegexOptions.IgnoreCase);
             if (taggedMatch.Success)
             {
-                var raw = !string.IsNullOrWhiteSpace(taggedMatch.Groups[1].Value)
-                    ? taggedMatch.Groups[1].Value
-                    : taggedMatch.Groups[2].Value;
-                if (double.TryParse(raw, out var depthMm))
-                    return depthMm;
+                var parsed = taggedMatch.Groups[1].Success
+                    ? TryParseLengthMm(taggedMatch.Groups[1].Value, taggedMatch.Groups[2].Value, text)
+                    : TryParseLengthMm(taggedMatch.Groups[3].Value, taggedMatch.Groups[4].Value, text);
+                if (parsed.HasValue && parsed.Value > 0)
+                    return parsed.Value;
             }
             
             return null;
@@ -2111,15 +2238,15 @@ namespace AICAD.Services
 
             var diameterMatch = Regex.Match(
                 text,
-                @"(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:in\s+)?diameter|diameter\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?",
+                @"(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*(?:in\s+)?diameter|diameter\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?",
                 RegexOptions.IgnoreCase);
             if (diameterMatch.Success)
             {
-                var raw = !string.IsNullOrWhiteSpace(diameterMatch.Groups[1].Value)
-                    ? diameterMatch.Groups[1].Value
-                    : diameterMatch.Groups[2].Value;
-                if (double.TryParse(raw, out var diameterMm))
-                    return diameterMm;
+                var parsed = diameterMatch.Groups[1].Success
+                    ? TryParseLengthMm(diameterMatch.Groups[1].Value, diameterMatch.Groups[2].Value, text)
+                    : TryParseLengthMm(diameterMatch.Groups[3].Value, diameterMatch.Groups[4].Value, text);
+                if (parsed.HasValue && parsed.Value > 0)
+                    return parsed.Value;
             }
 
             var dims = ExtractOrderedNumbers(text);
@@ -2132,15 +2259,20 @@ namespace AICAD.Services
 
             var radiusMatch = Regex.Match(
                 text,
-                @"(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:in\s+)?radius|radius\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|r=\s*(\d+(?:\.\d+)?)",
+                @"(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*(?:in\s+)?radius|radius\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?|r=\s*(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?",
                 RegexOptions.IgnoreCase);
             if (radiusMatch.Success)
             {
-                var raw = !string.IsNullOrWhiteSpace(radiusMatch.Groups[1].Value)
-                    ? radiusMatch.Groups[1].Value
-                    : (!string.IsNullOrWhiteSpace(radiusMatch.Groups[2].Value) ? radiusMatch.Groups[2].Value : radiusMatch.Groups[3].Value);
-                if (double.TryParse(raw, out var radiusMm))
-                    return radiusMm * 2.0;
+                double? parsed = null;
+                if (radiusMatch.Groups[1].Success)
+                    parsed = TryParseLengthMm(radiusMatch.Groups[1].Value, radiusMatch.Groups[2].Value, text);
+                else if (radiusMatch.Groups[3].Success)
+                    parsed = TryParseLengthMm(radiusMatch.Groups[3].Value, radiusMatch.Groups[4].Value, text);
+                else if (radiusMatch.Groups[5].Success)
+                    parsed = TryParseLengthMm(radiusMatch.Groups[5].Value, radiusMatch.Groups[6].Value, text);
+
+                if (parsed.HasValue && parsed.Value > 0)
+                    return parsed.Value * 2.0;
             }
 
             return TryExtractDiameterMm(text);
@@ -2152,15 +2284,15 @@ namespace AICAD.Services
 
             var taggedMatch = Regex.Match(
                 text,
-                @"(?:across\s+flats|wrench\s+size|af)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:across\s+flats|wrench\s+size)",
+                @"(?:across\s+flats|wrench\s+size|af)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?|(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*(?:across\s+flats|wrench\s+size)",
                 RegexOptions.IgnoreCase);
             if (taggedMatch.Success)
             {
-                var raw = !string.IsNullOrWhiteSpace(taggedMatch.Groups[1].Value)
-                    ? taggedMatch.Groups[1].Value
-                    : taggedMatch.Groups[2].Value;
-                if (double.TryParse(raw, out var value))
-                    return value;
+                var parsed = taggedMatch.Groups[1].Success
+                    ? TryParseLengthMm(taggedMatch.Groups[1].Value, taggedMatch.Groups[2].Value, text)
+                    : TryParseLengthMm(taggedMatch.Groups[3].Value, taggedMatch.Groups[4].Value, text);
+                if (parsed.HasValue && parsed.Value > 0)
+                    return parsed.Value;
             }
 
             var dims = ExtractOrderedNumbers(text);
@@ -2284,15 +2416,15 @@ namespace AICAD.Services
 
             var heightMatch = Regex.Match(
                 text,
-                @"(?:height|tall|length)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s*(?:high|tall|height)",
+                @"(?:height|tall|length)\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?|(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*(?:high|tall|height|long|length)",
                 RegexOptions.IgnoreCase);
             if (heightMatch.Success)
             {
-                var raw = !string.IsNullOrWhiteSpace(heightMatch.Groups[1].Value)
-                    ? heightMatch.Groups[1].Value
-                    : heightMatch.Groups[2].Value;
-                if (double.TryParse(raw, out var heightMm))
-                    return heightMm;
+                var parsed = heightMatch.Groups[1].Success
+                    ? TryParseLengthMm(heightMatch.Groups[1].Value, heightMatch.Groups[2].Value, text)
+                    : TryParseLengthMm(heightMatch.Groups[3].Value, heightMatch.Groups[4].Value, text);
+                if (parsed.HasValue && parsed.Value > 0)
+                    return parsed.Value;
             }
 
             var dims = ExtractOrderedNumbers(text);
@@ -2305,17 +2437,20 @@ namespace AICAD.Services
 
             var offsetMatch = Regex.Match(
                 text,
-                @"(\d+(?:\.\d+)?)\s*(?:mm)?\s+from\s+(?:the\s+)?(?:two\s+nearest\s+)?edges?|offset\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(?:mm)?|(\d+(?:\.\d+)?)\s*(?:mm)?\s+from\s+(?:the\s+)?corner",
+                @"(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s+from\s+(?:the\s+)?(?:two\s+nearest\s+)?edges?|offset\s*(?:of\s*)?(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?|(\d+(?:\.\d+)?)\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s+from\s+(?:the\s+)?corner",
                 RegexOptions.IgnoreCase);
             if (offsetMatch.Success)
             {
-                var raw = !string.IsNullOrWhiteSpace(offsetMatch.Groups[1].Value)
-                    ? offsetMatch.Groups[1].Value
-                    : (!string.IsNullOrWhiteSpace(offsetMatch.Groups[2].Value)
-                        ? offsetMatch.Groups[2].Value
-                        : offsetMatch.Groups[3].Value);
-                if (double.TryParse(raw, out var offsetMm))
-                    return offsetMm;
+                double? parsed = null;
+                if (offsetMatch.Groups[1].Success)
+                    parsed = TryParseLengthMm(offsetMatch.Groups[1].Value, offsetMatch.Groups[2].Value, text);
+                else if (offsetMatch.Groups[3].Success)
+                    parsed = TryParseLengthMm(offsetMatch.Groups[3].Value, offsetMatch.Groups[4].Value, text);
+                else if (offsetMatch.Groups[5].Success)
+                    parsed = TryParseLengthMm(offsetMatch.Groups[5].Value, offsetMatch.Groups[6].Value, text);
+
+                if (parsed.HasValue && parsed.Value > 0)
+                    return parsed.Value;
             }
 
             return null;
@@ -2348,10 +2483,16 @@ namespace AICAD.Services
             var result = new List<double>();
             if (string.IsNullOrWhiteSpace(text)) return result;
 
-            foreach (Match match in Regex.Matches(text, @"\d+(?:\.\d+)?", RegexOptions.IgnoreCase))
+            foreach (Match match in Regex.Matches(text, @"(\d+(?:\.\d+)?)(?:\s*(mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches))?", RegexOptions.IgnoreCase))
             {
-                if (double.TryParse(match.Value, out var value))
-                    result.Add(value);
+                var rawValue = match.Groups[1].Value;
+                var rawUnit = match.Groups[2].Value;
+                if (string.Equals(rawUnit, "in", StringComparison.OrdinalIgnoreCase) && !IsLikelyInchAbbreviation(text, match, match.Groups[2]))
+                    rawUnit = string.Empty;
+
+                var valueMm = TryParseLengthMm(rawValue, rawUnit, text);
+                if (valueMm.HasValue)
+                    result.Add(valueMm.Value);
             }
 
             return result;

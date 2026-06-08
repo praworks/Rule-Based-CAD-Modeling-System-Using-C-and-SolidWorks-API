@@ -250,6 +250,7 @@ namespace AICAD.UI
         {
             InitializeComponent();
             _swApp = swApp;
+            InitializeMaterialDropdown();
             try { AICAD.Services.LlmPlanService.ThinkingUpdated += OnThinkingUpdated; } catch { }
             TrySubscribeAiTrace();
 
@@ -3798,7 +3799,7 @@ namespace AICAD.UI
                             var partDoc = doc as PartDoc;
                             if (partDoc != null)
                             {
-                                string database = "solidworks materials.sldmat";
+                                string database = MaterialNameResolver.GetPreferredMaterialDatabaseName();
                                 var resolved = ResolveMaterialName(material);
                                 partDoc.SetMaterialPropertyName2("", database, resolved);
                                 try { AddinStatusLogger.Log("TaskpaneWpf", $"Applied material to model: {resolved}"); } catch { }
@@ -3858,7 +3859,7 @@ namespace AICAD.UI
                     if (!string.IsNullOrEmpty(material))
                     {
                         var items = materialComboBox.Items.Cast<ComboBoxItem>();
-                        var match = items.FirstOrDefault(i => i.Content?.ToString()?.Equals(material, StringComparison.OrdinalIgnoreCase) == true);
+                        var match = items.FirstOrDefault(i => MaterialNameResolver.AreEquivalent(i.Content?.ToString(), material));
                         if (match != null)
                         {
                             materialComboBox.SelectedItem = match;
@@ -3890,6 +3891,25 @@ namespace AICAD.UI
             catch (Exception ex)
             {
                 try { AddinStatusLogger.Error("TaskpaneWpf", "LoadFromProperties failed", ex); } catch { }
+            }
+        }
+
+        private void InitializeMaterialDropdown()
+        {
+            try
+            {
+                materialComboBox.Items.Clear();
+                foreach (var material in MaterialNameResolver.GetInstalledMaterialNames())
+                {
+                    materialComboBox.Items.Add(new ComboBoxItem
+                    {
+                        Content = material
+                    });
+                }
+            }
+            catch (Exception ex)
+            {
+                try { AddinStatusLogger.Error("TaskpaneWpf", "InitializeMaterialDropdown failed", ex); } catch { }
             }
         }
 
@@ -4074,29 +4094,7 @@ namespace AICAD.UI
 
         private string ResolveMaterialName(string material)
         {
-            if (string.IsNullOrWhiteSpace(material)) return material ?? string.Empty;
-            var m = material.Trim();
-            switch (m.ToLowerInvariant())
-            {
-                case "aluminum":
-                case "aluminium":
-                    return "Aluminum, 1060 Alloy";
-                case "steel":
-                    return "Plain Carbon Steel";
-                case "stainless":
-                case "stainless steel":
-                    return "Stainless Steel, 304";
-                case "brass":
-                    return "Brass";
-                case "copper":
-                    return "Copper";
-                case "titanium":
-                    return "Titanium, Grade 2";
-                case "plastic":
-                    return "ABS Plastic";
-                default:
-                    return m;
-            }
+            return MaterialNameResolver.ResolveForSolidWorks(material);
         }
 
         private bool ShowAddSeriesDialog(out string seriesId, out string description, out string format)
@@ -4499,23 +4497,7 @@ namespace AICAD.UI
             bool hasDescription = steps.Any(s => string.Equals((string)s?["op"], "description", StringComparison.OrdinalIgnoreCase));
 
             string prompt = userPrompt ?? string.Empty;
-            var materialMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
-            {
-                { "steel", "Steel" },
-                { "stainless", "Stainless Steel" },
-                { "aluminum", "Aluminum" },
-                { "aluminium", "Aluminum" },
-                { "brass", "Brass" },
-                { "copper", "Copper" },
-                { "titanium", "Titanium" },
-                { "plastic", "Plastic" },
-                { "abs", "ABS" },
-                { "pla", "PLA" },
-                { "nylon", "Nylon" },
-                { "wood", "Wood" }
-            };
-
-            string detectedMaterial = materialMap.FirstOrDefault(kv => prompt.IndexOf(kv.Key, StringComparison.OrdinalIgnoreCase) >= 0).Value;
+            MaterialIntentParser.TryExtractMaterial(prompt, out var detectedMaterial);
 
             if (!hasSetMaterial && !string.IsNullOrWhiteSpace(detectedMaterial))
             {

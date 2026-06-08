@@ -513,8 +513,9 @@ namespace AICAD
                                 var partDoc = doc as PartDoc;
                                 if (partDoc != null)
                                 {
-                                    string database = "solidworks materials.sldmat";
-                                    partDoc.SetMaterialPropertyName2("", database, material);
+                                    string database = MaterialNameResolver.GetPreferredMaterialDatabaseName();
+                                    var resolved = MaterialNameResolver.ResolveForSolidWorks(material);
+                                    partDoc.SetMaterialPropertyName2("", database, resolved);
                                 }
                             }
                         }

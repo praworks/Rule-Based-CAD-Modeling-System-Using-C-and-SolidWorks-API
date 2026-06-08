@@ -1837,6 +1837,8 @@ namespace AICAD.Services
                 MaterialIntentParser.TryExtractMaterial(intent, out material);
             }
 
+            material = MaterialNameResolver.ResolveForSolidWorks(material);
+
             if (string.IsNullOrWhiteSpace(material))
             {
                 return new FeaturePlanResult

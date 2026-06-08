@@ -22,4 +22,6 @@ Passed
 TC098 Create a tapered transition from a 50 mm circle to a 35 mm square over 60 mm height.
 
 TC099 Make a 10 mm diameter rod swept along a path that goes 70 mm straight and then turns 90 degrees for another 40 mm.
-TC100 Create a 120 mm x 80 mm x 12 mm mounting plate, add four 8 mm corner holes, and set the material to Aluminum.
+Passed
+
+TC100 Create a 120 mm x 80 mm x 12 mm mounting plate, add four 8 mm corner holes, and set the material to Aluminum 1060 alloy.

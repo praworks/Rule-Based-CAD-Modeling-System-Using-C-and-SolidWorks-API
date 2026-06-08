@@ -4,9 +4,9 @@ Objective:
 Use these prompts to test whether the app can create part models directly from natural language.
 
 Structure:
-- 10 files
+- 11 files
 - 10 prompts per file
-- 100 prompts total
+- 110 prompts total
 
 Recommended usage:
 - Start with 01 and move upward.
@@ -25,3 +25,4 @@ Files:
 08_units_materials_threads.txt
 09_combined_mechanical_parts.txt
 10_natural_language_variations.txt
+11_material_testing.txt

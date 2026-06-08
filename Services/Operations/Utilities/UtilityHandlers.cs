@@ -169,9 +169,9 @@ namespace AICAD.Services.Operations.Utilities
                     var partDoc = model as PartDoc;
                     if (partDoc != null)
                     {
-                        // Use empty database so SolidWorks resolves the material name in the active materials
+                        var database = MaterialNameResolver.GetPreferredMaterialDatabaseName();
                         string resolved = ResolveMaterialName(material);
-                        partDoc.SetMaterialPropertyName2("", "", resolved);
+                        partDoc.SetMaterialPropertyName2("", database, resolved);
                         applied = true;
                     }
                 }
@@ -190,29 +190,7 @@ namespace AICAD.Services.Operations.Utilities
 
         private static string ResolveMaterialName(string material)
         {
-            if (string.IsNullOrWhiteSpace(material)) return material ?? string.Empty;
-            var m = material.Trim();
-            switch (m.ToLowerInvariant())
-            {
-                case "aluminum":
-                case "aluminium":
-                    return "Aluminum, 1060 Alloy";
-                case "steel":
-                    return "Plain Carbon Steel";
-                case "stainless":
-                case "stainless steel":
-                    return "Stainless Steel, 304";
-                case "brass":
-                    return "Brass";
-                case "copper":
-                    return "Copper";
-                case "titanium":
-                    return "Titanium, Grade 2";
-                case "plastic":
-                    return "ABS Plastic";
-                default:
-                    return m;
-            }
+            return MaterialNameResolver.ResolveForSolidWorks(material);
         }
     }
 

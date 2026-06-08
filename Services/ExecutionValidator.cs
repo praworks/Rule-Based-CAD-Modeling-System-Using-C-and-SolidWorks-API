@@ -185,7 +185,7 @@ namespace AICAD.Services
             var actualMaterial = after?["material"]?.ToString() ?? "";
             result.Actual["material"] = actualMaterial;
 
-            if (actualMaterial.Equals(expectedMaterial, StringComparison.OrdinalIgnoreCase))
+            if (MaterialNameResolver.AreEquivalent(actualMaterial, expectedMaterial))
             {
                 result.IsValid = true;
                 result.Message = $"Material set correctly: {actualMaterial}";

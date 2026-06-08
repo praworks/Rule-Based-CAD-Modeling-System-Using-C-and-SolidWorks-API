@@ -1,0 +1,11 @@
+TC101 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Aluminum 1060 alloy.
+TC102 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Aluminum 6061.
+TC103 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Aluminum 5052 alloy.
+TC104 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Aluminum 7075.
+TC105 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Plain Carbon Steel.
+TC106 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Alloy Steel.
+TC107 Create a 100 mm x 60 mm x 8 mm test plate and set the material to 304 Stainless.
+TC108 Create a 100 mm x 60 mm x 8 mm test plate and set the material to 316 Stainless.
+TC109 Create a 100 mm x 60 mm x 8 mm test plate and set the material to ABS PC.
+TC110 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Nylon 6/10.
+TC111 Create a 100 mm x 60 mm x 8 mm test plate and set the material to Brass.

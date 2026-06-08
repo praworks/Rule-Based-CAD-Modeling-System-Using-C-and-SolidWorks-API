@@ -548,6 +548,7 @@ namespace AICAD.UI
             {
                 addSeriesBtn.Click += AddSeriesButton_Click;
             }
+            applyMaterialButton.Click += ApplyMaterialButton_Click;
             seriesComboBox.SelectionChanged += SeriesComboBox_SelectionChanged;
             saveWithNameButton.Click += SaveWithNameButton_Click;
 
@@ -3750,6 +3751,109 @@ namespace AICAD.UI
             {
                 AppendDetailedStatus("SaveWithName", "Failed", ex);
                 SetRealTimeStatus("Error saving", Colors.Firebrick);
+            }
+        }
+
+        private void ApplyMaterialButton_Click(object sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var doc = _swApp?.ActiveDoc as IModelDoc2;
+                if (doc == null)
+                {
+                    SetRealTimeStatus("No active document", Colors.Firebrick);
+                    return;
+                }
+
+                var partDoc = doc as PartDoc;
+                if (partDoc == null)
+                {
+                    SetRealTimeStatus("Active document is not a part", Colors.Firebrick);
+                    return;
+                }
+
+                var material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
+                if (string.IsNullOrWhiteSpace(material))
+                {
+                    SetRealTimeStatus("Select a material", Colors.Firebrick);
+                    return;
+                }
+
+                if (!TryApplyMaterialToDocument(doc, material, out var appliedMaterial, out var status))
+                {
+                    SetRealTimeStatus(status, Colors.Firebrick);
+                    return;
+                }
+
+                try
+                {
+                    var custPropMgr = doc.Extension?.CustomPropertyManager[""];
+                    var description = GetCustomProperty(custPropMgr, "Description");
+                    var partNo = GetCustomProperty(custPropMgr, "PartNo");
+                    var mass = GetPartMass(doc);
+                    LoadFromProperties(appliedMaterial, description, mass, partNo);
+                }
+                catch { }
+
+                SetRealTimeStatus($"Applied material: {appliedMaterial}", Colors.DarkGreen);
+            }
+            catch (Exception ex)
+            {
+                AppendDetailedStatus("Material", "Apply failed", ex);
+                SetRealTimeStatus("Material apply failed", Colors.Firebrick);
+            }
+        }
+
+        private bool TryApplyMaterialToDocument(IModelDoc2 doc, string material, out string appliedMaterial, out string status)
+        {
+            appliedMaterial = MaterialNameResolver.ResolveForSolidWorks(material);
+            status = string.Empty;
+
+            try
+            {
+                var partDoc = doc as PartDoc;
+                if (partDoc == null)
+                {
+                    status = "Active document is not a part";
+                    return false;
+                }
+
+                try
+                {
+                    var custPropMgr = doc.Extension?.CustomPropertyManager[""];
+                    if (custPropMgr != null)
+                    {
+                        string filename = string.Empty;
+                        try { filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName()); } catch { }
+                        if (string.IsNullOrWhiteSpace(filename))
+                        {
+                            var title = doc.GetTitle();
+                            if (!string.IsNullOrWhiteSpace(title))
+                                filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                        }
+
+                        if (!string.IsNullOrWhiteSpace(filename))
+                        {
+                            var matLink = $"\"SW-Material@{filename}.SLDPRT\"";
+                            custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, matLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        }
+                        else
+                        {
+                            custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, appliedMaterial, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                        }
+                    }
+                }
+                catch { }
+
+                var database = MaterialNameResolver.GetPreferredMaterialDatabaseName();
+                partDoc.SetMaterialPropertyName2("", database, appliedMaterial);
+                try { doc.ForceRebuild3(false); } catch { }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                status = ex.Message;
+                return false;
             }
         }
 

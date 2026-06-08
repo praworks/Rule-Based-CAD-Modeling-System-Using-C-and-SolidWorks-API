@@ -52,9 +52,11 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" MinWidth="120"/>
                         <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
                     <Label Grid.Column="0" Content="Material" Foreground="{StaticResource AccentBrush}" FontWeight="SemiBold" VerticalAlignment="Center" Padding="0,0,8,0"/>
-                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="-1" IsEditable="True" IsTextSearchEnabled="True" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Stretch" Background="{x:Null}"/>
+                    <ComboBox Grid.Column="1" x:Name="materialComboBox" SelectedIndex="-1" IsEditable="True" IsTextSearchEnabled="True" Height="26" VerticalContentAlignment="Center" HorizontalAlignment="Stretch" Background="{x:Null}" Margin="0,0,4,0"/>
+                    <Button Grid.Column="2" x:Name="applyMaterialButton" Content="✓" Width="26" Height="26" Padding="0" FontWeight="Bold" ToolTip="Apply selected material to active part" Style="{StaticResource PrimaryButton}"/>
                 </Grid>
             </Border>
 

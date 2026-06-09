@@ -3104,6 +3104,7 @@ namespace AICAD.UI
                         var doc = _swApp?.ActiveDoc as IModelDoc2;
                         if (doc != null)
                         {
+                            string uiMaterial = null;
                             string material = null;
                             string desc = null;
                             string weight = null;
@@ -3113,7 +3114,7 @@ namespace AICAD.UI
                                 // Read UI values on UI thread to avoid cross-thread access
                                 Dispatcher.Invoke(() =>
                                 {
-                                    material = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
+                                    uiMaterial = (materialComboBox.SelectedItem as ComboBoxItem)?.Content?.ToString() ?? materialComboBox.Text;
                                     desc = typeDescriptionTextBox.Text ?? string.Empty;
                                     weight = weightTextBox.Text ?? string.Empty;
                                     partName = previewTextBox.Text?.Trim();
@@ -3121,6 +3122,7 @@ namespace AICAD.UI
                             }
                             catch { }
 
+                            material = ResolveMaterialForPostBuildSync(doc, uiMaterial);
                             SetPartPropertiesOnDocument(doc, material ?? string.Empty, desc ?? string.Empty, weight ?? string.Empty, partName);
                             try { doc.ForceRebuild3(false); DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Model rebuilt after auto-apply properties (ForceRebuild3 false)"); } catch (Exception ex) { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", $"Model rebuild after auto-apply properties failed: {ex.Message}"); }
                             try
@@ -3818,36 +3820,26 @@ namespace AICAD.UI
                     return false;
                 }
 
-                try
-                {
-                    var custPropMgr = doc.Extension?.CustomPropertyManager[""];
-                    if (custPropMgr != null)
-                    {
-                        string filename = string.Empty;
-                        try { filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName()); } catch { }
-                        if (string.IsNullOrWhiteSpace(filename))
-                        {
-                            var title = doc.GetTitle();
-                            if (!string.IsNullOrWhiteSpace(title))
-                                filename = System.IO.Path.GetFileNameWithoutExtension(title);
-                        }
-
-                        if (!string.IsNullOrWhiteSpace(filename))
-                        {
-                            var matLink = $"\"SW-Material@{filename}.SLDPRT\"";
-                            custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, matLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                        }
-                        else
-                        {
-                            custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, appliedMaterial, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                        }
-                    }
-                }
-                catch { }
-
+                var configName = GetActiveConfigurationName(doc);
                 var database = MaterialNameResolver.GetPreferredMaterialDatabaseName();
-                partDoc.SetMaterialPropertyName2("", database, appliedMaterial);
+                partDoc.SetMaterialPropertyName2(configName, database, appliedMaterial);
                 try { doc.ForceRebuild3(false); } catch { }
+                try { doc.GraphicsRedraw2(); } catch { }
+
+                if (!TryGetAppliedMaterialFromDocument(doc, out var actualMaterial, out var actualDatabase))
+                {
+                    status = "Material apply did not stick";
+                    return false;
+                }
+
+                if (!MaterialNameResolver.AreEquivalent(actualMaterial, appliedMaterial))
+                {
+                    status = $"Material apply did not stick (expected '{appliedMaterial}', got '{actualMaterial}')";
+                    return false;
+                }
+
+                appliedMaterial = actualMaterial;
+                TryWriteMaterialCustomProperty(doc, appliedMaterial);
                 return true;
             }
             catch (Exception ex)
@@ -4015,6 +4007,95 @@ namespace AICAD.UI
             {
                 try { AddinStatusLogger.Error("TaskpaneWpf", "InitializeMaterialDropdown failed", ex); } catch { }
             }
+        }
+
+        private string ResolveMaterialForPostBuildSync(IModelDoc2 doc, string uiMaterial)
+        {
+            try
+            {
+                var promptMaterialFound = MaterialIntentParser.TryExtractMaterial(_lastPrompt ?? string.Empty, out var promptMaterial);
+                var actualMaterialFound = TryGetAppliedMaterialFromDocument(doc, out var actualMaterial, out var actualDatabase);
+
+                if (promptMaterialFound)
+                {
+                    if (actualMaterialFound && MaterialNameResolver.AreEquivalent(actualMaterial, promptMaterial))
+                        return actualMaterial;
+
+                    return promptMaterial;
+                }
+
+                if (actualMaterialFound)
+                    return actualMaterial;
+            }
+            catch { }
+
+            return uiMaterial ?? string.Empty;
+        }
+
+        private string GetActiveConfigurationName(IModelDoc2 doc)
+        {
+            try
+            {
+                var config = doc?.ConfigurationManager?.ActiveConfiguration;
+                return config?.Name ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private bool TryGetAppliedMaterialFromDocument(IModelDoc2 doc, out string materialName, out string databaseName)
+        {
+            materialName = string.Empty;
+            databaseName = string.Empty;
+
+            try
+            {
+                var partDoc = doc as PartDoc;
+                if (partDoc == null)
+                    return false;
+
+                var configName = GetActiveConfigurationName(doc);
+                materialName = partDoc.GetMaterialPropertyName2(configName, out databaseName) ?? string.Empty;
+                return !string.IsNullOrWhiteSpace(materialName);
+            }
+            catch
+            {
+                materialName = string.Empty;
+                databaseName = string.Empty;
+                return false;
+            }
+        }
+
+        private void TryWriteMaterialCustomProperty(IModelDoc2 doc, string material)
+        {
+            try
+            {
+                var custPropMgr = doc.Extension?.CustomPropertyManager[""];
+                if (custPropMgr == null)
+                    return;
+
+                string filename = string.Empty;
+                try { filename = System.IO.Path.GetFileNameWithoutExtension(doc.GetPathName()); } catch { }
+                if (string.IsNullOrWhiteSpace(filename))
+                {
+                    var title = doc.GetTitle();
+                    if (!string.IsNullOrWhiteSpace(title))
+                        filename = System.IO.Path.GetFileNameWithoutExtension(title);
+                }
+
+                if (!string.IsNullOrWhiteSpace(filename))
+                {
+                    var matLink = $"\"SW-Material@{filename}.SLDPRT\"";
+                    custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, matLink, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                }
+                else
+                {
+                    custPropMgr.Add3("Material", (int)swCustomInfoType_e.swCustomInfoText, material ?? string.Empty, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                }
+            }
+            catch { }
         }
 
         private string GetPartMass(IModelDoc2 doc)

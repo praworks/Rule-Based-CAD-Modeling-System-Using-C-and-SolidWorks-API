@@ -459,5 +459,28 @@ namespace AICAD.Services
             Assert.AreEqual(8.4d, ((JObject)plan.Steps[11])["depth"]?.Value<double>(), "Hex prism height should become extrude depth.");
         }
 
+        [TestMethod]
+        public void Loft_CircleToSquare_UsesLocalOffsetPlaneShortcut()
+        {
+            var featureTask = new JObject
+            {
+                ["feature_type"] = "loft",
+                ["role"] = "base",
+                ["intent"] = "create a tapered transition from a 50 mm circle to a 35 mm square over 60 mm height"
+            };
+
+            var plan = LlmPlanService.PlanFeatureSubtask(featureTask, null);
+
+            Assert.IsNotNull(plan, "Plan should be generated for a simple loft transition.");
+            Assert.IsNotNull(plan.Steps, "Loft shortcut should return executable steps.");
+            Assert.AreEqual("new_part", ((JObject)plan.Steps[0])["op"]?.ToString(), "Standalone loft should start a new part.");
+            Assert.AreEqual("circle_center", ((JObject)plan.Steps[3])["op"]?.ToString(), "First profile should sketch a centered circle.");
+            Assert.AreEqual("create_offset_plane", ((JObject)plan.Steps[6])["op"]?.ToString(), "Loft shortcut should create an offset plane for the second profile.");
+            Assert.AreEqual(60d, ((JObject)plan.Steps[6])["distance"]?.Value<double>(), "Offset plane distance should match loft height.");
+            Assert.AreEqual("rectangle_center", ((JObject)plan.Steps[8])["op"]?.ToString(), "Second profile should sketch a centered square using rectangle_center.");
+            Assert.AreEqual(35d, ((JObject)plan.Steps[8])["w"]?.Value<double>(), "Square width should match the requested side length.");
+            Assert.AreEqual("loft", ((JObject)plan.Steps[11])["op"]?.ToString(), "Last step should create the loft.");
+        }
+
     }
 }

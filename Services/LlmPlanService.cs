@@ -199,6 +199,12 @@ namespace AICAD.Services
                     try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local material plan"); } catch { }
                     return BuildMaterialPlan(featureTask, modelFacts);
                 }
+                var localLoftPlan = TryBuildSimpleLoftPlan(featureTask, modelFacts);
+                if (localLoftPlan != null)
+                {
+                    try { DiagnosticLogWriter.LogLine(runId, requestId, "LlmPlanService", "INFO", "PlanFeatureSubtask shortcut: using local loft plan"); } catch { }
+                    return localLoftPlan;
+                }
                 var localBasePrimitivePlan = TryBuildBasePrimitivePlan(featureTask, modelFacts);
                 if (localBasePrimitivePlan != null)
                 {
@@ -1870,6 +1876,179 @@ namespace AICAD.Services
                 Steps = steps,
                 Thinking = $"Apply material '{material}' to the active part."
             };
+        }
+
+        private sealed class LoftProfileSpec
+        {
+            public string Shape { get; set; }
+            public double WidthMm { get; set; }
+            public double HeightMm { get; set; }
+            public string DisplayName { get; set; }
+        }
+
+        private static FeaturePlanResult TryBuildSimpleLoftPlan(JObject featureTask, JObject modelFacts)
+        {
+            if (featureTask == null) return null;
+
+            var featureType = featureTask.Value<string>("feature_type") ?? string.Empty;
+            var intent = featureTask.Value<string>("intent") ?? string.Empty;
+            if (!featureType.Equals("loft", StringComparison.OrdinalIgnoreCase)) return null;
+            if (string.IsNullOrWhiteSpace(intent)) return null;
+
+            if (!TryExtractSimpleLoftProfiles(intent, out var startProfile, out var endProfile, out var heightMm, out var plane))
+                return null;
+
+            var steps = new JArray();
+            if (modelFacts == null)
+                steps.Add(new JObject { ["op"] = "new_part" });
+
+            steps.Add(new JObject { ["op"] = "select_plane", ["name"] = plane });
+            steps.Add(new JObject { ["op"] = "sketch_begin" });
+            foreach (var step in BuildLoftProfileSketchSteps(startProfile))
+                steps.Add(step);
+            steps.Add(new JObject { ["op"] = "auto_dimension" });
+            steps.Add(new JObject { ["op"] = "sketch_end" });
+            steps.Add(new JObject
+            {
+                ["op"] = "create_offset_plane",
+                ["base_plane"] = plane,
+                ["distance"] = heightMm
+            });
+            steps.Add(new JObject { ["op"] = "sketch_begin" });
+            foreach (var step in BuildLoftProfileSketchSteps(endProfile))
+                steps.Add(step);
+            steps.Add(new JObject { ["op"] = "auto_dimension" });
+            steps.Add(new JObject { ["op"] = "sketch_end" });
+            steps.Add(new JObject { ["op"] = "loft" });
+
+            return new FeaturePlanResult
+            {
+                Steps = steps,
+                Thinking = $"Sketch a centered {startProfile.DisplayName} on {plane}, create an offset plane {heightMm} mm away, sketch a centered {endProfile.DisplayName}, then loft between the two closed profiles."
+            };
+        }
+
+        private static IEnumerable<JObject> BuildLoftProfileSketchSteps(LoftProfileSpec profile)
+        {
+            if (profile == null)
+                yield break;
+
+            if (profile.Shape.Equals("circle", StringComparison.OrdinalIgnoreCase))
+            {
+                yield return new JObject
+                {
+                    ["op"] = "circle_center",
+                    ["cx"] = 0,
+                    ["cy"] = 0,
+                    ["diameter"] = profile.WidthMm
+                };
+                yield break;
+            }
+
+            yield return new JObject
+            {
+                ["op"] = "rectangle_center",
+                ["cx"] = 0,
+                ["cy"] = 0,
+                ["w"] = profile.WidthMm,
+                ["h"] = profile.HeightMm
+            };
+        }
+
+        private static bool TryExtractSimpleLoftProfiles(string intent, out LoftProfileSpec startProfile, out LoftProfileSpec endProfile, out double heightMm, out string plane)
+        {
+            startProfile = null;
+            endProfile = null;
+            heightMm = 0;
+            plane = NormalizePlaneName(TryExtractPlaneName(intent));
+
+            var spanMatch = Regex.Match(
+                intent,
+                @"\bfrom\s+(?<start>.+?)\s+to\s+(?<end>.+?)(?:\s+over\b|\s+height\b|$)",
+                RegexOptions.IgnoreCase);
+            if (!spanMatch.Success)
+                return false;
+
+            heightMm = TryExtractHeightMm(intent) ?? 0.0;
+            if (heightMm <= 0)
+                return false;
+
+            startProfile = TryParseLoftProfile(spanMatch.Groups["start"].Value);
+            endProfile = TryParseLoftProfile(spanMatch.Groups["end"].Value);
+
+            return startProfile != null && endProfile != null;
+        }
+
+        private static LoftProfileSpec TryParseLoftProfile(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return null;
+
+            var rectangleMatch = Regex.Match(
+                text,
+                @"(?<w>\d+(?:\.\d+)?)\s*(?<wu>mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*x\s*(?<h>\d+(?:\.\d+)?)\s*(?<hu>mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*(?<shape>square|rectangle|rectangular)\b",
+                RegexOptions.IgnoreCase);
+            if (rectangleMatch.Success)
+            {
+                var widthMm = TryParseLengthMm(rectangleMatch.Groups["w"].Value, rectangleMatch.Groups["wu"].Value, text);
+                var heightMm = TryParseLengthMm(rectangleMatch.Groups["h"].Value, rectangleMatch.Groups["hu"].Value, text);
+                if (widthMm.HasValue && heightMm.HasValue && widthMm.Value > 0 && heightMm.Value > 0)
+                {
+                    var isSquare = rectangleMatch.Groups["shape"].Value.IndexOf("square", StringComparison.OrdinalIgnoreCase) >= 0
+                                   || Math.Abs(widthMm.Value - heightMm.Value) < 0.0001;
+                    return new LoftProfileSpec
+                    {
+                        Shape = isSquare ? "square" : "rectangle",
+                        WidthMm = widthMm.Value,
+                        HeightMm = heightMm.Value,
+                        DisplayName = isSquare
+                            ? $"{widthMm.Value:g} mm square"
+                            : $"{widthMm.Value:g} x {heightMm.Value:g} mm rectangle"
+                    };
+                }
+            }
+
+            var circleMatch = Regex.Match(
+                text,
+                @"(?<d>\d+(?:\.\d+)?)\s*(?<du>mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*(?:diameter\s*)?(?:circle)\b|(?:circle)\s*(?:of\s*)?(?<d2>\d+(?:\.\d+)?)\s*(?<du2>mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?",
+                RegexOptions.IgnoreCase);
+            if (circleMatch.Success)
+            {
+                var diameterMm = circleMatch.Groups["d"].Success
+                    ? TryParseLengthMm(circleMatch.Groups["d"].Value, circleMatch.Groups["du"].Value, text)
+                    : TryParseLengthMm(circleMatch.Groups["d2"].Value, circleMatch.Groups["du2"].Value, text);
+                if (diameterMm.HasValue && diameterMm.Value > 0)
+                {
+                    return new LoftProfileSpec
+                    {
+                        Shape = "circle",
+                        WidthMm = diameterMm.Value,
+                        HeightMm = diameterMm.Value,
+                        DisplayName = $"{diameterMm.Value:g} mm diameter circle"
+                    };
+                }
+            }
+
+            var squareMatch = Regex.Match(
+                text,
+                @"(?<s>\d+(?:\.\d+)?)\s*(?<su>mm|millimeters?|cm|centimeters?|m|meters?|in|inch|inches)?\s*square\b",
+                RegexOptions.IgnoreCase);
+            if (squareMatch.Success)
+            {
+                var sideMm = TryParseLengthMm(squareMatch.Groups["s"].Value, squareMatch.Groups["su"].Value, text);
+                if (sideMm.HasValue && sideMm.Value > 0)
+                {
+                    return new LoftProfileSpec
+                    {
+                        Shape = "square",
+                        WidthMm = sideMm.Value,
+                        HeightMm = sideMm.Value,
+                        DisplayName = $"{sideMm.Value:g} mm square"
+                    };
+                }
+            }
+
+            return null;
         }
 
         private static FeaturePlanResult BuildBaseExtrudePlanFromSketchSteps(JObject modelFacts, string plane, JArray sketchSteps, double depthMm, string thinking)

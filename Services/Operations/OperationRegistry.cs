@@ -69,6 +69,8 @@ namespace AICAD.Services.Operations
             // ===== UTILITIES =====
             registry.Register("new_part", new Utilities.NewPartHandler());
             registry.Register("select_plane", new Utilities.SelectPlaneHandler());
+            registry.Register("create_offset_plane", new Utilities.CreateOffsetPlaneHandler());
+            registry.Register("offset_plane", new Utilities.CreateOffsetPlaneHandler());
             // Prefer PartFeatures.FaceHandler which implements more robust selection fallbacks
             registry.Register("select_face", new PartFeatures.FaceHandler());
             registry.Register("set_units", new Utilities.SetUnitsHandler());

@@ -85,6 +85,119 @@ namespace AICAD.Services.Operations.Utilities
     }
 
     /// <summary>
+    /// Handler for "create_offset_plane" operation - creates and selects a plane offset from an existing plane.
+    /// </summary>
+    public class CreateOffsetPlaneHandler : IOperationHandler
+    {
+        public OperationResult Execute(JObject step, IModelDoc2 model, ISketchManager sketchMgr, IFeatureManager featMgr, bool inSketch)
+        {
+            try
+            {
+                if (model == null)
+                    return OperationResult.CreateFailure("Model not initialized");
+                if (featMgr == null)
+                    return OperationResult.CreateFailure("Feature manager not available");
+
+                if (inSketch && sketchMgr != null)
+                {
+                    try { sketchMgr.InsertSketch(true); } catch { }
+                }
+
+                string basePlane = step.Value<string>("base_plane")
+                                   ?? step.Value<string>("plane")
+                                   ?? step.Value<string>("name")
+                                   ?? string.Empty;
+                double distanceMm = step.Value<double?>("distance")
+                                    ?? step.Value<double?>("offset")
+                                    ?? step.Value<double?>("height")
+                                    ?? 0.0;
+
+                if (string.IsNullOrWhiteSpace(basePlane))
+                    return OperationResult.CreateFailure("Missing base plane name");
+                if (Math.Abs(distanceMm) <= 0.0001)
+                    return OperationResult.CreateFailure("Offset plane distance must be non-zero");
+
+                model.ClearSelection2(true);
+                bool selected = TrySelectPlane(model, basePlane, append: false);
+                if (!selected)
+                    return OperationResult.CreateFailure($"Could not select base plane '{basePlane}'");
+
+                var planeObj = featMgr.InsertRefPlane(
+                    (int)swRefPlaneReferenceConstraints_e.swRefPlaneReferenceConstraint_Distance,
+                    ToMeters(distanceMm),
+                    0,
+                    0,
+                    0,
+                    0);
+
+                if (planeObj == null)
+                    return OperationResult.CreateFailure("Failed to create offset plane");
+
+                string createdPlaneName = TryGetFeatureName(planeObj);
+                try { model.ForceRebuild3(false); } catch { }
+
+                if (!string.IsNullOrWhiteSpace(createdPlaneName))
+                {
+                    try
+                    {
+                        model.ClearSelection2(true);
+                        TrySelectPlane(model, createdPlaneName, append: false);
+                    }
+                    catch { }
+                }
+
+                return OperationResult.CreateSuccess(
+                    stillInSketch: false,
+                    data: new { plane = createdPlaneName, distance = distanceMm });
+            }
+            catch (Exception ex)
+            {
+                return OperationResult.CreateFailure($"create_offset_plane failed: {ex.Message}");
+            }
+        }
+
+        private static double ToMeters(double mm) => mm / 1000.0;
+
+        private static string TryGetFeatureName(object planeObj)
+        {
+            try
+            {
+                if (planeObj is IFeature feature)
+                    return feature.Name;
+
+                var prop = planeObj?.GetType().GetProperty("Name");
+                if (prop != null)
+                    return prop.GetValue(planeObj) as string;
+            }
+            catch { }
+
+            return string.Empty;
+        }
+
+        private static bool TrySelectPlane(IModelDoc2 model, string planeName, bool append)
+        {
+            if (model == null || string.IsNullOrWhiteSpace(planeName))
+                return false;
+
+            try
+            {
+                if (model.Extension.SelectByID2(planeName, "PLANE", 0, 0, 0, append, 0, null, 0))
+                    return true;
+            }
+            catch { }
+
+            try
+            {
+                if (model.Extension.SelectByID2(planeName, "REFPLANE", 0, 0, 0, append, 0, null, 0))
+                    return true;
+            }
+            catch { }
+
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Handler for "select_face" operation - selects a face for operations like pocket or fillet
     /// </summary>
     public class SelectFaceHandler : IOperationHandler

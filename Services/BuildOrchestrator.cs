@@ -12,6 +12,8 @@ namespace AICAD.Services
 {
     internal sealed class BuildOrchestrator
     {
+        private const string FollowUpBuildModeKey = "EnableFollowUpBuildMode";
+
         public sealed class BuildResult
         {
             public bool Success { get; set; }
@@ -183,7 +185,7 @@ namespace AICAD.Services
                 result.Category = "Unknown";
                 context.Stage = "EXECUTE";
                 DiagnosticLogWriter.StartSection(effectiveRunId, "EXECUTE");
-                        JObject modelFacts = null;
+                        JObject modelFacts = GetInitialModelFactsForRun(userPrompt, context);
                         for (int ti = 0; ti < tasks.Count; ti++)
                         {
                             var task = tasks[ti] as JObject ?? new JObject();
@@ -574,6 +576,47 @@ namespace AICAD.Services
                 userPrompt,
                 @"\b(clyinder|cilinder|cylnder|cylider|cyclinder)\b",
                 "cylinder",
+                RegexOptions.IgnoreCase);
+        }
+
+        private JObject GetInitialModelFactsForRun(string userPrompt, LoggingContext context)
+        {
+            try
+            {
+                if (!SettingsManager.GetBool(FollowUpBuildModeKey, false))
+                    return null;
+
+                if (!ShouldUseFollowUpModelContext(userPrompt))
+                {
+                    _logger.LogWithContext(LogLevel.Information, context, "Follow-up mode enabled but prompt requests a fresh build; skipping active-model context.");
+                    return null;
+                }
+
+                var modelFacts = ModelStateProvider.Capture(_swApp, emitLogs: false);
+                if (modelFacts == null)
+                {
+                    _logger.LogWithContext(LogLevel.Information, context, "Follow-up mode enabled but no active model state was available.");
+                    return null;
+                }
+
+                _logger.LogWithContext(LogLevel.Information, context, "Follow-up mode seeded planning with active model state.");
+                return modelFacts;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWithContext(LogLevel.Warning, context, $"Failed to seed follow-up model context: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static bool ShouldUseFollowUpModelContext(string userPrompt)
+        {
+            if (string.IsNullOrWhiteSpace(userPrompt))
+                return true;
+
+            return !Regex.IsMatch(
+                userPrompt,
+                @"\b(new\s+part|new\s+model|from\s+scratch|start\s+over|blank\s+part|fresh\s+part)\b",
                 RegexOptions.IgnoreCase);
         }
     }

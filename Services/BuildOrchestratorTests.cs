@@ -61,5 +61,27 @@ namespace AICAD.Services
                 ((JObject)tasks[1])["intent"]?.ToString(),
                 "Collapsed corner-hole intent should preserve the shorthand and mark the four-corner pattern.");
         }
+
+        [TestMethod]
+        public void ShouldUseFollowUpModelContext_AllowsNormalFollowUpPrompt()
+        {
+            var method = typeof(BuildOrchestrator).GetMethod("ShouldUseFollowUpModelContext", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method, "ShouldUseFollowUpModelContext should exist.");
+
+            var result = (bool)method.Invoke(null, new object[] { "add a 10 mm hole at the center of the top face" });
+
+            Assert.IsTrue(result, "Ordinary follow-up prompts should reuse the active model when the mode is enabled.");
+        }
+
+        [TestMethod]
+        public void ShouldUseFollowUpModelContext_DisablesContextForFreshBuildPrompt()
+        {
+            var method = typeof(BuildOrchestrator).GetMethod("ShouldUseFollowUpModelContext", BindingFlags.Static | BindingFlags.NonPublic);
+            Assert.IsNotNull(method, "ShouldUseFollowUpModelContext should exist.");
+
+            var result = (bool)method.Invoke(null, new object[] { "start over and create a new part from scratch" });
+
+            Assert.IsFalse(result, "Explicit fresh-build prompts should bypass follow-up model context.");
+        }
     }
 }

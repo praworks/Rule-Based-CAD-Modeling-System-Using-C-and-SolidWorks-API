@@ -123,6 +123,13 @@
                                 </StackPanel>
                             </GroupBox>
 
+                            <GroupBox Header="Follow-Up Build Mode" Margin="0,8,0,0">
+                                <StackPanel>
+                                    <CheckBox x:Name="EnableFollowUpModeCheckBox" Content="Continue building on the current active model for follow-up prompts" Margin="0,4,0,0" />
+                                    <TextBlock Text="When enabled, a new prompt can reuse the active part as planning context instead of always starting from a blank model. Prompts that explicitly say 'new part', 'new model', 'from scratch', or 'start over' still force a fresh build." Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0" FontSize="11" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </GroupBox>
+
                             <Grid Margin="0,12,0,0">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />

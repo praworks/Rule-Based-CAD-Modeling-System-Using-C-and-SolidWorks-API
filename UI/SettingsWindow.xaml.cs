@@ -22,6 +22,7 @@ namespace AICAD.UI
         private const string DefaultMongoDatabase = "TaskPaneAddin";
         private const string PreferredSwUnitsKey = "PreferredSwUnitSystem";
         private const string PostBuildViewModeKey = AICAD.Services.PostBuildViewService.PostBuildViewModeKey;
+        private const string FollowUpBuildModeKey = "EnableFollowUpBuildMode";
         private const string AdminEmail = "e2240156@bit.uom.lk";
 
         public class ProviderItem
@@ -261,6 +262,15 @@ namespace AICAD.UI
                 catch
                 {
                     SelectPostBuildViewMode(AICAD.Services.PostBuildViewService.IsometricMode);
+                }
+
+                try
+                {
+                    EnableFollowUpModeCheckBox.IsChecked = AICAD.Services.SettingsManager.GetBool(FollowUpBuildModeKey, false);
+                }
+                catch
+                {
+                    EnableFollowUpModeCheckBox.IsChecked = false;
                 }
             }
             catch { }
@@ -1386,6 +1396,7 @@ namespace AICAD.UI
                 var preferredUnits = (SwUnitsIpsRadio.IsChecked == true) ? "IPS" : "MMGS";
                 AICAD.Services.SettingsManager.SetString(PreferredSwUnitsKey, preferredUnits);
                 AICAD.Services.SettingsManager.SetString(PostBuildViewModeKey, GetSelectedPostBuildViewMode());
+                AICAD.Services.SettingsManager.SetBool(FollowUpBuildModeKey, EnableFollowUpModeCheckBox.IsChecked == true);
             }
             catch { }
             System.Windows.MessageBox.Show("All settings applied. Restart SolidWorks.", "Applied", MessageBoxButton.OK, MessageBoxImage.Information);

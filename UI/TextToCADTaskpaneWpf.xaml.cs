@@ -3122,6 +3122,7 @@ namespace AICAD.UI
                             }
                             catch { }
 
+                            partName = ResolvePartNumberForPostBuildSync(doc, partName, exec?.CreatedNewPart ?? false);
                             material = ResolveMaterialForPostBuildSync(doc, uiMaterial);
                             SetPartPropertiesOnDocument(doc, material ?? string.Empty, desc ?? string.Empty, weight ?? string.Empty, partName);
                             try { doc.ForceRebuild3(false); DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "INFO", "Model rebuilt after auto-apply properties (ForceRebuild3 false)"); } catch (Exception ex) { DiagnosticLogWriter.LogLine(runId, null, "TaskpaneWpf", "ERROR", $"Model rebuild after auto-apply properties failed: {ex.Message}"); }
@@ -4030,6 +4031,30 @@ namespace AICAD.UI
             catch { }
 
             return uiMaterial ?? string.Empty;
+        }
+
+        private string ResolvePartNumberForPostBuildSync(IModelDoc2 doc, string suggestedPartName, bool createdNewPart)
+        {
+            try
+            {
+                var followUpEnabled = AICAD.Services.SettingsManager.GetBool("EnableFollowUpBuildMode", false);
+                if (!followUpEnabled || createdNewPart || doc == null)
+                    return suggestedPartName ?? string.Empty;
+
+                var custPropMgr = doc.Extension?.CustomPropertyManager[""];
+                var existingPartNo = GetCustomProperty(custPropMgr, "PartNo");
+                if (string.IsNullOrWhiteSpace(existingPartNo))
+                    existingPartNo = GetCustomProperty(custPropMgr, "Part Number");
+
+                if (!string.IsNullOrWhiteSpace(existingPartNo))
+                {
+                    try { AddinStatusLogger.Log("TaskpaneWpf", $"Follow-up build preserving existing part number: {existingPartNo}"); } catch { }
+                    return existingPartNo;
+                }
+            }
+            catch { }
+
+            return suggestedPartName ?? string.Empty;
         }
 
         private string GetActiveConfigurationName(IModelDoc2 doc)
